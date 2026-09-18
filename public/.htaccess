@@ -1,0 +1,10 @@
+RewriteEngine On
+
+# Якщо запитаний файл/директорія реально існує (напр. картинки, якщо з'являться) —
+# віддаємо як є, інакше все спрямовуємо на front controller.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L]
+
+# Заборона перегляду вмісту каталогу
+Options -Indexes

@@ -1,0 +1,29 @@
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h3 class="mb-0"><?= \App\Core\View::e($project['name']) ?></h3>
+        <small class="text-muted">Створив: <?= \App\Core\View::e($project['created_by_name']) ?></small>
+    </div>
+    <a href="/projects/<?= (int)$project['id'] ?>/tasks/create" class="btn btn-primary">+ Нова задача</a>
+</div>
+
+<p><?= nl2br(\App\Core\View::e($project['description'])) ?></p>
+
+<table class="table table-bordered bg-white">
+    <thead>
+        <tr><th>#</th><th>Назва</th><th>Тип</th><th>Статус</th><th>Пріоритет</th><th>Виконавець</th></tr>
+    </thead>
+    <tbody>
+    <?php if (empty($tasks)): ?>
+        <tr><td colspan="6" class="text-center text-muted">Задач ще немає</td></tr>
+    <?php else: foreach ($tasks as $t): ?>
+        <tr>
+            <td><a href="/tasks/<?= (int)$t['id'] ?>">#<?= (int)$t['id'] ?></a></td>
+            <td><?= \App\Core\View::e($t['title']) ?></td>
+            <td><?= \App\Core\View::e($t['type_name']) ?></td>
+            <td><span class="badge bg-secondary"><?= \App\Core\View::e($t['status_name']) ?></span></td>
+            <td><?= \App\Core\View::e($t['priority']) ?></td>
+            <td><?= \App\Core\View::e($t['assignee_name'] ?? '—') ?></td>
+        </tr>
+    <?php endforeach; endif; ?>
+    </tbody>
+</table>

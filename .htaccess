@@ -1,0 +1,4 @@
+# Цей файл на випадок, якщо document root помилково вказано на корінь проєкту
+# замість /public. Правильна конфігурація Apache/Nginx завжди має вказувати
+# document root саме на папку public/ — див. README.md.
+Require all denied
