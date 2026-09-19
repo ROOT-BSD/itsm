@@ -82,4 +82,55 @@ class User
         ]);
         return (int) Database::connection()->lastInsertId();
     }
+
+    public static function update(int $userId, string $fullName, string $email, int $roleId): void
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE users SET full_name = :full_name, email = :email, role_id = :role_id WHERE id = :id'
+        );
+        $stmt->execute([
+            'full_name' => $fullName,
+            'email' => $email,
+            'role_id' => $roleId,
+            'id' => $userId,
+        ]);
+    }
+
+    public static function emailExists(string $email, ?int $excludeUserId = null): bool
+    {
+        $sql = 'SELECT COUNT(*) FROM users WHERE email = :email';
+        $params = ['email' => $email];
+        if ($excludeUserId !== null) {
+            $sql .= ' AND id != :exclude_id';
+            $params['exclude_id'] = $excludeUserId;
+        }
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute($params);
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    /**
+     * Повне видалення користувача. На відміну від проєктів, тут НЕМАЄ каскадного
+     * видалення пов'язаних даних — таблиці tasks/comments/time_logs/audit_log
+     * посилаються на users без ON DELETE CASCADE (щоб не втрачати історію, хто
+     * саме створив задачу чи залишив коментар). Тому якщо користувач має пов'язані
+     * записи, MySQL поверне помилку цілісності (FK constraint) — це очікувано:
+     * ловимо її і повертаємо контролеру ознаку, що видалення неможливе, замість
+     * того щоб мовчки ламати історичні дані.
+     */
+    public static function delete(int $userId): bool
+    {
+        try {
+            $stmt = Database::connection()->prepare('DELETE FROM users WHERE id = :id');
+            $stmt->execute(['id' => $userId]);
+            return true;
+        } catch (\PDOException $e) {
+            if ($e->getCode() === '23000') {
+                // Порушення зовнішнього ключа — у користувача є пов'язані дані
+                // (створені проєкти, задачі, коментарі, облік часу тощо).
+                return false;
+            }
+            throw $e;
+        }
+    }
 }

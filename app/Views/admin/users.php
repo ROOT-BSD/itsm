@@ -2,7 +2,10 @@
     <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
 </div>
 
-<h3 class="mb-4">Користувачі</h3>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">Користувачі</h3>
+    <a href="/admin/users/create" class="btn btn-primary">+ Новий користувач</a>
+</div>
 
 <?php if (!empty($error)): ?>
     <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
@@ -15,7 +18,7 @@
     <thead>
         <tr>
             <th>Ім'я</th><th>Email</th><th>Роль</th><th>Джерело</th><th>Статус</th>
-            <th style="min-width:280px">Змінити пароль</th><th>Дія</th>
+            <th style="min-width:280px">Змінити пароль</th><th>Дії</th>
         </tr>
     </thead>
     <tbody>
@@ -46,9 +49,11 @@
                     <span class="text-muted small">Керується через AD</span>
                 <?php endif; ?>
             </td>
-            <td>
+            <td class="text-nowrap">
+                <a href="/admin/users/<?= (int)$u['id'] ?>/edit" class="btn btn-sm btn-outline-secondary">Редагувати</a>
+
                 <?php if ((int)$u['id'] !== \App\Core\Auth::id()): ?>
-                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/active">
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/active" class="d-inline">
                     <?php if ((int)$u['is_active'] === 1): ?>
                         <input type="hidden" name="active" value="0">
                         <button type="submit" class="btn btn-sm btn-outline-secondary"
@@ -57,6 +62,12 @@
                         <input type="hidden" name="active" value="1">
                         <button type="submit" class="btn btn-sm btn-outline-success">Активувати</button>
                     <?php endif; ?>
+                </form>
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/delete" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Видалити користувача «<?= \App\Core\View::e($u['full_name']) ?>» назавжди? Це можливо лише якщо з ним не пов’язані жодні дані.');">
+                        Видалити
+                    </button>
                 </form>
                 <?php else: ?>
                     <span class="text-muted small">(ви)</span>

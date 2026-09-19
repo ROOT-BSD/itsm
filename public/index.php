@@ -47,6 +47,21 @@ $router->get('/admin', function () {
 $router->get('/admin/users', function () {
     (new AdminController())->users();
 });
+$router->get('/admin/users/create', function () {
+    (new AdminController())->showCreateUserForm();
+});
+$router->post('/admin/users', function () {
+    (new AdminController())->storeUser();
+});
+$router->get('/admin/users/{id}/edit', function ($p) {
+    (new AdminController())->showEditUserForm($p);
+});
+$router->post('/admin/users/{id}', function ($p) {
+    (new AdminController())->updateUser($p);
+});
+$router->post('/admin/users/{id}/delete', function ($p) {
+    (new AdminController())->deleteUser($p);
+});
 $router->post('/admin/users/{id}/password', function ($p) {
     (new AdminController())->updatePassword($p);
 });

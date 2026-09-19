@@ -35,6 +35,124 @@ class AdminController
         ]);
     }
 
+    public function showCreateUserForm(): void
+    {
+        View::render('admin/users_create', [
+            'roles' => User::roles(),
+            'error' => $_GET['error'] ?? null,
+        ]);
+    }
+
+    public function storeUser(): void
+    {
+        $fullName = trim($_POST['full_name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $roleId = (int) ($_POST['role_id'] ?? 0);
+
+        if ($fullName === '' || $email === '' || $roleId === 0) {
+            $this->redirectCreateUser('Заповніть усі обов\'язкові поля');
+            return;
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->redirectCreateUser('Некоректний email');
+            return;
+        }
+        if (strlen($password) < 8) {
+            $this->redirectCreateUser('Пароль має містити щонайменше 8 символів');
+            return;
+        }
+        if (User::emailExists($email)) {
+            $this->redirectCreateUser('Користувач з таким email уже існує');
+            return;
+        }
+
+        $newId = User::create($fullName, $email, $password, $roleId);
+        \App\Models\Audit::log('user', $newId, 'created_by_admin', Auth::id());
+        $this->redirectUsers('success', 'Користувача "' . $fullName . '" створено');
+    }
+
+    private function redirectCreateUser(string $message): void
+    {
+        header('Location: /admin/users/create?error=' . urlencode($message));
+        exit;
+    }
+
+    public function showEditUserForm(array $params): void
+    {
+        $user = User::findById((int) $params['id']);
+        if (!$user) {
+            header('Location: /admin/users?error=' . urlencode('Користувача не знайдено'));
+            exit;
+        }
+
+        View::render('admin/users_edit', [
+            'targetUser' => $user,
+            'roles' => User::roles(),
+            'error' => $_GET['error'] ?? null,
+        ]);
+    }
+
+    public function updateUser(array $params): void
+    {
+        $userId = (int) $params['id'];
+        $fullName = trim($_POST['full_name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $roleId = (int) ($_POST['role_id'] ?? 0);
+
+        if ($fullName === '' || $email === '' || $roleId === 0) {
+            header("Location: /admin/users/{$userId}/edit?error=" . urlencode('Заповніть усі обов\'язкові поля'));
+            exit;
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            header("Location: /admin/users/{$userId}/edit?error=" . urlencode('Некоректний email'));
+            exit;
+        }
+        if (User::emailExists($email, $userId)) {
+            header("Location: /admin/users/{$userId}/edit?error=" . urlencode('Цей email уже використовує інший користувач'));
+            exit;
+        }
+        if ($userId === Auth::id() && $roleId !== (int) User::findById($userId)['role_id']) {
+            header("Location: /admin/users/{$userId}/edit?error=" . urlencode('Не можна змінити власну роль'));
+            exit;
+        }
+
+        User::update($userId, $fullName, $email, $roleId);
+        \App\Models\Audit::log('user', $userId, 'updated_by_admin', Auth::id());
+        $this->redirectUsers('success', 'Дані користувача оновлено');
+    }
+
+    public function deleteUser(array $params): void
+    {
+        $userId = (int) $params['id'];
+
+        if ($userId === Auth::id()) {
+            $this->redirectUsers('error', 'Не можна видалити власний обліковий запис');
+            return;
+        }
+
+        $user = User::findById($userId);
+        if (!$user) {
+            $this->redirectUsers('error', 'Користувача не знайдено');
+            return;
+        }
+
+        $ok = User::delete($userId);
+
+        if (!$ok) {
+            $this->redirectUsers(
+                'error',
+                'Неможливо видалити "' . $user['full_name'] . '" — з ним пов\'язані дані '
+                . '(створені проєкти, задачі, коментарі або облік часу). '
+                . 'Використайте деактивацію замість видалення, щоб зберегти історію.'
+            );
+            return;
+        }
+
+        \App\Models\Audit::log('user', $userId, 'deleted_by_admin', Auth::id(), ['email' => $user['email']]);
+        $this->redirectUsers('success', 'Користувача "' . $user['full_name'] . '" видалено');
+    }
+
     public function updatePassword(array $params): void
     {
         $userId = (int) $params['id'];
