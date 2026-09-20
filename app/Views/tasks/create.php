@@ -5,6 +5,7 @@
 <?php endif; ?>
 
 <form method="post" action="/projects/<?= (int)$projectId ?>/tasks" class="card p-4 shadow-sm" style="max-width:600px">
+    <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Назва</label>
         <input type="text" name="title" class="form-control" required>
@@ -33,6 +34,15 @@
     <div class="mb-3">
         <label class="form-label">Термін виконання</label>
         <input type="date" name="due_date" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Виконавець</label>
+        <select name="assignee_id" class="form-select">
+            <option value="">— не призначено —</option>
+            <?php foreach ($users as $u): ?>
+                <option value="<?= (int)$u['id'] ?>"><?= \App\Core\View::e($u['full_name']) ?> (<?= \App\Core\View::e($u['role_name']) ?>)</option>
+            <?php endforeach; ?>
+        </select>
     </div>
     <button type="submit" class="btn btn-primary">Створити задачу</button>
 </form>

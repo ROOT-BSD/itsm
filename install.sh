@@ -16,6 +16,7 @@ set -uo pipefail
 APP_NAME="ITSM System"
 MIN_PHP_VERSION="8.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_VERSION="$(cat "${SCRIPT_DIR}/VERSION" 2>/dev/null || echo "?")"
 
 # ---------- Кольори виводу ----------
 if [ -t 1 ]; then
@@ -54,7 +55,7 @@ for arg in "$@"; do
 done
 
 echo -e "${BOLD}=========================================="
-echo -e " ${APP_NAME} — інсталяція"
+echo -e " ${APP_NAME} v${APP_VERSION} — інсталяція"
 echo -e "==========================================${NC}"
 
 # ---------- 1. Визначення ОС ----------
@@ -397,13 +398,19 @@ else
         exit 1
     fi
 
-    # Формування команди підключення під root
+    # Формування команди підключення під root.
+    # ВАЖЛИВО: --default-character-set=utf8mb4 обов'язковий — без нього клієнт mysql
+    # може використати інше клієнтське кодування (типово latin1) при читанні schema.sql/
+    # seed.sql, через що кирилиця в довідниках (ролі, типи задач, статуси, ім'я адміна)
+    # запишеться в БД пошкодженою (подвійне UTF-8 кодування), навіть якщо сама БД і
+    # стовпці оголошені як utf8mb4. Це не проявляється відразу — виглядає нормально
+    # в самому mysql client, але ламається при виводі через PHP/веб-інтерфейс.
     if [ "$DB_ROOT_ACCESS" = "pass" ]; then
         read -r -s -p "  Пароль root для СУБД: " DB_ROOT_PASS
         echo
-        MYSQL_ROOT="$DB_CLIENT -u root -p${DB_ROOT_PASS}"
+        MYSQL_ROOT="$DB_CLIENT --default-character-set=utf8mb4 -u root -p${DB_ROOT_PASS}"
     else
-        MYSQL_ROOT="$DB_CLIENT -u root"
+        MYSQL_ROOT="$DB_CLIENT --default-character-set=utf8mb4 -u root"
     fi
 
     info "Створення бази даних та користувача..."

@@ -72,6 +72,13 @@ class Task
         Audit::log('task', $id, 'status_changed', $userId, ['status_id' => $statusId]);
     }
 
+    public static function updateAssignee(int $id, ?int $assigneeId, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE tasks SET assignee_id = :assignee_id WHERE id = :id');
+        $stmt->execute(['assignee_id' => $assigneeId ?: null, 'id' => $id]);
+        Audit::log('task', $id, 'assignee_changed', $actingUserId, ['assignee_id' => $assigneeId]);
+    }
+
     public static function addComment(int $taskId, int $authorId, string $body): void
     {
         $stmt = Database::connection()->prepare(

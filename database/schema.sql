@@ -39,10 +39,12 @@ CREATE TABLE IF NOT EXISTS projects (
     visibility ENUM('public','private','restricted') NOT NULL DEFAULT 'private',
     status ENUM('active','archived','closed') NOT NULL DEFAULT 'active',
     created_by INT NOT NULL,
+    responsible_user_id INT NULL,          -- виконавець/відповідальний за проєкт (обирається з існуючих користувачів)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES projects(id) ON DELETE SET NULL,
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (responsible_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS project_members (

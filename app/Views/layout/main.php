@@ -20,6 +20,7 @@ use App\Core\Auth;
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="/">Дашборд</a></li>
                 <li class="nav-item"><a class="nav-link" href="/projects">Проєкти</a></li>
+                <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
                 <?php if (Auth::hasRole(['admin'])): ?>
                 <li class="nav-item"><a class="nav-link" href="/admin">Адмін-панель</a></li>
                 <?php endif; ?>
@@ -36,6 +37,10 @@ use App\Core\Auth;
 <main class="container py-4">
     <?= $content ?>
 </main>
+
+<footer class="text-center text-muted small py-3">
+    ITSM System v<?= \App\Core\View::e(\App\Core\Config::get('app.version', '0.0.0')) ?>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

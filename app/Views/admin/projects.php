@@ -31,6 +31,7 @@
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/delete"
                       class="d-flex gap-1"
                       onsubmit="return confirm('Остаточно видалити проєкт «<?= \App\Core\View::e($p['name']) ?>» та всі його задачі?');">
+    <?= \App\Core\Csrf::field() ?>
                     <input type="text" name="confirm_name" class="form-control form-control-sm"
                            placeholder="Введіть назву проєкту для підтвердження" required>
                     <button type="submit" class="btn btn-sm btn-danger text-nowrap">Видалити</button>

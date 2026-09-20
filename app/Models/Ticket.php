@@ -1,0 +1,124 @@
+<?php
+
+namespace App\Models;
+
+use App\Core\Database;
+
+/**
+ * Мінімальна реалізація Service Desk (Епік 12): створення тікета,
+ * список, перегляд, призначення оператора з наявних користувачів.
+ * Повний портал самообслуговування, SLA-ескалація, email-to-ticket
+ * тощо — окремі майбутні кроки (див. DEV_START-документ, Епік 12).
+ */
+class Ticket
+{
+    public static function queues(): array
+    {
+        return Database::connection()->query('SELECT * FROM ticket_queues ORDER BY id')->fetchAll();
+    }
+
+    public static function all(): array
+    {
+        return Database::connection()->query(
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             ORDER BY t.created_at DESC"
+        )->fetchAll();
+    }
+
+    public static function find(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             WHERE t.id = :id"
+        );
+        $stmt->execute(['id' => $id]);
+        $ticket = $stmt->fetch();
+        return $ticket ?: null;
+    }
+
+    public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description): int
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO tickets (queue_id, requester_name, requester_email, requester_user_id, subject, description, status)
+             VALUES (:queue_id, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new")'
+        );
+        $stmt->execute([
+            'queue_id' => $queueId,
+            'requester_name' => $requesterName,
+            'requester_email' => $requesterEmail,
+            'requester_user_id' => $requesterUserId,
+            'subject' => $subject,
+            'description' => $description,
+        ]);
+
+        $ticketId = (int) Database::connection()->lastInsertId();
+        Audit::log('ticket', $ticketId, 'created', $requesterUserId);
+        return $ticketId;
+    }
+
+    /** Призначення оператора з наявних користувачів (виконавця тікета). */
+    public static function assignOperator(int $id, ?int $operatorId, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE tickets SET assigned_operator_id = :operator_id WHERE id = :id'
+        );
+        $stmt->execute(['operator_id' => $operatorId ?: null, 'id' => $id]);
+        Audit::log('ticket', $id, 'operator_assigned', $actingUserId, ['operator_id' => $operatorId]);
+    }
+
+    public static function updateStatus(int $id, string $status, int $actingUserId): void
+    {
+        $fields = ['status' => $status];
+        $sql = 'UPDATE tickets SET status = :status';
+
+        // Фіксуємо час вирішення при переході у "resolved"/"closed" (для майбутньої SLA-звітності)
+        if (in_array($status, ['resolved', 'closed'], true)) {
+            $sql .= ', resolved_at = COALESCE(resolved_at, NOW())';
+        }
+        $sql .= ' WHERE id = :id';
+        $fields['id'] = $id;
+
+        Database::connection()->prepare($sql)->execute($fields);
+        Audit::log('ticket', $id, 'status_changed_to_' . $status, $actingUserId);
+    }
+
+    public static function addComment(int $ticketId, string $authorType, ?int $authorId, string $body): void
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO ticket_comments (ticket_id, author_type, author_id, body)
+             VALUES (:ticket_id, :author_type, :author_id, :body)'
+        );
+        $stmt->execute([
+            'ticket_id' => $ticketId,
+            'author_type' => $authorType,
+            'author_id' => $authorId,
+            'body' => $body,
+        ]);
+
+        // Перша відповідь оператора — фіксуємо час для майбутньої SLA-звітності
+        if ($authorType === 'operator') {
+            Database::connection()->prepare(
+                'UPDATE tickets SET first_response_at = COALESCE(first_response_at, NOW()) WHERE id = :id'
+            )->execute(['id' => $ticketId]);
+        }
+    }
+
+    public static function comments(int $ticketId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT c.*, u.full_name AS author_name
+             FROM ticket_comments c
+             LEFT JOIN users u ON u.id = c.author_id
+             WHERE c.ticket_id = :ticket_id
+             ORDER BY c.created_at ASC"
+        );
+        $stmt->execute(['ticket_id' => $ticketId]);
+        return $stmt->fetchAll();
+    }
+}

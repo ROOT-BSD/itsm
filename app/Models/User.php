@@ -37,6 +37,19 @@ class User
             ->fetchAll();
     }
 
+    /**
+     * Активні користувачі для випадаючих списків вибору виконавця/відповідального/оператора.
+     * Фільтрація на рівні SQL (а не array_filter у PHP після вибірки всіх) — раніше
+     * цей самий фільтр був продубльований окремим приватним методом у трьох різних
+     * контролерах (Project/Task/TicketController).
+     */
+    public static function allActive(): array
+    {
+        return Database::connection()
+            ->query('SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.is_active = 1 ORDER BY u.full_name')
+            ->fetchAll();
+    }
+
     public static function updatePassword(int $userId, string $newPassword): bool
     {
         $user = self::findById($userId);

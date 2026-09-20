@@ -12,8 +12,7 @@ class Database
     public static function connection(): PDO
     {
         if (self::$instance === null) {
-            $config = require __DIR__ . '/../../config/config.php';
-            $db = $config['db'];
+            $db = Config::get('db');
 
             $dsn = sprintf(
                 'mysql:host=%s;port=%s;dbname=%s;charset=%s',
@@ -31,7 +30,7 @@ class Database
                 ]);
             } catch (PDOException $e) {
                 // У production-режимі деталі помилки БД користувачу не показуємо
-                if (($config['app']['env'] ?? 'local') === 'production') {
+                if (Config::get('app.env', 'local') === 'production') {
                     error_log('DB connection error: ' . $e->getMessage());
                     http_response_code(500);
                     exit('Помилка з\'єднання з базою даних. Зверніться до адміністратора.');

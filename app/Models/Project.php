@@ -8,33 +8,45 @@ class Project
 {
     public static function all(): array
     {
+        // Кількість відкритих задач рахується один раз через derived table (GROUP BY),
+        // а не корельованим підзапитом на кожен рядок проєкту (який до того ж сам
+        // містив вкладений підзапит по task_statuses) — суттєво дешевше при
+        // зростанні кількості проєктів і задач.
         return Database::connection()->query(
-            'SELECT p.*, u.full_name AS created_by_name,
-                    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status_id NOT IN
-                        (SELECT id FROM task_statuses WHERE is_closed = 1)) AS open_tasks_count
+            "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
+                    COALESCE(ot.open_count, 0) AS open_tasks_count
              FROM projects p
              JOIN users u ON u.id = p.created_by
-             ORDER BY p.created_at DESC'
+             LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN (
+                 SELECT t.project_id, COUNT(*) AS open_count
+                 FROM tasks t
+                 JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
+                 GROUP BY t.project_id
+             ) ot ON ot.project_id = p.id
+             ORDER BY p.created_at DESC"
         )->fetchAll();
     }
 
     public static function find(int $id): ?array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT p.*, u.full_name AS created_by_name
-             FROM projects p JOIN users u ON u.id = p.created_by
-             WHERE p.id = :id'
+            "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name
+             FROM projects p
+             JOIN users u ON u.id = p.created_by
+             LEFT JOIN users r ON r.id = p.responsible_user_id
+             WHERE p.id = :id"
         );
         $stmt->execute(['id' => $id]);
         $project = $stmt->fetch();
         return $project ?: null;
     }
 
-    public static function create(string $name, ?string $description, string $visibility, int $createdBy, ?int $parentId = null): int
+    public static function create(string $name, ?string $description, string $visibility, int $createdBy, ?int $responsibleUserId = null, ?int $parentId = null): int
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO projects (parent_id, name, description, visibility, status, created_by)
-             VALUES (:parent_id, :name, :description, :visibility, "active", :created_by)'
+            'INSERT INTO projects (parent_id, name, description, visibility, status, created_by, responsible_user_id)
+             VALUES (:parent_id, :name, :description, :visibility, "active", :created_by, :responsible_user_id)'
         );
         $stmt->execute([
             'parent_id' => $parentId,
@@ -42,11 +54,21 @@ class Project
             'description' => $description,
             'visibility' => $visibility,
             'created_by' => $createdBy,
+            'responsible_user_id' => $responsibleUserId ?: null,
         ]);
 
         $projectId = (int) Database::connection()->lastInsertId();
         Audit::log('project', $projectId, 'created', $createdBy);
         return $projectId;
+    }
+
+    public static function updateResponsible(int $id, ?int $responsibleUserId, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE projects SET responsible_user_id = :responsible_user_id WHERE id = :id'
+        );
+        $stmt->execute(['responsible_user_id' => $responsibleUserId ?: null, 'id' => $id]);
+        Audit::log('project', $id, 'responsible_changed', $actingUserId, ['responsible_user_id' => $responsibleUserId]);
     }
 
     public static function updateStatus(int $id, string $status, int $userId): void

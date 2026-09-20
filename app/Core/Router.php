@@ -21,6 +21,14 @@ class Router
         $path = parse_url($uri, PHP_URL_PATH) ?: '/';
         $path = rtrim($path, '/') ?: '/';
 
+        // Централізована CSRF-перевірка для КОЖНОГО POST-запиту — так її
+        // неможливо випадково забути додати в новий маршрут чи контролер.
+        if ($method === 'POST' && !Csrf::verify($_POST['csrf_token'] ?? null)) {
+            http_response_code(419);
+            echo 'Сесія застаріла або форму відкрито занадто давно. Оновіть сторінку і спробуйте ще раз.';
+            return;
+        }
+
         // Пряме співпадіння
         if (isset($this->routes[$method][$path])) {
             ($this->routes[$method][$path])();

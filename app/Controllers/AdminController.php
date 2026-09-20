@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\View;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Audit;
 
 class AdminController
 {
@@ -68,7 +69,7 @@ class AdminController
         }
 
         $newId = User::create($fullName, $email, $password, $roleId);
-        \App\Models\Audit::log('user', $newId, 'created_by_admin', Auth::id());
+        Audit::log('user', $newId, 'created_by_admin', Auth::id());
         $this->redirectUsers('success', 'Користувача "' . $fullName . '" створено');
     }
 
@@ -118,7 +119,7 @@ class AdminController
         }
 
         User::update($userId, $fullName, $email, $roleId);
-        \App\Models\Audit::log('user', $userId, 'updated_by_admin', Auth::id());
+        Audit::log('user', $userId, 'updated_by_admin', Auth::id());
         $this->redirectUsers('success', 'Дані користувача оновлено');
     }
 
@@ -149,7 +150,7 @@ class AdminController
             return;
         }
 
-        \App\Models\Audit::log('user', $userId, 'deleted_by_admin', Auth::id(), ['email' => $user['email']]);
+        Audit::log('user', $userId, 'deleted_by_admin', Auth::id(), ['email' => $user['email']]);
         $this->redirectUsers('success', 'Користувача "' . $user['full_name'] . '" видалено');
     }
 
@@ -176,7 +177,7 @@ class AdminController
             return;
         }
 
-        \App\Models\Audit::log('user', $userId, 'password_changed_by_admin', Auth::id());
+        Audit::log('user', $userId, 'password_changed_by_admin', Auth::id());
         $this->redirectUsers('success', 'Пароль користувача оновлено');
     }
 
@@ -191,7 +192,7 @@ class AdminController
         }
 
         User::setActive($userId, $active);
-        \App\Models\Audit::log('user', $userId, $active ? 'activated_by_admin' : 'deactivated_by_admin', Auth::id());
+        Audit::log('user', $userId, $active ? 'activated_by_admin' : 'deactivated_by_admin', Auth::id());
         $this->redirectUsers('success', $active ? 'Обліковий запис активовано' : 'Обліковий запис деактивовано');
     }
 

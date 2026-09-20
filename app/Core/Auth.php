@@ -35,12 +35,24 @@ class Auth
         $_SESSION['user_role'] = $user['role_code'];
         $_SESSION['user_name'] = $user['full_name'];
 
+        // Захист від session fixation: новий ID сесії після зміни рівня
+        // привілеїв (анонім -> залогінений користувач). CSRF-токен свідомо
+        // НЕ скидаємо тут — форма логіну вже надіслала токен старої сесії,
+        // і його заміна одразу після цього не додає захисту, лише ускладнила б код.
+        session_regenerate_id(true);
+
         return true;
     }
 
     public static function logout(): void
     {
         $_SESSION = [];
+
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
+
         session_destroy();
     }
 

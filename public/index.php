@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\Router;
 use App\Controllers\AdminController;
 use App\Controllers\AuthController;
+use App\Controllers\TicketController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectController;
 use App\Controllers\TaskController;
@@ -30,6 +31,7 @@ $router->get('/projects', [$projects, 'index']);
 $router->get('/projects/create', [$projects, 'showCreateForm']);
 $router->post('/projects', [$projects, 'store']);
 $router->get('/projects/{id}', fn($p) => $projects->show($p));
+$router->post('/projects/{id}/responsible', fn($p) => $projects->updateResponsible($p));
 
 // --- Задачі ---
 $tasks = new TaskController();
@@ -37,8 +39,19 @@ $router->get('/projects/{project_id}/tasks/create', fn($p) => $tasks->showCreate
 $router->post('/projects/{project_id}/tasks', fn($p) => $tasks->store($p));
 $router->get('/tasks/{id}', fn($p) => $tasks->show($p));
 $router->post('/tasks/{id}/status', fn($p) => $tasks->updateStatus($p));
+$router->post('/tasks/{id}/assignee', fn($p) => $tasks->updateAssignee($p));
 $router->post('/tasks/{id}/comments', fn($p) => $tasks->addComment($p));
 $router->post('/tasks/{id}/time', fn($p) => $tasks->logTime($p));
+
+// --- Тікети (Service Desk, базова версія — Епік 12) ---
+$tickets = new TicketController();
+$router->get('/tickets', fn() => $tickets->index());
+$router->get('/tickets/create', fn() => $tickets->showCreateForm());
+$router->post('/tickets', fn() => $tickets->store());
+$router->get('/tickets/{id}', fn($p) => $tickets->show($p));
+$router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
+$router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
+$router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
 
 // --- Адмін-панель (лише роль admin — перевіряється в конструкторі AdminController) ---
 $router->get('/admin', function () {

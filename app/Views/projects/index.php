@@ -14,6 +14,7 @@
                 <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($p['description'] ?? '', 0, 100, '…')) ?></p>
                 <span class="badge bg-secondary"><?= \App\Core\View::e($p['status']) ?></span>
                 <span class="badge bg-info text-dark"><?= (int)$p['open_tasks_count'] ?> відкритих задач</span>
+                <div class="small text-muted mt-2">Відповідальний: <?= \App\Core\View::e($p['responsible_name'] ?? 'не призначено') ?></div>
             </div>
             <div class="card-footer bg-white">
                 <a href="/projects/<?= (int)$p['id'] ?>" class="btn btn-sm btn-outline-primary">Відкрити</a>

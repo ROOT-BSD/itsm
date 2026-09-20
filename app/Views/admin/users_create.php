@@ -9,6 +9,7 @@
 <?php endif; ?>
 
 <form method="post" action="/admin/users" class="card p-4 shadow-sm" style="max-width:500px">
+    <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Повне ім'я</label>
         <input type="text" name="full_name" class="form-control" required autofocus>
