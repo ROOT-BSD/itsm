@@ -201,7 +201,10 @@ itsm-system/
 │   ├── ITSM_Git_Guide.docx         # те саме, у форматі Word
 │   └── ITSM_System_Documentation.docx  # цей README у форматі Word
 ├── public/
-│   └── index.php          # точка входу (front controller)
+│   ├── index.php          # точка входу (front controller)
+│   ├── favicon.ico        # іконка застосунку (мультирозмірна, класичний favicon)
+│   ├── site.webmanifest   # маніфест для «Додати на головний екран» (Android)
+│   └── assets/icons/      # PNG-іконки різних розмірів (16–512px, apple-touch-icon)
 ├── install.sh             # скрипт перевірки залежностей та первинної інсталяції
 ├── update.sh               # скрипт оновлення вже розгорнутої системи (читає .env сам)
 ├── VERSION                 # поточна версія застосунку (0.1.0)
