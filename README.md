@@ -5,9 +5,9 @@
 Поточну версію застосунку видно у футері веб-інтерфейсу та у файлі `VERSION` у корені проєкту.
 
 📘 Окремі покрокові інструкції (Markdown + Word-версії в `docs/`):
-- [`docs/ADMIN_GUIDE.md`](docs/ADMIN_GUIDE.md) / `docs/ITSM_Admin_Guide.docx` — для адміністратора системи (керування користувачами, проєктами)
-- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) / `docs/ITSM_User_Guide.docx` — для звичайних користувачів (робота з проєктами, задачами, обліком часу)
-- [`docs/GIT_GUIDE.md`](docs/GIT_GUIDE.md) / `docs/ITSM_Git_Guide.docx` — як ініціалізувати git та відправити проєкт на GitHub
+- [`docs/ADMIN_GUIDE.md`](https://github.com/ROOT-BSD/itsm/tree/main/docs/ADMIN_GUIDE.md) / `docs/ITSM_Admin_Guide.docx` — для адміністратора системи (керування користувачами, проєктами)
+- [`docs/USER_GUIDE.md`](https://github.com/ROOT-BSD/itsm/tree/main/docs/USER_GUIDE.md) / `docs/ITSM_User_Guide.docx` — для звичайних користувачів (робота з проєктами, задачами, обліком часу)
+- [`docs/GIT_GUIDE.md`](https://github.com/ROOT-BSD/itsm/tree/main/docs/GIT_GUIDE.md) / `docs/ITSM_Git_Guide.docx` — як ініціалізувати git та відправити проєкт на GitHub
 - `docs/ITSM_System_Documentation.docx` — Word-версія цього ж README, для друку чи надсилання поштою
 
 **Реалізовано у цій версії (Sprint 0 + MVP):**
