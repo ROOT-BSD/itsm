@@ -14,10 +14,10 @@
 
 <h5>Мої відкриті задачі</h5>
 <table class="table table-bordered bg-white">
-    <thead><tr><th>#</th><th>Назва</th><th>Проєкт</th><th>Пріоритет</th><th>Статус</th></tr></thead>
+    <thead><tr><th>#</th><th>Назва</th><th>Проєкт</th><th>Пріоритет</th><th>Статус</th><th>Створено</th></tr></thead>
     <tbody>
     <?php if (empty($myOpenTasks)): ?>
-        <tr><td colspan="5" class="text-center text-muted">Немає призначених відкритих задач</td></tr>
+        <tr><td colspan="6" class="text-center text-muted">Немає призначених відкритих задач</td></tr>
     <?php else: foreach ($myOpenTasks as $t): ?>
         <tr>
             <td><a href="/tasks/<?= (int)$t['id'] ?>">#<?= (int)$t['id'] ?></a></td>
@@ -25,6 +25,7 @@
             <td><?= \App\Core\View::e($t['project_name']) ?></td>
             <td><?= \App\Core\View::e($t['priority']) ?></td>
             <td><?= \App\Core\View::e($t['status_name']) ?></td>
+            <td><?= \App\Core\View::e($t['created_at_formatted']) ?></td>
         </tr>
     <?php endforeach; endif; ?>
     </tbody>
