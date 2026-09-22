@@ -89,6 +89,22 @@
             });
         }
     });
+
+    // Frappe Gantt за замовчуванням прокручує так, щоб "сьогодні" було
+    // ПО ЦЕНТРУ видимої області. На загальній діаграмі (усі проєкти,
+    // зазвичай багато майбутніх задач) зручніше бачити "сьогодні" зліва,
+    // щоб одразу було видно все, що попереду. setTimeout — щоб спрацювати
+    // ПІСЛЯ власного автоскролу бібліотеки, а не до нього.
+    // today-highlight — це SVG-елемент (rect), тому позицію беремо через
+    // getBBox() (координати в системі SVG), а не offsetLeft (він для HTML).
+    setTimeout(function () {
+        const container = document.querySelector('.gantt-container');
+        const todayLine = document.querySelector('.today-highlight');
+        if (container && todayLine && typeof todayLine.getBBox === 'function') {
+            const bbox = todayLine.getBBox();
+            container.scrollLeft = Math.max(0, bbox.x - 40);
+        }
+    }, 100);
 })();
 </script>
 <?php endif; ?>
