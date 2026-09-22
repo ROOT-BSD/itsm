@@ -90,21 +90,26 @@
         }
     });
 
-    // Frappe Gantt за замовчуванням прокручує так, щоб "сьогодні" було
-    // ПО ЦЕНТРУ видимої області. На загальній діаграмі (усі проєкти,
-    // зазвичай багато майбутніх задач) зручніше бачити "сьогодні" зліва,
-    // щоб одразу було видно все, що попереду. setTimeout — щоб спрацювати
-    // ПІСЛЯ власного автоскролу бібліотеки, а не до нього.
-    // today-highlight — це SVG-елемент (rect), тому позицію беремо через
-    // getBBox() (координати в системі SVG), а не offsetLeft (він для HTML).
+    // Frappe Gantt за замовчуванням НЕ гарантує видимість "сьогодні" — сам
+    // прокручує ближче до початку всього діапазону задач, тож "сьогодні"
+    // може опинитися далеко за межами видимої області, якщо є давні задачі
+    // в минулому (перевірено напряму headless-браузером: без цього фіксу
+    // "сьогодні" виявлялось на ~800px правіше за видиму область). Тому
+    // примусово прокручуємо так, щоб "сьогодні" було біля лівого краю.
+    // setTimeout — щоб спрацювати ПІСЛЯ власного автоскролу бібліотеки.
+    // ВАЖЛИВО: клас називається .current-highlight у Frappe Gantt 1.x
+    // (перевірено напряму в офіційному CSS-файлі бібліотеки, версія збігається
+    // з тією, що підключена в <script> нижче) — старий клас .today-highlight
+    // існував лише в версіях 0.6.x і давно прибраний, тому перша спроба
+    // цього фіксу мовчки нічого не робила (селектор не знаходив елемента).
+    // Це звичайний <div style="position:absolute">, тому offsetLeft коректний.
     setTimeout(function () {
         const container = document.querySelector('.gantt-container');
-        const todayLine = document.querySelector('.today-highlight');
-        if (container && todayLine && typeof todayLine.getBBox === 'function') {
-            const bbox = todayLine.getBBox();
-            container.scrollLeft = Math.max(0, bbox.x - 40);
+        const todayLine = document.querySelector('.current-highlight');
+        if (container && todayLine) {
+            container.scrollLeft = Math.max(0, todayLine.offsetLeft - 40);
         }
-    }, 100);
+    }, 150);
 })();
 </script>
 <?php endif; ?>
