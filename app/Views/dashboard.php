@@ -2,13 +2,19 @@
 
 <div class="row mb-4">
     <div class="col-md-4">
-        <div class="card text-center p-3"><h2><?= (int)$stats['active_projects'] ?></h2><div class="text-muted">Активні проєкти</div></div>
+        <a href="/projects" class="text-decoration-none text-reset">
+            <div class="card text-center p-3 h-100 shadow-sm"><h2><?= (int)$stats['active_projects'] ?></h2><div class="text-muted">Активні проєкти</div></div>
+        </a>
     </div>
     <div class="col-md-4">
-        <div class="card text-center p-3"><h2><?= (int)$stats['open_tasks'] ?></h2><div class="text-muted">Відкриті задачі</div></div>
+        <a href="/tasks" class="text-decoration-none text-reset">
+            <div class="card text-center p-3 h-100 shadow-sm"><h2><?= (int)$stats['open_tasks'] ?></h2><div class="text-muted">Відкриті задачі</div></div>
+        </a>
     </div>
     <div class="col-md-4">
-        <div class="card text-center p-3"><h2><?= (int)$stats['open_tickets'] ?></h2><div class="text-muted">Відкриті тікети</div></div>
+        <a href="/tickets" class="text-decoration-none text-reset">
+            <div class="card text-center p-3 h-100 shadow-sm"><h2><?= (int)$stats['open_tickets'] ?></h2><div class="text-muted">Відкриті тікети</div></div>
+        </a>
     </div>
 </div>
 

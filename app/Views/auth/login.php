@@ -17,9 +17,6 @@
                 <input type="password" name="password" class="form-control" required>
             </div>
             <button type="submit" class="btn btn-primary w-100">Увійти</button>
-            <p class="text-muted small mt-3 mb-0">
-                Тестовий обліковий запис: admin@example.local / admin123
-            </p>
         </form>
     </div>
 </div>

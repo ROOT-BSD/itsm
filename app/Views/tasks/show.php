@@ -14,6 +14,7 @@
             <tr><th>Тип</th><td><?= \App\Core\View::e($task['type_name']) ?></td></tr>
             <tr><th>Пріоритет</th><td><?= \App\Core\View::e($task['priority']) ?></td></tr>
             <tr><th>Автор</th><td><?= \App\Core\View::e($task['author_name']) ?></td></tr>
+            <tr><th>Дата початку</th><td><?= \App\Core\View::e($task['start_date'] ?? '—') ?></td></tr>
             <tr><th>Термін</th><td><?= \App\Core\View::e($task['due_date'] ?? '—') ?></td></tr>
             <tr><th>Витрачено годин</th><td><?= \App\Core\View::e((string)$task['actual_hours']) ?></td></tr>
         </table>

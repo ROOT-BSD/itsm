@@ -18,7 +18,7 @@
     <thead>
         <tr>
             <th>Ім'я</th><th>Email</th><th>Роль</th><th>Джерело</th><th>Статус</th>
-            <th style="min-width:280px">Змінити пароль</th><th>Дії</th>
+            <th class="col-min-280">Змінити пароль</th><th>Дії</th>
         </tr>
     </thead>
     <tbody>

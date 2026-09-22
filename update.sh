@@ -6,7 +6,8 @@
 #   1. Читає підключення до БД з вашого існуючого .env
 #   2. Перевіряє й, за потреби, виправляє пошкоджену кирилицю (подвійне UTF-8)
 #   3. Накочує нову колонку responsible_user_id (якщо її ще немає)
-#   4. Перевстановлює права доступу на файли для веб-сервера
+#   4. Накочує нову колонку start_date для задач (діаграма Ганта), якщо її ще немає
+#   5. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -138,8 +139,36 @@ else
     ok "Колонка responsible_user_id вже є — нічого робити не треба"
 fi
 
+# ---------- 4. Колонка start_date (для діаграми Ганта) ----------
+section "4. Перевірка колонки 'дата початку задачі' (Гант)"
+
+COLUMN_EXISTS2=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tasks' AND COLUMN_NAME = 'start_date';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${COLUMN_EXISTS2:-0}" -eq 0 ]; then
+    info "Колонку start_date не знайдено — додаю..."
+
+    MIGRATION_COL2="${SCRIPT_DIR}/database/migrations/003_add_task_start_date.sql"
+    if [ ! -f "$MIGRATION_COL2" ]; then
+        fail "Файл ${MIGRATION_COL2} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_COL2" >/dev/null 2>&1; then
+        ok "Колонку start_date додано — тепер доступна діаграма Ганта з датами початку"
+    else
+        fail "Помилка додавання колонки"
+        exit 1
+    fi
+else
+    ok "Колонка start_date вже є — нічого робити не треба"
+fi
+
 # ---------- 4. Права доступу ----------
-section "4. Права доступу до файлів"
+section "5. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

@@ -5,11 +5,16 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\View;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Audit;
 
 class AdminController
 {
+    /** Допустимі значення видимості проєкту (ENUM у БД) — той самий список, що й у ProjectController. */
+    private const VISIBILITIES = ['public', 'private', 'restricted'];
+
     public function __construct()
     {
         Auth::requireLogin();
@@ -23,6 +28,37 @@ class AdminController
     public function index(): void
     {
         View::render('admin/index', []);
+    }
+
+    // ---------- Загальний огляд по всій системі (лише адміністратор) ----------
+
+    /** Загальна канбан-дошка: задачі з усіх проєктів одразу, згруповані по статусах. */
+    public function board(): void
+    {
+        $tasks = Task::allWithProject();
+        $statuses = Task::statuses();
+
+        $tasksByStatus = [];
+        foreach ($statuses as $status) {
+            $tasksByStatus[$status['id']] = [];
+        }
+        foreach ($tasks as $task) {
+            $tasksByStatus[$task['status_id']][] = $task;
+        }
+
+        View::render('admin/board', [
+            'statuses' => $statuses,
+            'tasksByStatus' => $tasksByStatus,
+        ]);
+    }
+
+    /** Загальна діаграма Ганта: задачі з усіх проєктів на одній часовій шкалі. */
+    public function gantt(): void
+    {
+        View::render('admin/gantt', [
+            'tasks' => Task::allWithProject(),
+            'relations' => Task::allRelations(),
+        ]);
     }
 
     // ---------- Користувачі ----------
@@ -232,6 +268,63 @@ class AdminController
 
         Project::delete($projectId, Auth::id());
         header('Location: /admin/projects?success=' . urlencode('Проєкт "' . $project['name'] . '" та всі повʼязані дані видалено'));
+        exit;
+    }
+
+    public function updateProjectVisibility(array $params): void
+    {
+        $projectId = (int) $params['id'];
+        $visibility = $_POST['visibility'] ?? '';
+
+        $project = Project::find($projectId);
+        if (!$project) {
+            header('Location: /admin/projects?error=' . urlencode('Проєкт не знайдено'));
+            exit;
+        }
+        if (!in_array($visibility, self::VISIBILITIES, true)) {
+            header('Location: /admin/projects?error=' . urlencode('Некоректне значення видимості'));
+            exit;
+        }
+
+        Project::updateVisibility($projectId, $visibility, Auth::id());
+        header('Location: /admin/projects?success=' . urlencode('Видимість проєкту "' . $project['name'] . '" оновлено'));
+        exit;
+    }
+
+    // ---------- Черги тікетів ----------
+
+    public function queues(): void
+    {
+        View::render('admin/queues', [
+            'queues' => Ticket::queuesWithTicketCount(),
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    public function showCreateQueueForm(): void
+    {
+        View::render('admin/queues_create', [
+            'error' => $_GET['error'] ?? null,
+        ]);
+    }
+
+    public function storeQueue(): void
+    {
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+
+        if ($name === '') {
+            header('Location: /admin/queues/create?error=' . urlencode('Назва черги обов\'язкова'));
+            exit;
+        }
+        if (Ticket::queueNameExists($name)) {
+            header('Location: /admin/queues/create?error=' . urlencode('Черга з такою назвою вже існує'));
+            exit;
+        }
+
+        Ticket::createQueue($name, $description ?: null, Auth::id());
+        header('Location: /admin/queues?success=' . urlencode('Чергу "' . $name . '" створено'));
         exit;
     }
 }

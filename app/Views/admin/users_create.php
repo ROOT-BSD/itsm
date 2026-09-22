@@ -8,7 +8,7 @@
     <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
 <?php endif; ?>
 
-<form method="post" action="/admin/users" class="card p-4 shadow-sm" style="max-width:500px">
+<form method="post" action="/admin/users" class="card p-4 shadow-sm form-card-sm">
     <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Повне ім'я</label>

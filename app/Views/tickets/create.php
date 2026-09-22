@@ -8,7 +8,7 @@
     <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
 <?php endif; ?>
 
-<form method="post" action="/tickets" class="card p-4 shadow-sm" style="max-width:600px">
+<form method="post" action="/tickets" class="card p-4 shadow-sm form-card-md">
     <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Черга</label>

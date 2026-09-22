@@ -19,4 +19,31 @@
             </div>
         </div>
     </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Черги тікетів</h5>
+                <p class="card-text text-muted small">Створення нових черг для розподілу звернень служби підтримки.</p>
+                <a href="/admin/queues" class="btn btn-outline-primary btn-sm">Керувати чергами</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">📋 Канбан — усі проєкти</h5>
+                <p class="card-text text-muted small">Загальна канбан-дошка з задачами всіх проєктів одразу, згрупована по статусах.</p>
+                <a href="/admin/board" class="btn btn-outline-secondary btn-sm">Відкрити дошку</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">📊 Гант — усі проєкти</h5>
+                <p class="card-text text-muted small">Загальна діаграма Ганта з термінами задач усіх проєктів на одній шкалі.</p>
+                <a href="/admin/gantt" class="btn btn-outline-secondary btn-sm">Відкрити діаграму</a>
+            </div>
+        </div>
+    </div>
 </div>

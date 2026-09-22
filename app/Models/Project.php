@@ -28,6 +28,47 @@ class Project
         )->fetchAll();
     }
 
+    /**
+     * Проєкти, видимі конкретному користувачу: адміністратор бачить усі,
+     * решта — лише ті, де вони автор (created_by) або відповідальний
+     * (responsible_user_id). Використовується замість all() усюди, де
+     * список показується не-адміну (список проєктів, дашборд).
+     */
+    public static function allVisibleTo(int $userId, bool $isAdmin): array
+    {
+        if ($isAdmin) {
+            return self::all();
+        }
+
+        $stmt = Database::connection()->prepare(
+            "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
+                    COALESCE(ot.open_count, 0) AS open_tasks_count
+             FROM projects p
+             JOIN users u ON u.id = p.created_by
+             LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN (
+                 SELECT t.project_id, COUNT(*) AS open_count
+                 FROM tasks t
+                 JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
+                 GROUP BY t.project_id
+             ) ot ON ot.project_id = p.id
+             WHERE p.created_by = :uid1 OR p.responsible_user_id = :uid2
+             ORDER BY p.created_at DESC"
+        );
+        $stmt->execute(['uid1' => $userId, 'uid2' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Чи бачить цей користувач цей проєкт: адмін / автор / відповідальний. */
+    public static function isVisibleTo(array $project, int $userId, bool $isAdmin): bool
+    {
+        if ($isAdmin) {
+            return true;
+        }
+        return (int) $project['created_by'] === $userId
+            || (int) ($project['responsible_user_id'] ?? 0) === $userId;
+    }
+
     public static function find(int $id): ?array
     {
         $stmt = Database::connection()->prepare(
@@ -69,6 +110,13 @@ class Project
         );
         $stmt->execute(['responsible_user_id' => $responsibleUserId ?: null, 'id' => $id]);
         Audit::log('project', $id, 'responsible_changed', $actingUserId, ['responsible_user_id' => $responsibleUserId]);
+    }
+
+    public static function updateVisibility(int $id, string $visibility, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE projects SET visibility = :visibility WHERE id = :id');
+        $stmt->execute(['visibility' => $visibility, 'id' => $id]);
+        Audit::log('project', $id, 'visibility_changed_to_' . $visibility, $actingUserId);
     }
 
     public static function updateStatus(int $id, string $status, int $userId): void

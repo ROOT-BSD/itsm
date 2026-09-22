@@ -4,7 +4,7 @@
     <div class="alert alert-danger"><?= \App\Core\View::e($_GET['error']) ?></div>
 <?php endif; ?>
 
-<form method="post" action="/projects" class="card p-4 shadow-sm" style="max-width:600px">
+<form method="post" action="/projects" class="card p-4 shadow-sm form-card-md">
     <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Назва проєкту</label>

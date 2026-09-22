@@ -15,6 +15,7 @@ use App\Core\Auth;
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
     <link rel="manifest" href="/site.webmanifest">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/app.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 <?php if (Auth::check()): ?>
@@ -25,6 +26,7 @@ use App\Core\Auth;
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="/">Дашборд</a></li>
                 <li class="nav-item"><a class="nav-link" href="/projects">Проєкти</a></li>
+                <li class="nav-item"><a class="nav-link" href="/calendar">Календар</a></li>
                 <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
                 <?php if (Auth::hasRole(['admin'])): ?>
                 <li class="nav-item"><a class="nav-link" href="/admin">Адмін-панель</a></li>

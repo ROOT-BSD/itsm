@@ -3,7 +3,11 @@
         <h3 class="mb-0"><?= \App\Core\View::e($project['name']) ?></h3>
         <small class="text-muted">Створив: <?= \App\Core\View::e($project['created_by_name']) ?></small>
     </div>
-    <a href="/projects/<?= (int)$project['id'] ?>/tasks/create" class="btn btn-primary">+ Нова задача</a>
+    <div class="d-flex gap-2">
+        <a href="/projects/<?= (int)$project['id'] ?>/board" class="btn btn-outline-secondary">📋 Канбан-дошка</a>
+        <a href="/projects/<?= (int)$project['id'] ?>/gantt" class="btn btn-outline-secondary">📊 Діаграма Ганта</a>
+        <a href="/projects/<?= (int)$project['id'] ?>/tasks/create" class="btn btn-primary">+ Нова задача</a>
+    </div>
 </div>
 
 <p><?= nl2br(\App\Core\View::e($project['description'])) ?></p>

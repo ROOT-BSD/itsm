@@ -17,6 +17,37 @@ class Ticket
         return Database::connection()->query('SELECT * FROM ticket_queues ORDER BY id')->fetchAll();
     }
 
+    /** Черги з кількістю тікетів у кожній — для списку в адмін-панелі. */
+    public static function queuesWithTicketCount(): array
+    {
+        return Database::connection()->query(
+            "SELECT q.*, COUNT(t.id) AS tickets_count
+             FROM ticket_queues q
+             LEFT JOIN tickets t ON t.queue_id = q.id
+             GROUP BY q.id
+             ORDER BY q.id"
+        )->fetchAll();
+    }
+
+    public static function createQueue(string $name, ?string $description, int $actingUserId): int
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO ticket_queues (name, description) VALUES (:name, :description)'
+        );
+        $stmt->execute(['name' => $name, 'description' => $description]);
+
+        $queueId = (int) Database::connection()->lastInsertId();
+        Audit::log('ticket_queue', $queueId, 'created', $actingUserId, ['name' => $name]);
+        return $queueId;
+    }
+
+    public static function queueNameExists(string $name): bool
+    {
+        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM ticket_queues WHERE name = :name');
+        $stmt->execute(['name' => $name]);
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
     public static function all(): array
     {
         return Database::connection()->query(
@@ -26,6 +57,39 @@ class Ticket
              LEFT JOIN users op ON op.id = t.assigned_operator_id
              ORDER BY t.created_at DESC"
         )->fetchAll();
+    }
+
+    /**
+     * Тікети, видимі конкретному користувачу: адміністратор бачить усі,
+     * решта — лише ті, де вони заявник (requester_user_id) або призначений
+     * оператор (assigned_operator_id).
+     */
+    public static function allVisibleTo(int $userId, bool $isAdmin): array
+    {
+        if ($isAdmin) {
+            return self::all();
+        }
+
+        $stmt = Database::connection()->prepare(
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2
+             ORDER BY t.created_at DESC"
+        );
+        $stmt->execute(['uid1' => $userId, 'uid2' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Чи бачить цей користувач цей тікет: адмін / заявник / призначений оператор. */
+    public static function isVisibleTo(array $ticket, int $userId, bool $isAdmin): bool
+    {
+        if ($isAdmin) {
+            return true;
+        }
+        return (int) ($ticket['requester_user_id'] ?? 0) === $userId
+            || (int) ($ticket['assigned_operator_id'] ?? 0) === $userId;
     }
 
     public static function find(int $id): ?array

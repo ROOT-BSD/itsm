@@ -16,7 +16,7 @@ class TicketController
     {
         Auth::requireLogin();
         View::render('tickets/index', [
-            'tickets' => Ticket::all(),
+            'tickets' => Ticket::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
         ]);
     }
 
@@ -65,6 +65,11 @@ class TicketController
             echo 'Тікет не знайдено.';
             return;
         }
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+            http_response_code(403);
+            echo 'Доступ до цього тікета обмежено — його бачать лише заявник, призначений оператор та адміністратор системи.';
+            return;
+        }
 
         View::render('tickets/show', [
             'ticket' => $ticket,
@@ -96,6 +101,18 @@ class TicketController
     {
         Auth::requireLogin();
 
+        $ticket = Ticket::find((int) $params['id']);
+        if (!$ticket) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            return;
+        }
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+            http_response_code(403);
+            echo 'Доступ до цього тікета обмежено.';
+            return;
+        }
+
         $status = $_POST['status'] ?? '';
         if (!in_array($status, self::STATUSES, true)) {
             header('Location: /tickets/' . $params['id'] . '?error=' . urlencode('Некоректний статус'));
@@ -110,6 +127,19 @@ class TicketController
     public function addComment(array $params): void
     {
         Auth::requireLogin();
+
+        $ticket = Ticket::find((int) $params['id']);
+        if (!$ticket) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            return;
+        }
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+            http_response_code(403);
+            echo 'Доступ до цього тікета обмежено.';
+            return;
+        }
+
         $body = trim($_POST['body'] ?? '');
         if ($body !== '') {
             // Оператор чи заявник — визначаємо за роллю поточного користувача.

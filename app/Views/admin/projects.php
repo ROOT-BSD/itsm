@@ -18,13 +18,26 @@
 
 <table class="table table-bordered bg-white align-middle">
     <thead>
-        <tr><th>Назва</th><th>Статус</th><th>Відкритих задач</th><th>Створив</th><th style="min-width:320px">Дія</th></tr>
+        <tr><th>Назва</th><th>Статус</th><th>Видимість</th><th>Відкритих задач</th><th>Створив</th><th class="col-min-320">Дія</th></tr>
     </thead>
     <tbody>
+    <?php
+    $visibilityLabels = ['public' => 'Публічний', 'private' => 'Приватний', 'restricted' => 'Обмежений доступ'];
+    ?>
     <?php foreach ($projects as $p): ?>
         <tr>
             <td><a href="/projects/<?= (int)$p['id'] ?>"><?= \App\Core\View::e($p['name']) ?></a></td>
             <td><span class="badge bg-secondary"><?= \App\Core\View::e($p['status']) ?></span></td>
+            <td>
+                <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/visibility" class="d-flex gap-1">
+                    <?= \App\Core\Csrf::field() ?>
+                    <select name="visibility" class="form-select form-select-sm" onchange="this.form.requestSubmit()">
+                        <?php foreach ($visibilityLabels as $code => $label): ?>
+                            <option value="<?= $code ?>" <?= $p['visibility'] === $code ? 'selected' : '' ?>><?= $label ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </td>
             <td><?= (int)$p['open_tasks_count'] ?></td>
             <td><?= \App\Core\View::e($p['created_by_name']) ?></td>
             <td>

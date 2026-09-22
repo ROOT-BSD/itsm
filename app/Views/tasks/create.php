@@ -4,7 +4,7 @@
     <div class="alert alert-danger"><?= \App\Core\View::e($_GET['error']) ?></div>
 <?php endif; ?>
 
-<form method="post" action="/projects/<?= (int)$projectId ?>/tasks" class="card p-4 shadow-sm" style="max-width:600px">
+<form method="post" action="/projects/<?= (int)$projectId ?>/tasks" class="card p-4 shadow-sm form-card-md">
     <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Назва</label>
@@ -30,6 +30,10 @@
             <option value="high">Високий</option>
             <option value="critical">Критичний</option>
         </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Дата початку</label>
+        <input type="date" name="start_date" class="form-control">
     </div>
     <div class="mb-3">
         <label class="form-label">Термін виконання</label>

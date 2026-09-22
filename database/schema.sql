@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority ENUM('low','normal','high','critical') NOT NULL DEFAULT 'normal',
     author_id INT NOT NULL,
     assignee_id INT NULL,
+    start_date DATE NULL,                  -- дата початку (для діаграми Ганта)
     due_date DATE NULL,
     estimated_hours DECIMAL(6,2) NULL,
     actual_hours DECIMAL(6,2) NOT NULL DEFAULT 0,

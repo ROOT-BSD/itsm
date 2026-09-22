@@ -1,0 +1,93 @@
+/**
+ * ITSM System — основні стилі застосунку.
+ *
+ * Раніше стилі були розкидані по view-файлах через атрибут style="...".
+ * Тепер усе тут, одним файлом — легше підтримувати, і браузер кешує
+ * файл окремо від HTML (не завантажується заново на кожній сторінці).
+ *
+ * Ширина контейнера — стандартна логіка Bootstrap, без жодних
+ * перевизначень (після кількох ітерацій з кастомною шириною/відступами
+ * вирішено залишити типову поведінку фреймворку).
+ */
+
+/* ============================================================
+   Форми (сторінки створення проєкту/задачі/тікета/користувача)
+   ============================================================ */
+
+.form-card-sm {
+    max-width: 500px;
+}
+
+.form-card-md {
+    max-width: 600px;
+}
+
+/* ============================================================
+   Таблиці — мінімальна ширина колонок дій
+   ============================================================ */
+
+.col-min-280 {
+    min-width: 280px;
+}
+
+.col-min-320 {
+    min-width: 320px;
+}
+
+/* ============================================================
+   Канбан-дошка (projects/board.php, admin/board.php)
+   ============================================================ */
+
+.kanban-column-wrapper {
+    width: 280px;
+}
+
+.kanban-column {
+    min-height: 400px;
+}
+
+.kanban-card {
+    cursor: grab;
+}
+
+.kanban-card:active {
+    cursor: grabbing;
+}
+
+/* ============================================================
+   Діаграма Ганта (projects/gantt.php, admin/gantt.php)
+   ============================================================ */
+
+.gantt-card-body {
+    overflow-x: auto;
+}
+
+.gantt-task-critical .bar { fill: #dc3545 !important; }
+.gantt-task-high .bar { fill: #fd7e14 !important; }
+.gantt-task-low .bar { fill: #6c757d !important; }
+.gantt-task-closed .bar { fill: #adb5bd !important; }
+
+/* ============================================================
+   Календар (calendar/index.php)
+   ============================================================ */
+
+.calendar-table {
+    table-layout: fixed;
+}
+
+.calendar-row {
+    height: 110px;
+}
+
+.calendar-cell {
+    overflow-y: auto;
+}
+
+.task-badge-critical { background-color: #dc3545; }
+.task-badge-high { background-color: #fd7e14; }
+.task-badge-normal { background-color: #0d6efd; }
+.task-badge-low { background-color: #6c757d; }
+
+/* Акценти на першому/останньому дні багатоденної задачі в календарі */
+.calendar-task-start { border-left: 3px solid rgba(0, 0, 0, .35); }
+.calendar-task-end { border-right: 3px solid rgba(0, 0, 0, .35); }
