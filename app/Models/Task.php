@@ -94,13 +94,14 @@ class Task
         $stmt = Database::connection()->prepare(
             'SELECT t.*, ts.name AS status_name, tt.name AS type_name,
                     au.full_name AS author_name, asg.full_name AS assignee_name,
-                    p.name AS project_name
+                    p.name AS project_name, ms.title AS milestone_title
              FROM tasks t
              JOIN task_statuses ts ON ts.id = t.status_id
              JOIN task_types tt ON tt.id = t.type_id
              JOIN users au ON au.id = t.author_id
              JOIN projects p ON p.id = t.project_id
              LEFT JOIN users asg ON asg.id = t.assignee_id
+             LEFT JOIN milestones ms ON ms.id = t.milestone_id
              WHERE t.id = :id'
         );
         $stmt->execute(['id' => $id]);
@@ -111,8 +112,8 @@ class Task
     public static function create(array $data): int
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tasks (project_id, type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date)
-             VALUES (:project_id, :type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date)'
+            'INSERT INTO tasks (project_id, type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date, milestone_id)
+             VALUES (:project_id, :type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date, :milestone_id)'
         );
         $stmt->execute([
             'project_id' => $data['project_id'],
@@ -125,6 +126,7 @@ class Task
             'assignee_id' => $data['assignee_id'] ?: null,
             'start_date' => $data['start_date'] ?: null,
             'due_date' => $data['due_date'] ?: null,
+            'milestone_id' => $data['milestone_id'] ?? null,
         ]);
 
         $taskId = (int) Database::connection()->lastInsertId();
@@ -144,6 +146,29 @@ class Task
         $stmt = Database::connection()->prepare('UPDATE tasks SET assignee_id = :assignee_id WHERE id = :id');
         $stmt->execute(['assignee_id' => $assigneeId ?: null, 'id' => $id]);
         Audit::log('task', $id, 'assignee_changed', $actingUserId, ['assignee_id' => $assigneeId]);
+    }
+
+    /** Прив'язка задачі до етапу/контрольної точки (дорожня карта) — або зняття прив'язки. */
+    public static function updateMilestone(int $id, ?int $milestoneId, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE tasks SET milestone_id = :milestone_id WHERE id = :id');
+        $stmt->execute(['milestone_id' => $milestoneId ?: null, 'id' => $id]);
+        Audit::log('task', $id, 'milestone_changed', $actingUserId, ['milestone_id' => $milestoneId]);
+    }
+
+    /** Задачі, прив'язані до конкретного етапу — для відображення на дорожній карті. */
+    public static function forMilestone(int $milestoneId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT t.id, t.title, t.priority, ts.name AS status_name, ts.is_closed, asg.full_name AS assignee_name
+             FROM tasks t
+             JOIN task_statuses ts ON ts.id = t.status_id
+             LEFT JOIN users asg ON asg.id = t.assignee_id
+             WHERE t.milestone_id = :milestone_id
+             ORDER BY ts.is_closed ASC, t.created_at ASC"
+        );
+        $stmt->execute(['milestone_id' => $milestoneId]);
+        return $stmt->fetchAll();
     }
 
     /** Оновлення дати початку/завершення задачі — використовується діаграмою Ганта (drag/resize). */
@@ -282,6 +307,101 @@ class Task
             $db->rollBack();
             throw $e;
         }
+    }
+
+    /** Усі записи обліку часу для однієї задачі (для відображення історії на сторінці задачі). */
+    public static function timeLogsForTask(int $taskId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT tl.*, u.full_name AS user_name
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             WHERE tl.task_id = :task_id
+             ORDER BY tl.log_date DESC, tl.id DESC"
+        );
+        $stmt->execute(['task_id' => $taskId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Усі записи обліку часу по всіх задачах проєкту одразу — для зведеної
+     * сторінки обліку часу проєкту (/projects/{id}/time).
+     */
+    public static function timeLogsForProject(int $projectId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT tl.*, u.full_name AS user_name, t.id AS task_id, t.title AS task_title
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             JOIN tasks t ON t.id = tl.task_id
+             WHERE t.project_id = :project_id
+             ORDER BY tl.log_date DESC, tl.id DESC"
+        );
+        $stmt->execute(['project_id' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Сумарні години по кожному користувачу для проєкту — для зведеної
+     * таблиці "хто скільки часу витратив" на сторінці обліку часу проєкту.
+     */
+    public static function hoursByUserForProject(int $projectId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT u.full_name AS user_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             JOIN tasks t ON t.id = tl.task_id
+             WHERE t.project_id = :project_id
+             GROUP BY tl.user_id, u.full_name
+             ORDER BY total_hours DESC"
+        );
+        $stmt->execute(['project_id' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Усі записи обліку часу по ВСІХ проєктах одразу — для загальної сторінки
+     * обліку часу адміністратора (/admin/time). Без фільтра видимості,
+     * оскільки доступ до цієї сторінки й так обмежений роллю 'admin'
+     * (перевіряється в AdminController, не тут).
+     */
+    public static function timeLogsAll(): array
+    {
+        return Database::connection()->query(
+            "SELECT tl.*, u.full_name AS user_name, t.id AS task_id, t.title AS task_title,
+                    p.id AS project_id, p.name AS project_name
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             JOIN tasks t ON t.id = tl.task_id
+             JOIN projects p ON p.id = t.project_id
+             ORDER BY tl.log_date DESC, tl.id DESC"
+        )->fetchAll();
+    }
+
+    /** Сумарні години по кожному користувачу по всій системі (для /admin/time). */
+    public static function hoursByUserAll(): array
+    {
+        return Database::connection()->query(
+            "SELECT u.full_name AS user_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             GROUP BY tl.user_id, u.full_name
+             ORDER BY total_hours DESC"
+        )->fetchAll();
+    }
+
+    /** Сумарні години по кожному проєкту по всій системі (для /admin/time). */
+    public static function hoursByProjectAll(): array
+    {
+        return Database::connection()->query(
+            "SELECT p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN tasks t ON t.id = tl.task_id
+             JOIN projects p ON p.id = t.project_id
+             GROUP BY p.id, p.name
+             ORDER BY total_hours DESC"
+        )->fetchAll();
     }
 
     public static function types(): array

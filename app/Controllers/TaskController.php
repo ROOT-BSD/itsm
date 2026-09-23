@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\View;
+use App\Models\Milestone;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
@@ -33,6 +34,7 @@ class TaskController
             'projectId' => $projectId,
             'types' => Task::types(),
             'users' => User::allActive(),
+            'milestones' => Milestone::forProject($projectId),
         ]);
     }
 
@@ -74,6 +76,15 @@ class TaskController
             return;
         }
 
+        $milestoneId = !empty($_POST['milestone_id']) ? (int) $_POST['milestone_id'] : null;
+        if ($milestoneId !== null) {
+            $milestone = Milestone::find($milestoneId);
+            if (!$milestone || (int) $milestone['project_id'] !== $projectId) {
+                $this->redirectCreateError($projectId, 'Етап має належати цьому ж проєкту');
+                return;
+            }
+        }
+
         // Статус "new" (id визначаємо за кодом, щоб не залежати від порядку вставки)
         $statusId = $this->statusIdByCode('new');
 
@@ -88,6 +99,7 @@ class TaskController
             'assignee_id' => !empty($_POST['assignee_id']) ? (int) $_POST['assignee_id'] : null,
             'start_date' => $startDate,
             'due_date' => $dueDate,
+            'milestone_id' => $milestoneId,
         ]);
 
         header("Location: /tasks/{$id}");
@@ -117,6 +129,8 @@ class TaskController
             'comments' => Task::comments($task['id']),
             'statuses' => Task::statuses(),
             'users' => User::allActive(),
+            'milestones' => Milestone::forProject((int) $task['project_id']),
+            'timeLogs' => Task::timeLogsForTask($task['id']),
         ]);
     }
 
@@ -143,6 +157,29 @@ class TaskController
 
         $assigneeId = !empty($_POST['assignee_id']) ? (int) $_POST['assignee_id'] : null;
         Task::updateAssignee((int) $params['id'], $assigneeId, Auth::id());
+        header('Location: /tasks/' . $params['id']);
+        exit;
+    }
+
+    /** Прив'язка задачі до етапу дорожньої карти (або зняття прив'язки). */
+    public function updateMilestone(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+
+        $milestoneId = !empty($_POST['milestone_id']) ? (int) $_POST['milestone_id'] : null;
+
+        // Захист: етап має належати ТОМУ Ж проєкту, що й задача — інакше можна
+        // було б прив'язати задачу до етапу чужого проєкту прямим POST-запитом.
+        if ($milestoneId !== null) {
+            $milestone = Milestone::find($milestoneId);
+            if (!$milestone || (int) $milestone['project_id'] !== (int) $task['project_id']) {
+                header('Location: /tasks/' . $params['id'] . '?error=' . urlencode('Етап має належати цьому ж проєкту'));
+                exit;
+            }
+        }
+
+        Task::updateMilestone((int) $params['id'], $milestoneId, Auth::id());
         header('Location: /tasks/' . $params['id']);
         exit;
     }

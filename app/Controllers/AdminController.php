@@ -61,6 +61,20 @@ class AdminController
         ]);
     }
 
+    /** Загальний облік часу по всій системі — усі проєкти одразу. */
+    public function timeReport(): void
+    {
+        $timeLogs = Task::timeLogsAll();
+        $totalHours = array_sum(array_column($timeLogs, 'hours'));
+
+        View::render('admin/time', [
+            'timeLogs' => $timeLogs,
+            'hoursByUser' => Task::hoursByUserAll(),
+            'hoursByProject' => Task::hoursByProjectAll(),
+            'totalHours' => $totalHours,
+        ]);
+    }
+
     // ---------- Користувачі ----------
 
     public function users(): void

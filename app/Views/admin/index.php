@@ -46,4 +46,13 @@
             </div>
         </div>
     </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">⏱️ Облік часу — усі проєкти</h5>
+                <p class="card-text text-muted small">Загальна сума годин, розбивка по проєктах і учасниках, повний список записів по всій системі.</p>
+                <a href="/admin/time" class="btn btn-outline-secondary btn-sm">Відкрити звіт</a>
+            </div>
+        </div>
+    </div>
 </div>

@@ -20,7 +20,7 @@
                  data-status-id="<?= (int)$status['id'] ?>">
                 <?php foreach ($columnTasks as $task): ?>
                     <div class="card mb-2 kanban-card" draggable="true" data-task-id="<?= (int)$task['id'] ?>">
-                        <div class="card-body p-2">
+                        <div class="card-body p-2 kanban-card-compact">
                             <a href="/tasks/<?= (int)$task['id'] ?>" class="fw-semibold text-decoration-none">
                                 #<?= (int)$task['id'] ?> <?= \App\Core\View::e($task['title']) ?>
                             </a>

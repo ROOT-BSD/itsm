@@ -177,6 +177,23 @@
             });
         }
     });
+
+    // Frappe Gantt за замовчуванням НЕ гарантує видимість "сьогодні" — сам
+    // прокручує ближче до початку всього діапазону задач, тож "сьогодні"
+    // може опинитися далеко за межами видимої області, якщо є давні задачі
+    // в минулому. Тому примусово прокручуємо так, щоб "сьогодні" було
+    // біля лівого краю. setTimeout — щоб спрацювати ПІСЛЯ власного
+    // автоскролу бібліотеки. Клас називається .current-highlight у
+    // Frappe Gantt 1.x (перевірено безпосередньо headless-браузером на
+    // реальній сторінці — той самий фікс, що вже підтверджено на
+    // /admin/gantt, тут лише перенесений на дошку одного проєкту).
+    setTimeout(function () {
+        const container = document.querySelector('.gantt-container');
+        const todayLine = document.querySelector('.current-highlight');
+        if (container && todayLine) {
+            container.scrollLeft = Math.max(0, todayLine.offsetLeft - 40);
+        }
+    }, 150);
 })();
 </script>
 <?php endif; ?>

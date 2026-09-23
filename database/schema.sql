@@ -72,6 +72,24 @@ CREATE TABLE IF NOT EXISTS task_statuses (
     sort_order INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;
 
+-- Етапи/контрольні точки проєкту (дорожня карта, Епік 4).
+-- Створюється ДО tasks, бо tasks.milestone_id посилається на цю таблицю —
+-- MySQL перевіряє існування таблиці FOREIGN KEY одразу при виконанні
+-- CREATE TABLE, тому порядок у файлі важливий.
+CREATE TABLE IF NOT EXISTS milestones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    target_date DATE NULL,
+    status ENUM('planned','in_progress','completed','delayed') NOT NULL DEFAULT 'planned',
+    sort_order INT NOT NULL DEFAULT 0,
+    created_by INT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_id INT NOT NULL,
@@ -85,6 +103,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     assignee_id INT NULL,
     start_date DATE NULL,                  -- дата початку (для діаграми Ганта)
     due_date DATE NULL,
+    milestone_id INT NULL,                 -- прив'язка до етапу/контрольної точки (дорожня карта)
     estimated_hours DECIMAL(6,2) NULL,
     actual_hours DECIMAL(6,2) NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -95,6 +114,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     FOREIGN KEY (status_id) REFERENCES task_statuses(id),
     FOREIGN KEY (author_id) REFERENCES users(id),
     FOREIGN KEY (assignee_id) REFERENCES users(id),
+    FOREIGN KEY (milestone_id) REFERENCES milestones(id) ON DELETE SET NULL,
     FULLTEXT KEY ft_title_description (title, description)
 ) ENGINE=InnoDB;
 

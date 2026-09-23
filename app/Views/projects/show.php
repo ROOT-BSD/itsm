@@ -6,6 +6,8 @@
     <div class="d-flex gap-2">
         <a href="/projects/<?= (int)$project['id'] ?>/board" class="btn btn-outline-secondary">📋 Канбан-дошка</a>
         <a href="/projects/<?= (int)$project['id'] ?>/gantt" class="btn btn-outline-secondary">📊 Діаграма Ганта</a>
+        <a href="/projects/<?= (int)$project['id'] ?>/roadmap" class="btn btn-outline-secondary">🗺️ Дорожня карта</a>
+        <a href="/projects/<?= (int)$project['id'] ?>/time" class="btn btn-outline-secondary">⏱️ Облік часу</a>
         <a href="/projects/<?= (int)$project['id'] ?>/tasks/create" class="btn btn-primary">+ Нова задача</a>
     </div>
 </div>

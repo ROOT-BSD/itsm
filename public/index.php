@@ -38,6 +38,11 @@ $router->post('/projects', [$projects, 'store']);
 $router->get('/projects/{id}', fn($p) => $projects->show($p));
 $router->get('/projects/{id}/board', fn($p) => $projects->board($p));
 $router->get('/projects/{id}/gantt', fn($p) => $projects->gantt($p));
+$router->get('/projects/{id}/roadmap', fn($p) => $projects->roadmap($p));
+$router->get('/projects/{id}/time', fn($p) => $projects->timeReport($p));
+$router->post('/projects/{id}/milestones', fn($p) => $projects->createMilestone($p));
+$router->post('/projects/{id}/milestones/{milestoneId}/status', fn($p) => $projects->updateMilestoneStatus($p));
+$router->post('/projects/{id}/milestones/{milestoneId}/delete', fn($p) => $projects->deleteMilestone($p));
 $router->post('/projects/{id}/relations', fn($p) => $projects->addRelation($p));
 $router->post('/projects/{id}/relations/{relationId}', fn($p) => $projects->updateRelation($p));
 $router->post('/projects/{id}/relations/{relationId}/delete', fn($p) => $projects->deleteRelation($p));
@@ -51,6 +56,7 @@ $router->post('/projects/{project_id}/tasks', fn($p) => $tasks->store($p));
 $router->get('/tasks/{id}', fn($p) => $tasks->show($p));
 $router->post('/tasks/{id}/status', fn($p) => $tasks->updateStatus($p));
 $router->post('/tasks/{id}/dates', fn($p) => $tasks->updateDates($p));
+$router->post('/tasks/{id}/milestone', fn($p) => $tasks->updateMilestone($p));
 $router->post('/tasks/{id}/assignee', fn($p) => $tasks->updateAssignee($p));
 $router->post('/tasks/{id}/comments', fn($p) => $tasks->addComment($p));
 $router->post('/tasks/{id}/time', fn($p) => $tasks->logTime($p));
@@ -74,6 +80,9 @@ $router->get('/admin/board', function () {
 });
 $router->get('/admin/gantt', function () {
     (new AdminController())->gantt();
+});
+$router->get('/admin/time', function () {
+    (new AdminController())->timeReport();
 });
 $router->get('/admin/users', function () {
     (new AdminController())->users();

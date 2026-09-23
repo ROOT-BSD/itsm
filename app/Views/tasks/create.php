@@ -48,5 +48,14 @@
             <?php endforeach; ?>
         </select>
     </div>
+    <div class="mb-3">
+        <label class="form-label">Етап (дорожня карта)</label>
+        <select name="milestone_id" class="form-select">
+            <option value="">— не прив'язано —</option>
+            <?php foreach ($milestones as $m): ?>
+                <option value="<?= (int)$m['id'] ?>"><?= \App\Core\View::e($m['title']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
     <button type="submit" class="btn btn-primary">Створити задачу</button>
 </form>

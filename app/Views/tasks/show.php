@@ -33,6 +33,19 @@
             <button class="btn btn-sm btn-outline-primary" type="submit">Призначити</button>
         </form>
 
+        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/milestone" class="d-flex gap-2 align-items-center mb-2">
+            <?= \App\Core\Csrf::field() ?>
+            <label class="form-label mb-0">Етап:</label>
+            <select name="milestone_id" class="form-select w-auto" onchange="this.form.requestSubmit()">
+                <option value="">— не прив'язано —</option>
+                <?php foreach ($milestones as $m): ?>
+                    <option value="<?= (int)$m['id'] ?>" <?= (int)($task['milestone_id'] ?? 0) === (int)$m['id'] ? 'selected' : '' ?>>
+                        <?= \App\Core\View::e($m['title']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/status" class="d-flex gap-2 align-items-center">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Статус:</label>
@@ -67,6 +80,24 @@
                 <button class="btn btn-sm btn-primary" type="submit">Додати</button>
             </div>
         </form>
+
+        <?php if (!empty($timeLogs)): ?>
+            <table class="table table-sm mt-3 mb-0">
+                <thead><tr><th>Дата</th><th>Хто</th><th>Годин</th><th>Категорія</th></tr></thead>
+                <tbody>
+                <?php foreach ($timeLogs as $log): ?>
+                    <tr>
+                        <td><?= \App\Core\View::e($log['log_date']) ?></td>
+                        <td><?= \App\Core\View::e($log['user_name']) ?></td>
+                        <td><?= \App\Core\View::e((string)$log['hours']) ?></td>
+                        <td class="text-muted"><?= \App\Core\View::e($log['activity_category'] ?? '—') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <p class="text-muted small mt-3 mb-0">Ще жодного запису обліку часу для цієї задачі.</p>
+        <?php endif; ?>
     </div>
 </div>
 

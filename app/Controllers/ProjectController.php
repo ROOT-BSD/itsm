@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\View;
+use App\Models\Milestone;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
@@ -15,6 +16,9 @@ class ProjectController
 
     /** Допустимі типи зв'язків між задачами (ENUM у БД). */
     private const RELATION_TYPES = ['blocks', 'blocked_by', 'duplicates', 'related'];
+
+    /** Допустимі статуси етапу (ENUM у БД). */
+    private const MILESTONE_STATUSES = ['planned', 'in_progress', 'completed', 'delayed'];
 
     public function index(): void
     {
@@ -104,6 +108,112 @@ class ProjectController
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ]);
+    }
+
+    /** Дорожня карта проєкту: етапи/контрольні точки з прив'язаними задачами. */
+    public function roadmap(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+
+        $milestones = Milestone::forProject($project['id']);
+        $taskCounts = Milestone::taskCountsByMilestone($project['id']);
+
+        $tasksByMilestone = [];
+        foreach ($milestones as $milestone) {
+            $tasksByMilestone[$milestone['id']] = Task::forMilestone($milestone['id']);
+        }
+
+        View::render('projects/roadmap', [
+            'project' => $project,
+            'milestones' => $milestones,
+            'taskCounts' => $taskCounts,
+            'tasksByMilestone' => $tasksByMilestone,
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    /** Зведений облік часу по всьому проєкту — усі записи одразу + сума по кожному користувачу. */
+    public function timeReport(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+
+        $timeLogs = Task::timeLogsForProject($project['id']);
+        $totalHours = array_sum(array_column($timeLogs, 'hours'));
+
+        View::render('projects/time', [
+            'project' => $project,
+            'timeLogs' => $timeLogs,
+            'hoursByUser' => Task::hoursByUserForProject($project['id']),
+            'totalHours' => $totalHours,
+        ]);
+    }
+
+    /** Створення нового етапу/контрольної точки. */
+    public function createMilestone(array $params): void
+    {
+        Auth::requireLogin();
+        $this->requireManagerRole();
+        $project = $this->requireProjectAccess((int) $params['id']);
+
+        $title = trim($_POST['title'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $targetDate = $_POST['target_date'] ?? '';
+
+        if ($title === '') {
+            header('Location: /projects/' . $project['id'] . '/roadmap?error=' . urlencode('Назва етапу обов\'язкова'));
+            exit;
+        }
+
+        Milestone::create($project['id'], $title, $description ?: null, $targetDate ?: null, Auth::id());
+        header('Location: /projects/' . $project['id'] . '/roadmap?success=' . urlencode('Етап додано'));
+        exit;
+    }
+
+    /** Зміна статусу етапу. */
+    public function updateMilestoneStatus(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+
+        $milestoneId = (int) $params['milestoneId'];
+        $status = $_POST['status'] ?? '';
+
+        if (!in_array($status, self::MILESTONE_STATUSES, true)) {
+            header('Location: /projects/' . $project['id'] . '/roadmap?error=' . urlencode('Некоректний статус етапу'));
+            exit;
+        }
+
+        $milestone = Milestone::find($milestoneId);
+        if (!$milestone || (int) $milestone['project_id'] !== $project['id']) {
+            header('Location: /projects/' . $project['id'] . '/roadmap?error=' . urlencode('Етап не знайдено'));
+            exit;
+        }
+
+        Milestone::updateStatus($milestoneId, $status, Auth::id());
+        header('Location: /projects/' . $project['id'] . '/roadmap?success=' . urlencode('Статус етапу оновлено'));
+        exit;
+    }
+
+    /** Видалення етапу (задачі, прив'язані до нього, лишаються — просто втрачають прив'язку). */
+    public function deleteMilestone(array $params): void
+    {
+        Auth::requireLogin();
+        $this->requireManagerRole();
+        $project = $this->requireProjectAccess((int) $params['id']);
+
+        $milestoneId = (int) $params['milestoneId'];
+        $milestone = Milestone::find($milestoneId);
+        if (!$milestone || (int) $milestone['project_id'] !== $project['id']) {
+            header('Location: /projects/' . $project['id'] . '/roadmap?error=' . urlencode('Етап не знайдено'));
+            exit;
+        }
+
+        Milestone::delete($milestoneId, Auth::id());
+        header('Location: /projects/' . $project['id'] . '/roadmap?success=' . urlencode('Етап "' . $milestone['title'] . '" видалено'));
+        exit;
     }
 
     /** Додавання зв'язку залежності між двома задачами одного проєкту (з форми на сторінці Ганта). */
