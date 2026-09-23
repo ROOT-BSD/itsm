@@ -516,6 +516,13 @@ else
             ok "storage/uploads: права 770 (читання/запис для веб-сервера)"
         fi
 
+        # Кеш метрик шрифтів для PDF-звітів (не обов'язково, але прискорює
+        # генерацію — без права запису tFPDF просто рахує метрики щоразу).
+        if [ -d "${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont" ]; then
+            chmod -R 770 "${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
+            ok "app/Vendor/tfpdf/font/unifont: права 770 (кеш метрик шрифтів PDF)"
+        fi
+
         # .env — найчутливіший файл, лише власник має право читати
         if [ -f "${SCRIPT_DIR}/.env" ]; then
             chmod 600 "${SCRIPT_DIR}/.env"

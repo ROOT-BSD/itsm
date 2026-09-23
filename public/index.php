@@ -7,6 +7,7 @@ use App\Core\Router;
 use App\Controllers\AdminController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
+use App\Controllers\ReportController;
 use App\Controllers\TicketController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectController;
@@ -29,6 +30,11 @@ $router->get('/', [$dashboard, 'index']);
 // --- Календар ---
 $calendar = new CalendarController();
 $router->get('/calendar', [$calendar, 'index']);
+
+// --- Звіти ---
+$reports = new ReportController();
+$router->get('/reports', [$reports, 'index']);
+$router->get('/reports/pdf', [$reports, 'generatePdf']);
 
 // --- Проєкти ---
 $projects = new ProjectController();

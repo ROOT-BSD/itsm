@@ -147,6 +147,12 @@ class ProjectController
             'project' => $project,
             'timeLogs' => $timeLogs,
             'hoursByUser' => Task::hoursByUserForProject($project['id']),
+            'hoursByDay' => Task::hoursByPeriodForProject($project['id'], 'day'),
+            'hoursByWeek' => Task::hoursByPeriodForProject($project['id'], 'week'),
+            'hoursByMonth' => Task::hoursByPeriodForProject($project['id'], 'month'),
+            'hoursByDayUser' => Task::hoursByPeriodAndUserForProject($project['id'], 'day'),
+            'hoursByWeekUser' => Task::hoursByPeriodAndUserForProject($project['id'], 'week'),
+            'hoursByMonthUser' => Task::hoursByPeriodAndUserForProject($project['id'], 'month'),
             'totalHours' => $totalHours,
         ]);
     }

@@ -71,6 +71,15 @@ class AdminController
             'timeLogs' => $timeLogs,
             'hoursByUser' => Task::hoursByUserAll(),
             'hoursByProject' => Task::hoursByProjectAll(),
+            'hoursByDay' => Task::hoursByPeriodAll('day'),
+            'hoursByWeek' => Task::hoursByPeriodAll('week'),
+            'hoursByMonth' => Task::hoursByPeriodAll('month'),
+            'hoursByDayUser' => Task::hoursByPeriodAndUserAll('day'),
+            'hoursByWeekUser' => Task::hoursByPeriodAndUserAll('week'),
+            'hoursByMonthUser' => Task::hoursByPeriodAndUserAll('month'),
+            'hoursByDayProject' => Task::hoursByPeriodAndProjectAll('day'),
+            'hoursByWeekProject' => Task::hoursByPeriodAndProjectAll('week'),
+            'hoursByMonthProject' => Task::hoursByPeriodAndProjectAll('month'),
             'totalHours' => $totalHours,
         ]);
     }

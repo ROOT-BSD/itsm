@@ -404,6 +404,172 @@ class Task
         )->fetchAll();
     }
 
+    /**
+     * Розбивка годин по днях/тижнях/місяцях для ОДНОГО проєкту.
+     * $period: 'day' | 'week' | 'month'.
+     */
+    public static function hoursByPeriodForProject(int $projectId, string $period): array
+    {
+        [$selectExpr, $groupExpr] = self::periodSql($period);
+
+        $stmt = Database::connection()->prepare(
+            "SELECT {$selectExpr} AS period_label, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN tasks t ON t.id = tl.task_id
+             WHERE t.project_id = :project_id
+             GROUP BY {$groupExpr}
+             ORDER BY MIN(tl.log_date) DESC"
+        );
+        $stmt->execute(['project_id' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Те саме, але по всій системі одразу (для /admin/time). */
+    public static function hoursByPeriodAll(string $period): array
+    {
+        [$selectExpr, $groupExpr] = self::periodSql($period);
+
+        return Database::connection()->query(
+            "SELECT {$selectExpr} AS period_label, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             GROUP BY {$groupExpr}
+             ORDER BY MIN(tl.log_date) DESC"
+        )->fetchAll();
+    }
+
+    /**
+     * SQL-вирази для групування записів обліку часу за період.
+     * Тиждень — ISO 8601 (понеділок — перший день, режим 3 у WEEK()),
+     * щоб збігалося зі звичним "робочим тижнем", а не американським.
+     *
+     * @return array{0: string, 1: string} [вираз для SELECT, вираз для GROUP BY]
+     */
+    /**
+     * Записи обліку часу за довільними фільтрами — основа для сторінки
+     * "Звіти" (PDF). Усі фільтри необов'язкові, крім діапазону дат.
+     * Видимість: не-адмін бачить лише записи з проєктів, де він автор
+     * або відповідальний (та сама логіка, що й усюди в системі).
+     *
+     * @param array{project_id?: int, log_user_id?: int, category?: string} $filters
+     */
+    public static function timeLogsFilteredReport(string $dateFrom, string $dateTo, array $filters, int $viewerId, bool $isAdmin): array
+    {
+        $sql = "SELECT tl.*, u.full_name AS user_name, t.id AS task_id, t.title AS task_title,
+                       p.id AS project_id, p.name AS project_name
+                FROM time_logs tl
+                JOIN users u ON u.id = tl.user_id
+                JOIN tasks t ON t.id = tl.task_id
+                JOIN projects p ON p.id = t.project_id
+                WHERE tl.log_date BETWEEN :date_from AND :date_to";
+        $params = ['date_from' => $dateFrom, 'date_to' => $dateTo];
+
+        if (!empty($filters['project_id'])) {
+            $sql .= ' AND p.id = :project_id';
+            $params['project_id'] = $filters['project_id'];
+        }
+        if (!empty($filters['log_user_id'])) {
+            $sql .= ' AND tl.user_id = :log_user_id';
+            $params['log_user_id'] = $filters['log_user_id'];
+        }
+        if (!empty($filters['category'])) {
+            $sql .= ' AND tl.activity_category LIKE :category';
+            $params['category'] = '%' . $filters['category'] . '%';
+        }
+        if (!$isAdmin) {
+            $sql .= ' AND (p.created_by = :vis_uid1 OR p.responsible_user_id = :vis_uid2)';
+            $params['vis_uid1'] = $viewerId;
+            $params['vis_uid2'] = $viewerId;
+        }
+
+        $sql .= ' ORDER BY tl.log_date ASC, p.name ASC, t.id ASC';
+
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    /** Список унікальних категорій активності, вже використаних у видимих проєктах — для підказки у формі звіту. */
+    public static function distinctCategoriesVisibleTo(int $viewerId, bool $isAdmin): array
+    {
+        $sql = "SELECT DISTINCT tl.activity_category
+                FROM time_logs tl
+                JOIN tasks t ON t.id = tl.task_id
+                JOIN projects p ON p.id = t.project_id
+                WHERE tl.activity_category IS NOT NULL AND tl.activity_category <> ''";
+        $params = [];
+
+        if (!$isAdmin) {
+            $sql .= ' AND (p.created_by = :vis_uid1 OR p.responsible_user_id = :vis_uid2)';
+            $params['vis_uid1'] = $viewerId;
+            $params['vis_uid2'] = $viewerId;
+        }
+        $sql .= ' ORDER BY tl.activity_category ASC';
+
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(), 'activity_category');
+    }
+
+    private static function periodSql(string $period): array
+    {
+        return match ($period) {
+            'day' => ["DATE_FORMAT(tl.log_date, '%d.%m.%Y')", 'tl.log_date'],
+            'week' => [
+                "CONCAT(YEAR(tl.log_date), '-W', LPAD(WEEK(tl.log_date, 3), 2, '0'))",
+                'YEAR(tl.log_date), WEEK(tl.log_date, 3)',
+            ],
+            'month' => ["DATE_FORMAT(tl.log_date, '%m.%Y')", "DATE_FORMAT(tl.log_date, '%Y-%m')"],
+            default => throw new \InvalidArgumentException("Невідомий період: {$period}"),
+        };
+    }
+
+    /** Розбивка годин по періоду ТА користувачу одночасно, для одного проєкту. */
+    public static function hoursByPeriodAndUserForProject(int $projectId, string $period): array
+    {
+        [$selectExpr, $groupExpr] = self::periodSql($period);
+
+        $stmt = Database::connection()->prepare(
+            "SELECT {$selectExpr} AS period_label, u.full_name AS user_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             JOIN tasks t ON t.id = tl.task_id
+             WHERE t.project_id = :project_id
+             GROUP BY {$groupExpr}, tl.user_id, u.full_name
+             ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
+        );
+        $stmt->execute(['project_id' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Те саме, але по всій системі (для /admin/time). */
+    public static function hoursByPeriodAndUserAll(string $period): array
+    {
+        [$selectExpr, $groupExpr] = self::periodSql($period);
+
+        return Database::connection()->query(
+            "SELECT {$selectExpr} AS period_label, u.full_name AS user_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN users u ON u.id = tl.user_id
+             GROUP BY {$groupExpr}, tl.user_id, u.full_name
+             ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
+        )->fetchAll();
+    }
+
+    /** Розбивка годин по періоду ТА проєкту одночасно, по всій системі (для /admin/time). */
+    public static function hoursByPeriodAndProjectAll(string $period): array
+    {
+        [$selectExpr, $groupExpr] = self::periodSql($period);
+
+        return Database::connection()->query(
+            "SELECT {$selectExpr} AS period_label, p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
+             FROM time_logs tl
+             JOIN tasks t ON t.id = tl.task_id
+             JOIN projects p ON p.id = t.project_id
+             GROUP BY {$groupExpr}, p.id, p.name
+             ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
+        )->fetchAll();
+    }
+
     public static function types(): array
     {
         return Database::connection()->query('SELECT * FROM task_types ORDER BY id')->fetchAll();
