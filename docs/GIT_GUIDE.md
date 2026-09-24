@@ -1,6 +1,6 @@
 # Гайд Git — ITSM System
 
-*Версія застосунку: 0.1.0*
+*Версія застосунку: 0.1.1*
 
 Проєкт наразі поставляється **без** git-репозиторію (свідомо — щоб не завантажувати зайве на сервер). Ця інструкція — як самостійно ініціалізувати git та відправити код на GitHub (або інший git-хостинг).
 
@@ -53,7 +53,7 @@ cd itsm-system
 git init
 git add .
 git status   # перевірте: .env НЕ повинен бути у списку!
-git commit -m "Initial commit: ITSM System v0.1.0"
+git commit -m "Initial commit: ITSM System v$(cat VERSION)"
 ```
 
 ---

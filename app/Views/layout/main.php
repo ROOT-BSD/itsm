@@ -33,7 +33,9 @@ use App\Core\Auth;
                 <?php endif; ?>
             </ul>
             <span class="navbar-text text-light me-3">
-                <?= \App\Core\View::e(Auth::name()) ?> (<?= \App\Core\View::e(Auth::role()) ?>)
+                <a href="/profile" class="text-light text-decoration-none">
+                    <?= \App\Core\View::e(Auth::name()) ?> (<?= \App\Core\View::e(Auth::role()) ?>)
+                </a>
             </span>
             <a href="/logout" class="btn btn-outline-light btn-sm">Вийти</a>
         </div>

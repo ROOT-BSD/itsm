@@ -107,3 +107,8 @@
 .roadmap-progress {
     height: 6px;
 }
+
+/* Особистий кабінет (profile/index.php) — колонка підписів у таблиці даних */
+.profile-table-label {
+    width: 40%;
+}

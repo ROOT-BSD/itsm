@@ -8,6 +8,7 @@ use App\Controllers\AdminController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
+use App\Controllers\ProfileController;
 use App\Controllers\TicketController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectController;
@@ -35,6 +36,11 @@ $router->get('/calendar', [$calendar, 'index']);
 $reports = new ReportController();
 $router->get('/reports', [$reports, 'index']);
 $router->get('/reports/pdf', [$reports, 'generatePdf']);
+
+// --- Особистий кабінет ---
+$profile = new ProfileController();
+$router->get('/profile', [$profile, 'index']);
+$router->post('/profile/password', [$profile, 'updatePassword']);
 
 // --- Проєкти ---
 $projects = new ProjectController();
