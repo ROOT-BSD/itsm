@@ -159,7 +159,8 @@ CREATE TABLE IF NOT EXISTS time_logs (
     comment VARCHAR(255),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_time_logs_log_date (log_date)  -- звіти обліку часу фільтрують і групують по цій колонці на кожному запиті
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS audit_log (
