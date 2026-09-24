@@ -119,13 +119,6 @@ class Project
         Audit::log('project', $id, 'visibility_changed_to_' . $visibility, $actingUserId);
     }
 
-    public static function updateStatus(int $id, string $status, int $userId): void
-    {
-        $stmt = Database::connection()->prepare('UPDATE projects SET status = :status WHERE id = :id');
-        $stmt->execute(['status' => $status, 'id' => $id]);
-        Audit::log('project', $id, 'status_changed_to_' . $status, $userId);
-    }
-
     /**
      * Повне видалення проєкту разом з усіма пов'язаними задачами, коментарями,
      * вкладеннями, обліком часу тощо (забезпечується ON DELETE CASCADE у схемі БД).

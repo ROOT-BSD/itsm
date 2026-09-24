@@ -121,7 +121,10 @@ class ProjectController
 
         $tasksByMilestone = [];
         foreach ($milestones as $milestone) {
-            $tasksByMilestone[$milestone['id']] = Task::forMilestone($milestone['id']);
+            $tasksByMilestone[$milestone['id']] = [];
+        }
+        foreach (Task::forProjectMilestones($project['id']) as $task) {
+            $tasksByMilestone[$task['milestone_id']][] = $task;
         }
 
         View::render('projects/roadmap', [

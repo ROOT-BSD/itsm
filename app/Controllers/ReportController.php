@@ -21,6 +21,9 @@ class ReportController
             'categories' => Task::distinctCategoriesVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
             'error' => $_GET['error'] ?? null,
             'selectedProjectId' => !empty($_GET['project_id']) ? (int) $_GET['project_id'] : null,
+            'currentYear' => (int) date('Y'),
+            'currentWeek' => (int) date('W'),
+            'currentMonth' => (int) date('n'),
         ]);
     }
 

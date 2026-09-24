@@ -7,10 +7,6 @@ use App\Core\Database;
 class Task
 {
     /**
-     * Задачі з терміном виконання у заданому діапазоні дат, видимі користувачу
-     * (адмін/автор проєкту/відповідальний за проєкт) — для сторінки «Календар».
-     */
-    /**
      * Задачі, чий діапазон [start_date; due_date] перетинається із заданим
      * періодом (для календаря) — на відміну від простого "due_date BETWEEN",
      * тут враховується й дата початку, щоб довга задача показувалась на
@@ -42,6 +38,7 @@ class Task
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
+
     public static function forProject(int $projectId): array
     {
         $stmt = Database::connection()->prepare(
@@ -156,18 +153,23 @@ class Task
         Audit::log('task', $id, 'milestone_changed', $actingUserId, ['milestone_id' => $milestoneId]);
     }
 
-    /** Задачі, прив'язані до конкретного етапу — для відображення на дорожній карті. */
-    public static function forMilestone(int $milestoneId): array
+    /**
+     * Усі задачі проєкту, прив'язані до якогось етапу, — ОДНИМ запитом,
+     * для дорожньої карти. Раніше викликалось по одному запиту на кожен
+     * етап (N+1) — при 10+ етапах це 10+ окремих звернень до БД замість
+     * одного; групування по milestone_id тепер робиться в PHP.
+     */
+    public static function forProjectMilestones(int $projectId): array
     {
         $stmt = Database::connection()->prepare(
-            "SELECT t.id, t.title, t.priority, ts.name AS status_name, ts.is_closed, asg.full_name AS assignee_name
+            "SELECT t.id, t.title, t.priority, t.milestone_id, ts.name AS status_name, ts.is_closed, asg.full_name AS assignee_name
              FROM tasks t
              JOIN task_statuses ts ON ts.id = t.status_id
              LEFT JOIN users asg ON asg.id = t.assignee_id
-             WHERE t.milestone_id = :milestone_id
+             WHERE t.project_id = :project_id AND t.milestone_id IS NOT NULL
              ORDER BY ts.is_closed ASC, t.created_at ASC"
         );
-        $stmt->execute(['milestone_id' => $milestoneId]);
+        $stmt->execute(['project_id' => $projectId]);
         return $stmt->fetchAll();
     }
 
@@ -438,13 +440,6 @@ class Task
     }
 
     /**
-     * SQL-вирази для групування записів обліку часу за період.
-     * Тиждень — ISO 8601 (понеділок — перший день, режим 3 у WEEK()),
-     * щоб збігалося зі звичним "робочим тижнем", а не американським.
-     *
-     * @return array{0: string, 1: string} [вираз для SELECT, вираз для GROUP BY]
-     */
-    /**
      * Записи обліку часу за довільними фільтрами — основа для сторінки
      * "Звіти" (PDF). Усі фільтри необов'язкові, крім діапазону дат.
      * Видимість: не-адмін бачить лише записи з проєктів, де він автор
@@ -510,6 +505,13 @@ class Task
         return array_column($stmt->fetchAll(), 'activity_category');
     }
 
+    /**
+     * SQL-вирази для групування записів обліку часу за період.
+     * Тиждень — ISO 8601 (понеділок — перший день, режим 3 у WEEK()),
+     * щоб збігалося зі звичним "робочим тижнем", а не американським.
+     *
+     * @return array{0: string, 1: string} [вираз для SELECT, вираз для GROUP BY]
+     */
     private static function periodSql(string $period): array
     {
         return match ($period) {
