@@ -9,11 +9,15 @@ use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Audit;
+use App\Models\Setting;
 
 class AdminController
 {
     /** Допустимі значення видимості проєкту (ENUM у БД) — той самий список, що й у ProjectController. */
     private const VISIBILITIES = ['public', 'private', 'restricted'];
+
+    /** Допустимі значення статусу проєкту (ENUM у БД). */
+    private const STATUSES = ['active', 'archived', 'closed'];
 
     public function __construct()
     {
@@ -314,7 +318,81 @@ class AdminController
         exit;
     }
 
+    /** Статус проєкту (активний/архівний/закритий) — попередньо був недоступний через UI, змінювався лише напряму в БД. */
+    public function updateProjectStatus(array $params): void
+    {
+        $projectId = (int) $params['id'];
+        $status = $_POST['status'] ?? '';
+
+        $project = Project::find($projectId);
+        if (!$project) {
+            header('Location: /admin/projects?error=' . urlencode('Проєкт не знайдено'));
+            exit;
+        }
+        if (!in_array($status, self::STATUSES, true)) {
+            header('Location: /admin/projects?error=' . urlencode('Некоректне значення статусу'));
+            exit;
+        }
+
+        Project::updateStatus($projectId, $status, Auth::id());
+        header('Location: /admin/projects?success=' . urlencode('Статус проєкту "' . $project['name'] . '" оновлено'));
+        exit;
+    }
+
     // ---------- Черги тікетів ----------
+
+    /** Налаштування блокування облікового запису після невдалих спроб входу. */
+    public function securitySettings(): void
+    {
+        View::render('admin/security_settings', [
+            'maxAttempts' => (int) Setting::get('max_login_attempts', '5'),
+            'lockoutMinutes' => (int) Setting::get('lockout_minutes', '15'),
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    public function updateSecuritySettings(): void
+    {
+        $maxAttempts = (int) ($_POST['max_login_attempts'] ?? 0);
+        $lockoutMinutes = (int) ($_POST['lockout_minutes'] ?? 0);
+
+        if ($maxAttempts < 1 || $maxAttempts > 20) {
+            header('Location: /admin/security?error=' . urlencode('Кількість спроб має бути від 1 до 20'));
+            exit;
+        }
+        if ($lockoutMinutes < 1 || $lockoutMinutes > 1440) {
+            header('Location: /admin/security?error=' . urlencode('Тривалість блокування має бути від 1 до 1440 хвилин (24 год)'));
+            exit;
+        }
+
+        Setting::set('max_login_attempts', (string) $maxAttempts);
+        Setting::set('lockout_minutes', (string) $lockoutMinutes);
+        Audit::log('app_settings', 0, 'login_lockout_settings_changed', Auth::id(), [
+            'max_login_attempts' => $maxAttempts,
+            'lockout_minutes' => $lockoutMinutes,
+        ]);
+
+        header('Location: /admin/security?success=' . urlencode('Налаштування збережено'));
+        exit;
+    }
+
+    /** Ручне зняття блокування конкретного користувача (без очікування таймауту). */
+    public function unlockUser(array $params): void
+    {
+        $userId = (int) $params['id'];
+        $user = User::findById($userId);
+        if (!$user) {
+            header('Location: /admin/users?error=' . urlencode('Користувача не знайдено'));
+            exit;
+        }
+
+        User::resetFailedLogins($userId);
+        Audit::log('user', $userId, 'unlocked_by_admin', Auth::id());
+
+        header('Location: /admin/users?success=' . urlencode('Блокування знято для "' . $user['full_name'] . '"'));
+        exit;
+    }
 
     public function queues(): void
     {

@@ -37,3 +37,8 @@ INSERT INTO sla_policies (queue_id, first_response_minutes, resolution_minutes) 
 -- ОБОВ'ЯЗКОВО змінити пароль після першого входу перед продуктивним використанням!
 INSERT INTO users (full_name, email, password_hash, auth_source, role_id, is_active) VALUES
 ('Адміністратор Системи', 'admin@example.local', '$2y$10$2gdKeHfbl1DRzfOqR.udPuzCCG7TVG2OjZ5io2btaU5ezmeSzlTuu', 'local', 1, 1);
+
+-- Блокування облікового запису після невдалих спроб входу (Адмін-панель → Безпека входу).
+INSERT INTO app_settings (setting_key, setting_value) VALUES
+('max_login_attempts', '5'),
+('lockout_minutes', '15');

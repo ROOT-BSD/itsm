@@ -24,9 +24,19 @@ CREATE TABLE IF NOT EXISTS users (
     auth_source ENUM('local','ad') NOT NULL DEFAULT 'local',
     role_id INT NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    failed_login_attempts INT NOT NULL DEFAULT 0,  -- скидається до 0 при вдалому вході
+    locked_until DATETIME NULL,                    -- NULL = не заблоковано; блокування завжди прив'язане до КОНКРЕТНОГО користувача, не IP
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (role_id) REFERENCES roles(id)
+) ENGINE=InnoDB;
+
+-- Загальносистемні налаштування (ключ-значення) — зараз лише параметри
+-- блокування після невдалих спроб входу, але таблиця зроблена узагальненою
+-- для майбутніх налаштувань без нової міграції на кожен додатковий параметр.
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB;
 
 -- ---------- Проєкти (Епік 2) ----------
@@ -171,7 +181,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     user_id INT NULL,
     changes JSON NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_audit_log_created_at (created_at)  -- сторінка перегляду журналу сортує й фільтрує за датою
 ) ENGINE=InnoDB;
 
 -- ---------- Service Desk / тікети для всіх співробітників (Епік 12) ----------

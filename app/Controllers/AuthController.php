@@ -31,7 +31,7 @@ class AuthController
             exit;
         }
 
-        header('Location: /login?error=' . urlencode('Невірний email або пароль'));
+        header('Location: /login?error=' . urlencode(Auth::lastError() ?? 'Невірний email або пароль'));
         exit;
     }
 

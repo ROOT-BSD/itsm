@@ -23,11 +23,22 @@
     <tbody>
     <?php
     $visibilityLabels = ['public' => 'Публічний', 'private' => 'Приватний', 'restricted' => 'Обмежений доступ'];
+    $statusLabels = ['active' => 'Активний', 'archived' => 'Архівний', 'closed' => 'Закритий'];
+    $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
     ?>
     <?php foreach ($projects as $p): ?>
         <tr>
             <td><a href="/projects/<?= (int)$p['id'] ?>"><?= \App\Core\View::e($p['name']) ?></a></td>
-            <td><span class="badge bg-secondary"><?= \App\Core\View::e($p['status']) ?></span></td>
+            <td>
+                <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/status" class="d-flex gap-1">
+                    <?= \App\Core\Csrf::field() ?>
+                    <select name="status" class="form-select form-select-sm bg-<?= $statusColors[$p['status']] ?? 'secondary' ?> text-white" onchange="this.form.requestSubmit()">
+                        <?php foreach ($statusLabels as $code => $label): ?>
+                            <option value="<?= $code ?>" <?= $p['status'] === $code ? 'selected' : '' ?>><?= $label ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </td>
             <td>
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/visibility" class="d-flex gap-1">
                     <?= \App\Core\Csrf::field() ?>

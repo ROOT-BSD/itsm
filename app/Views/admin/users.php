@@ -34,6 +34,9 @@
                 <?php else: ?>
                     <span class="badge bg-secondary">Деактивовано</span>
                 <?php endif; ?>
+                <?php if (!empty($u['locked_until']) && strtotime($u['locked_until']) > time()): ?>
+                    <br><span class="badge bg-danger mt-1">Заблоковано до <?= \App\Core\View::e(date('H:i d.m', strtotime($u['locked_until']))) ?></span>
+                <?php endif; ?>
             </td>
             <td>
                 <?php if ($u['auth_source'] === 'local'): ?>
@@ -52,6 +55,13 @@
             </td>
             <td class="text-nowrap">
                 <a href="/admin/users/<?= (int)$u['id'] ?>/edit" class="btn btn-sm btn-outline-secondary">Редагувати</a>
+
+                <?php if (!empty($u['locked_until']) && strtotime($u['locked_until']) > time()): ?>
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/unlock" class="d-inline">
+    <?= \App\Core\Csrf::field() ?>
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Зняти блокування</button>
+                </form>
+                <?php endif; ?>
 
                 <?php if ((int)$u['id'] !== \App\Core\Auth::id()): ?>
                 <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/active" class="d-inline">

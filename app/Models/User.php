@@ -76,6 +76,34 @@ class User
         $stmt->execute(['active' => $isActive ? 1 : 0, 'id' => $userId]);
     }
 
+    /** Реєструє невдалу спробу входу й повертає новий лічильник — блокування прив'язане саме до цього користувача. */
+    public static function registerFailedLogin(int $userId): int
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = :id'
+        );
+        $stmt->execute(['id' => $userId]);
+
+        $stmt = Database::connection()->prepare('SELECT failed_login_attempts FROM users WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public static function lockUntil(int $userId, string $lockedUntil): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE users SET locked_until = :locked_until WHERE id = :id');
+        $stmt->execute(['locked_until' => $lockedUntil, 'id' => $userId]);
+    }
+
+    /** Скидає лічильник невдалих спроб і знімає блокування — викликається і після вдалого входу, і вручну адміністратором. */
+    public static function resetFailedLogins(int $userId): void
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = :id'
+        );
+        $stmt->execute(['id' => $userId]);
+    }
+
     public static function roles(): array
     {
         return Database::connection()->query('SELECT * FROM roles ORDER BY id')->fetchAll();

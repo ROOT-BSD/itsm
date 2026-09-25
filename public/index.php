@@ -5,6 +5,7 @@ require __DIR__ . '/../app/autoload.php';
 use App\Core\Auth;
 use App\Core\Router;
 use App\Controllers\AdminController;
+use App\Controllers\AuditController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
@@ -96,6 +97,9 @@ $router->get('/admin/gantt', function () {
 $router->get('/admin/time', function () {
     (new AdminController())->timeReport();
 });
+$router->get('/admin/audit', function () {
+    (new AuditController())->index();
+});
 $router->get('/admin/users', function () {
     (new AdminController())->users();
 });
@@ -128,6 +132,18 @@ $router->post('/admin/projects/{id}/delete', function ($p) {
 });
 $router->post('/admin/projects/{id}/visibility', function ($p) {
     (new AdminController())->updateProjectVisibility($p);
+});
+$router->post('/admin/projects/{id}/status', function ($p) {
+    (new AdminController())->updateProjectStatus($p);
+});
+$router->get('/admin/security', function () {
+    (new AdminController())->securitySettings();
+});
+$router->post('/admin/security', function () {
+    (new AdminController())->updateSecuritySettings();
+});
+$router->post('/admin/users/{id}/unlock', function ($p) {
+    (new AdminController())->unlockUser($p);
 });
 $router->get('/admin/queues', function () {
     (new AdminController())->queues();

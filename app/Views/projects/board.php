@@ -8,19 +8,19 @@
 
 <div id="kanban-error" class="alert alert-danger d-none"></div>
 
-<div class="d-flex gap-3 overflow-auto pb-3" id="kanban-board">
+<div class="d-flex gap-2" id="kanban-board">
     <?php foreach ($statuses as $status): ?>
         <?php $columnTasks = $tasksByStatus[$status['id']] ?? []; ?>
-        <div class="flex-shrink-0 kanban-column-wrapper">
-            <div class="bg-light rounded p-2 mb-2 d-flex justify-content-between align-items-center border">
-                <strong><?= \App\Core\View::e($status['name']) ?></strong>
-                <span class="badge bg-secondary kanban-count"><?= count($columnTasks) ?></span>
+        <div class="kanban-column-wrapper">
+            <div class="bg-light rounded p-2 mb-2 d-flex justify-content-between align-items-center border kanban-column-header">
+                <strong class="text-truncate"><?= \App\Core\View::e($status['name']) ?></strong>
+                <span class="badge bg-secondary kanban-count flex-shrink-0"><?= count($columnTasks) ?></span>
             </div>
             <div class="kanban-column border rounded p-2 bg-white"
                  data-status-id="<?= (int)$status['id'] ?>">
                 <?php foreach ($columnTasks as $task): ?>
                     <div class="card mb-2 kanban-card" draggable="true" data-task-id="<?= (int)$task['id'] ?>">
-                        <div class="card-body p-2 kanban-card-compact">
+                        <div class="card-body p-1 kanban-card-compact">
                             <a href="/tasks/<?= (int)$task['id'] ?>" class="fw-semibold text-decoration-none">
                                 #<?= (int)$task['id'] ?> <?= \App\Core\View::e($task['title']) ?>
                             </a>
@@ -104,7 +104,7 @@
     });
 
     function updateColumnCounts() {
-        board.querySelectorAll('.flex-shrink-0').forEach(function (col) {
+        board.querySelectorAll('.kanban-column-wrapper').forEach(function (col) {
             const count = col.querySelectorAll('.kanban-card').length;
             const badge = col.querySelector('.kanban-count');
             if (badge) badge.textContent = count;

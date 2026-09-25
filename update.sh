@@ -9,8 +9,10 @@
 #   4. Накочує нову колонку start_date для задач (діаграма Ганта), якщо її ще немає
 #   5. Накочує таблицю milestones для дорожньої карти, якщо її ще немає
 #   6. Додає індекс на time_logs.log_date (прискорює звіти обліку часу), якщо його ще немає
-#   7. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   8. Перевстановлює права доступу на файли для веб-сервера
+#   7. Додає індекс на audit_log.created_at (прискорює журнал аудиту), якщо його ще немає
+#   8. Додає таблицю/колонки для блокування входу після невдалих спроб пароля, якщо їх ще немає
+#   9. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   10. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -226,8 +228,64 @@ else
     ok "Індекс idx_time_logs_log_date вже є — нічого робити не треба"
 fi
 
-# ---------- 7. Очищення застарілого кешу PDF-шрифтів ----------
-section "7. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 7. Індекс на audit_log.created_at ----------
+section "7. Перевірка індексу для журналу аудиту"
+
+AUDIT_INDEX_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_log' AND INDEX_NAME = 'idx_audit_log_created_at';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${AUDIT_INDEX_EXISTS:-0}" -eq 0 ]; then
+    info "Індекс idx_audit_log_created_at не знайдено — додаю (прискорює сторінку /admin/audit)..."
+
+    MIGRATION_AUDIT_IDX="${SCRIPT_DIR}/database/migrations/006_add_audit_log_date_index.sql"
+    if [ ! -f "$MIGRATION_AUDIT_IDX" ]; then
+        fail "Файл ${MIGRATION_AUDIT_IDX} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_AUDIT_IDX" >/dev/null 2>&1; then
+        ok "Індекс додано — журнал аудиту (/admin/audit) працюватиме швидше на великих обсягах даних"
+    else
+        fail "Помилка додавання індексу"
+        exit 1
+    fi
+else
+    ok "Індекс idx_audit_log_created_at вже є — нічого робити не треба"
+fi
+
+# ---------- 8. Блокування входу після невдалих спроб ----------
+section "8. Перевірка таблиці/колонок для блокування входу"
+
+LOCKOUT_COL_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'locked_until';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${LOCKOUT_COL_EXISTS:-0}" -eq 0 ]; then
+    info "Колонки блокування входу не знайдено — додаю (разом з таблицею app_settings)..."
+
+    MIGRATION_LOCKOUT="${SCRIPT_DIR}/database/migrations/007_add_login_lockout.sql"
+    if [ ! -f "$MIGRATION_LOCKOUT" ]; then
+        fail "Файл ${MIGRATION_LOCKOUT} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_LOCKOUT" >/dev/null 2>&1; then
+        ok "Додано — тепер доступне блокування облікового запису після невдалих спроб входу (Адмін-панель → Безпека входу)"
+    else
+        fail "Помилка додавання таблиці/колонок блокування входу"
+        exit 1
+    fi
+else
+    ok "Колонки блокування входу вже є — нічого робити не треба"
+fi
+
+# ---------- 9. Очищення застарілого кешу PDF-шрифтів ----------
+section "9. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -243,8 +301,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 8. Права доступу ----------
-section "8. Права доступу до файлів"
+# ---------- 10. Права доступу ----------
+section "10. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

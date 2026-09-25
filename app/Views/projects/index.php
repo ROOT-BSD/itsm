@@ -6,13 +6,17 @@
 </div>
 
 <div class="row">
+<?php
+$statusLabels = ['active' => 'Активний', 'archived' => 'Архівний', 'closed' => 'Закритий'];
+$statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
+?>
 <?php foreach ($projects as $p): ?>
     <div class="col-md-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
                 <h5 class="card-title"><?= \App\Core\View::e($p['name']) ?></h5>
                 <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($p['description'] ?? '', 0, 100, '…')) ?></p>
-                <span class="badge bg-secondary"><?= \App\Core\View::e($p['status']) ?></span>
+                <span class="badge bg-<?= $statusColors[$p['status']] ?? 'secondary' ?>"><?= \App\Core\View::e($statusLabels[$p['status']] ?? $p['status']) ?></span>
                 <span class="badge bg-info text-dark"><?= (int)$p['open_tasks_count'] ?> відкритих задач</span>
                 <div class="small text-muted mt-2">Відповідальний: <?= \App\Core\View::e($p['responsible_name'] ?? 'не призначено') ?></div>
             </div>
