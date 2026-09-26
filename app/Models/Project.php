@@ -14,10 +14,12 @@ class Project
         // зростанні кількості проєктів і задач.
         return Database::connection()->query(
             "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
+                    parent.name AS parent_name,
                     COALESCE(ot.open_count, 0) AS open_tasks_count
              FROM projects p
              JOIN users u ON u.id = p.created_by
              LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN projects parent ON parent.id = p.parent_id
              LEFT JOIN (
                  SELECT t.project_id, COUNT(*) AS open_count
                  FROM tasks t
@@ -34,6 +36,19 @@ class Project
      * (responsible_user_id). Використовується замість all() усюди, де
      * список показується не-адміну (список проєктів, дашборд).
      */
+    /**
+     * Те саме, що allVisibleTo(), але без підпроєктів (p.parent_id IS NULL) —
+     * для головного списку «Проєкти», де підпроєкти лише засмічували б список.
+     * Підпроєкт видно на сторінці свого батьківського проєкту (карткою), а не тут.
+     */
+    public static function topLevelVisibleTo(int $userId, bool $isAdmin): array
+    {
+        return array_values(array_filter(
+            self::allVisibleTo($userId, $isAdmin),
+            fn(array $p): bool => empty($p['parent_id'])
+        ));
+    }
+
     public static function allVisibleTo(int $userId, bool $isAdmin): array
     {
         if ($isAdmin) {
@@ -42,10 +57,12 @@ class Project
 
         $stmt = Database::connection()->prepare(
             "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
+                    parent.name AS parent_name,
                     COALESCE(ot.open_count, 0) AS open_tasks_count
              FROM projects p
              JOIN users u ON u.id = p.created_by
              LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN projects parent ON parent.id = p.parent_id
              LEFT JOIN (
                  SELECT t.project_id, COUNT(*) AS open_count
                  FROM tasks t
@@ -72,15 +89,66 @@ class Project
     public static function find(int $id): ?array
     {
         $stmt = Database::connection()->prepare(
-            "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name
+            "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
+                    parent.name AS parent_name
              FROM projects p
              JOIN users u ON u.id = p.created_by
              LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN projects parent ON parent.id = p.parent_id
              WHERE p.id = :id"
         );
         $stmt->execute(['id' => $id]);
         $project = $stmt->fetch();
         return $project ?: null;
+    }
+
+    /** Прямі підпроєкти цього проєкту (без вкладених онуків) — для розділу «Підпроєкти» на сторінці проєкту. */
+    public static function subProjectsOf(int $parentId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT p.*, r.full_name AS responsible_name, COALESCE(ot.open_count, 0) AS open_tasks_count
+             FROM projects p
+             LEFT JOIN users r ON r.id = p.responsible_user_id
+             LEFT JOIN (
+                 SELECT t.project_id, COUNT(*) AS open_count
+                 FROM tasks t
+                 JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
+                 GROUP BY t.project_id
+             ) ot ON ot.project_id = p.id
+             WHERE p.parent_id = :parent_id
+             ORDER BY p.created_at DESC"
+        );
+        $stmt->execute(['parent_id' => $parentId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * ID цього проєкту й УСІХ його підпроєктів на будь-яку глибину вкладеності
+     * (обхід у ширину) — для звітів, де робота над підпроєктом має враховуватись
+     * як робота над батьківським проєктом. Інтерфейс наразі створює підпроєкти
+     * лише в один рівень, але метод коректно обробить і глибшу вкладеність,
+     * якщо вона колись з'явиться (наприклад, через прямі зміни в БД).
+     */
+    public static function descendantIdsOf(int $projectId): array
+    {
+        $ids = [$projectId];
+        $queue = [$projectId];
+
+        while (!empty($queue)) {
+            $currentId = array_shift($queue);
+            $stmt = Database::connection()->prepare('SELECT id FROM projects WHERE parent_id = :parent_id');
+            $stmt->execute(['parent_id' => $currentId]);
+
+            foreach ($stmt->fetchAll(\PDO::FETCH_COLUMN) as $childId) {
+                $childId = (int) $childId;
+                if (!in_array($childId, $ids, true)) {
+                    $ids[] = $childId;
+                    $queue[] = $childId;
+                }
+            }
+        }
+
+        return $ids;
     }
 
     public static function create(string $name, ?string $description, string $visibility, int $createdBy, ?int $responsibleUserId = null, ?int $parentId = null): int

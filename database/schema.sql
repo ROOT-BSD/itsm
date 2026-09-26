@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS sla_policies (
 CREATE TABLE IF NOT EXISTS tickets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     queue_id INT NOT NULL,
+    project_id INT NULL,                  -- необов'язковий зв'язок з проєктом; NULL = звичайне звернення без прив'язки
     requester_name VARCHAR(150) NOT NULL,
     requester_email VARCHAR(150) NOT NULL,
     requester_user_id INT NULL,           -- може бути NULL: заявник без облікового запису основного функціоналу
@@ -217,6 +218,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (queue_id) REFERENCES ticket_queues(id),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
     FOREIGN KEY (assigned_operator_id) REFERENCES users(id),
     FOREIGN KEY (requester_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;

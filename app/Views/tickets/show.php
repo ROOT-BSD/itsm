@@ -12,6 +12,9 @@
         <p><?= nl2br(\App\Core\View::e($ticket['description'])) ?></p>
         <table class="table table-sm w-auto">
             <tr><th>Черга</th><td><?= \App\Core\View::e($ticket['queue_name']) ?></td></tr>
+            <?php if (!empty($ticket['project_id'])): ?>
+            <tr><th>Проєкт</th><td><a href="/projects/<?= (int)$ticket['project_id'] ?>"><?= \App\Core\View::e($ticket['project_name']) ?></a></td></tr>
+            <?php endif; ?>
             <tr><th>Заявник</th><td><?= \App\Core\View::e($ticket['requester_name']) ?> (<?= \App\Core\View::e($ticket['requester_email']) ?>)</td></tr>
             <tr><th>Створено</th><td><?= \App\Core\View::e($ticket['created_at']) ?></td></tr>
         </table>

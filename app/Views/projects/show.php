@@ -1,18 +1,53 @@
+<?php if (!empty($project['parent_id'])): ?>
+<div class="mb-2">
+    <a href="/projects/<?= (int)$project['parent_id'] ?>" class="text-decoration-none">&larr; <?= \App\Core\View::e($project['parent_name']) ?></a>
+    <span class="badge bg-light text-dark border ms-1">Підпроєкт</span>
+</div>
+<?php endif; ?>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h3 class="mb-0"><?= \App\Core\View::e($project['name']) ?></h3>
         <small class="text-muted">Створив: <?= \App\Core\View::e($project['created_by_name']) ?></small>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <a href="/projects/<?= (int)$project['id'] ?>/board" class="btn btn-outline-secondary">📋 Канбан-дошка</a>
         <a href="/projects/<?= (int)$project['id'] ?>/gantt" class="btn btn-outline-secondary">📊 Діаграма Ганта</a>
         <a href="/projects/<?= (int)$project['id'] ?>/roadmap" class="btn btn-outline-secondary">🗺️ Дорожня карта</a>
         <a href="/projects/<?= (int)$project['id'] ?>/time" class="btn btn-outline-secondary">⏱️ Облік часу</a>
+        <a href="/projects/create?parent_id=<?= (int)$project['id'] ?>" class="btn btn-outline-secondary">+ Підпроєкт</a>
+        <a href="/tickets/create?project_id=<?= (int)$project['id'] ?>" class="btn btn-outline-secondary">+ Тікет</a>
         <a href="/projects/<?= (int)$project['id'] ?>/tasks/create" class="btn btn-primary">+ Нова задача</a>
     </div>
 </div>
 
 <p><?= nl2br(\App\Core\View::e($project['description'])) ?></p>
+
+<?php if (!empty($subProjects)): ?>
+<h5>Підпроєкти</h5>
+<?php
+$statusLabels = ['active' => 'Активний', 'archived' => 'Архівний', 'closed' => 'Закритий'];
+$statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
+?>
+<div class="row">
+    <?php foreach ($subProjects as $sp): ?>
+        <div class="col-md-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title"><?= \App\Core\View::e($sp['name']) ?></h5>
+                    <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($sp['description'] ?? '', 0, 100, '…')) ?></p>
+                    <span class="badge bg-<?= $statusColors[$sp['status']] ?? 'secondary' ?>"><?= \App\Core\View::e($statusLabels[$sp['status']] ?? $sp['status']) ?></span>
+                    <span class="badge bg-info text-dark"><?= (int)$sp['open_tasks_count'] ?> відкритих задач</span>
+                    <div class="small text-muted mt-2">Відповідальний: <?= \App\Core\View::e($sp['responsible_name'] ?? 'не призначено') ?></div>
+                </div>
+                <div class="card-footer bg-white">
+                    <a href="/projects/<?= (int)$sp['id'] ?>" class="btn btn-sm btn-outline-primary">Відкрити</a>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <?php if (\App\Core\Auth::hasRole(['admin', 'it_manager'])): ?>
 <form method="post" action="/projects/<?= (int)$project['id'] ?>/responsible" class="d-flex gap-2 align-items-center mb-3">
@@ -53,3 +88,24 @@
     <?php endforeach; endif; ?>
     </tbody>
 </table>
+
+<?php if (!empty($linkedTickets)): ?>
+<h5 class="mt-4">Пов'язані тікети</h5>
+<table class="table table-bordered bg-white">
+    <thead><tr><th>#</th><th>Тема</th><th>Черга</th><th>Статус</th><th>Оператор</th></tr></thead>
+    <tbody>
+    <?php
+    $ticketStatusLabels = ['new' => 'Новий', 'in_progress' => 'В роботі', 'waiting_customer' => 'Очікує відповіді', 'resolved' => 'Вирішено', 'closed' => 'Закрито'];
+    ?>
+    <?php foreach ($linkedTickets as $tk): ?>
+        <tr>
+            <td><a href="/tickets/<?= (int)$tk['id'] ?>">#<?= (int)$tk['id'] ?></a></td>
+            <td><?= \App\Core\View::e($tk['subject']) ?></td>
+            <td><?= \App\Core\View::e($tk['queue_name']) ?></td>
+            <td><span class="badge bg-secondary"><?= \App\Core\View::e($ticketStatusLabels[$tk['status']] ?? $tk['status']) ?></span></td>
+            <td><?= \App\Core\View::e($tk['operator_name'] ?? '— не призначено —') ?></td>
+        </tr>
+    <?php endforeach; ?>
+    </tbody>
+</table>
+<?php endif; ?>

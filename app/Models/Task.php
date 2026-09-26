@@ -459,8 +459,16 @@ class Task
         $params = ['date_from' => $dateFrom, 'date_to' => $dateTo];
 
         if (!empty($filters['project_id'])) {
-            $sql .= ' AND p.id = :project_id';
-            $params['project_id'] = $filters['project_id'];
+            // Фільтр за проєктом включає й усі його підпроєкти — робота над
+            // підпроєктом має рахуватись як робота над батьківським проєктом.
+            $projectIds = Project::descendantIdsOf((int) $filters['project_id']);
+            $placeholders = [];
+            foreach ($projectIds as $i => $pid) {
+                $key = "project_id_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = $pid;
+            }
+            $sql .= ' AND p.id IN (' . implode(',', $placeholders) . ')';
         }
         if (!empty($filters['log_user_id'])) {
             $sql .= ' AND tl.user_id = :log_user_id';

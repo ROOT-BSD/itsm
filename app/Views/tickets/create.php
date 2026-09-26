@@ -23,6 +23,15 @@
         <input type="text" name="subject" class="form-control" required>
     </div>
     <div class="mb-3">
+        <label class="form-label">Проєкт (необов'язково)</label>
+        <select name="project_id" class="form-select">
+            <option value="">— не пов'язано з проєктом —</option>
+            <?php foreach ($projects as $p): ?>
+                <option value="<?= (int)$p['id'] ?>" <?= $preselectedProjectId === (int)$p['id'] ? 'selected' : '' ?>><?= \App\Core\View::e($p['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="mb-3">
         <label class="form-label">Опис проблеми / запиту</label>
         <textarea name="description" class="form-control" rows="4"></textarea>
     </div>

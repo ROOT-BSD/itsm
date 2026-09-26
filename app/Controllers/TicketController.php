@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\View;
+use App\Models\Project;
 use App\Models\Ticket;
 use App\Models\User;
 
@@ -23,8 +24,19 @@ class TicketController
     public function showCreateForm(): void
     {
         Auth::requireLogin();
+
+        $preselectedProjectId = !empty($_GET['project_id']) ? (int) $_GET['project_id'] : null;
+        if ($preselectedProjectId !== null) {
+            $preselectedProject = Project::find($preselectedProjectId);
+            if (!$preselectedProject || !Project::isVisibleTo($preselectedProject, Auth::id(), Auth::hasRole(['admin']))) {
+                $preselectedProjectId = null;
+            }
+        }
+
         View::render('tickets/create', [
             'queues' => Ticket::queues(),
+            'projects' => Project::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
+            'preselectedProjectId' => $preselectedProjectId,
             'error' => $_GET['error'] ?? null,
         ]);
     }
@@ -36,6 +48,7 @@ class TicketController
         $queueId = (int) ($_POST['queue_id'] ?? 0);
         $subject = trim($_POST['subject'] ?? '');
         $description = trim($_POST['description'] ?? '');
+        $projectId = !empty($_POST['project_id']) ? (int) $_POST['project_id'] : null;
 
         if ($queueId === 0 || $subject === '') {
             header('Location: /tickets/create?error=' . urlencode('Оберіть чергу і вкажіть тему звернення'));
@@ -45,12 +58,19 @@ class TicketController
             header('Location: /tickets/create?error=' . urlencode('Оберіть коректну чергу'));
             exit;
         }
+        if ($projectId !== null) {
+            $project = Project::find($projectId);
+            if (!$project || !Project::isVisibleTo($project, Auth::id(), Auth::hasRole(['admin']))) {
+                header('Location: /tickets/create?error=' . urlencode('Проєкт не знайдено або немає до нього доступу'));
+                exit;
+            }
+        }
 
         // Заявник — поточний користувач (окремий портал для співробітників без
         // облікового запису основного функціоналу — майбутній крок, п. 2.13 ТЗ)
         $me = User::findById(Auth::id());
 
-        $id = Ticket::create($queueId, $me['full_name'], $me['email'], Auth::id(), $subject, $description ?: null);
+        $id = Ticket::create($queueId, $me['full_name'], $me['email'], Auth::id(), $subject, $description ?: null, $projectId);
         header('Location: /tickets/' . $id);
         exit;
     }

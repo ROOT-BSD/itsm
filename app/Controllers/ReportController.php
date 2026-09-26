@@ -57,6 +57,9 @@ class ReportController
                 exit;
             }
             $projectLabel = $project['name'];
+            if (!empty(Project::subProjectsOf($projectId))) {
+                $projectLabel .= ' (разом з підпроєктами)';
+            }
         }
 
         $userLabel = 'усі користувачі';

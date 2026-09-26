@@ -28,7 +28,12 @@
     ?>
     <?php foreach ($projects as $p): ?>
         <tr>
-            <td><a href="/projects/<?= (int)$p['id'] ?>"><?= \App\Core\View::e($p['name']) ?></a></td>
+            <td>
+                <a href="/projects/<?= (int)$p['id'] ?>"><?= \App\Core\View::e($p['name']) ?></a>
+                <?php if (!empty($p['parent_id'])): ?>
+                    <div class="small text-muted">↳ підпроєкт: <?= \App\Core\View::e($p['parent_name']) ?></div>
+                <?php endif; ?>
+            </td>
             <td>
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/status" class="d-flex gap-1">
                     <?= \App\Core\Csrf::field() ?>

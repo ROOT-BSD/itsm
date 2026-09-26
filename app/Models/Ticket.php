@@ -51,10 +51,11 @@ class Ticket
     public static function all(): array
     {
         return Database::connection()->query(
-            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
+             LEFT JOIN projects p ON p.id = t.project_id
              ORDER BY t.created_at DESC"
         )->fetchAll();
     }
@@ -71,10 +72,11 @@ class Ticket
         }
 
         $stmt = Database::connection()->prepare(
-            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
+             LEFT JOIN projects p ON p.id = t.project_id
              WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2
              ORDER BY t.created_at DESC"
         );
@@ -95,10 +97,11 @@ class Ticket
     public static function find(int $id): ?array
     {
         $stmt = Database::connection()->prepare(
-            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
+             LEFT JOIN projects p ON p.id = t.project_id
              WHERE t.id = :id"
         );
         $stmt->execute(['id' => $id]);
@@ -106,14 +109,30 @@ class Ticket
         return $ticket ?: null;
     }
 
-    public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description): int
+    /** Тікети, прив'язані до конкретного проєкту — для розділу «Пов'язані тікети» на сторінці проєкту. */
+    public static function forProject(int $projectId): array
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tickets (queue_id, requester_name, requester_email, requester_user_id, subject, description, status)
-             VALUES (:queue_id, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new")'
+            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             WHERE t.project_id = :project_id
+             ORDER BY t.created_at DESC"
+        );
+        $stmt->execute(['project_id' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description, ?int $projectId = null): int
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO tickets (queue_id, project_id, requester_name, requester_email, requester_user_id, subject, description, status)
+             VALUES (:queue_id, :project_id, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new")'
         );
         $stmt->execute([
             'queue_id' => $queueId,
+            'project_id' => $projectId,
             'requester_name' => $requesterName,
             'requester_email' => $requesterEmail,
             'requester_user_id' => $requesterUserId,
