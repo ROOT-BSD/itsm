@@ -283,11 +283,3 @@ sudo bash update.sh
 rm -f app/Vendor/tfpdf/font/unifont/*.mtx.php app/Vendor/tfpdf/font/unifont/*.cw.dat app/Vendor/tfpdf/font/unifont/*.cw127.php
 chmod 770 app/Vendor/tfpdf/font/unifont
 ```
-
-## Тестовий обліковий запис
-
-- Email: `admin@example.local`
-- Пароль: `admin123`
-- Роль: Адміністратор системи (має доступ до `/admin`)
-
-⚠️ Обов'язково змініть цей пароль або видаліть обліковий запис перед продуктивним використанням.
