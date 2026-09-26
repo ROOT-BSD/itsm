@@ -73,6 +73,9 @@ $router->post('/tasks/{id}/milestone', fn($p) => $tasks->updateMilestone($p));
 $router->post('/tasks/{id}/assignee', fn($p) => $tasks->updateAssignee($p));
 $router->post('/tasks/{id}/comments', fn($p) => $tasks->addComment($p));
 $router->post('/tasks/{id}/time', fn($p) => $tasks->logTime($p));
+$router->post('/tasks/{id}/description', fn($p) => $tasks->updateDescription($p));
+$router->post('/tasks/{id}/project', fn($p) => $tasks->updateProject($p));
+$router->post('/tasks/{id}/delete', fn($p) => $tasks->delete($p));
 
 // --- Тікети (Service Desk, базова версія — Епік 12) ---
 $tickets = new TicketController();

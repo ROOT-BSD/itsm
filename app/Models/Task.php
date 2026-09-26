@@ -153,6 +153,61 @@ class Task
         Audit::log('task', $id, 'milestone_changed', $actingUserId, ['milestone_id' => $milestoneId]);
     }
 
+    public static function updateDescription(int $id, ?string $description, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE tasks SET description = :description WHERE id = :id');
+        $stmt->execute(['description' => $description, 'id' => $id]);
+        Audit::log('task', $id, 'description_changed', $actingUserId);
+    }
+
+    /**
+     * Переносить задачу в інший проєкт (основний або підпроєкт, будь-який
+     * видимий користувачу — перевірка в контролері). Заразом прибирає те,
+     * що більше не має сенсу після переносу в інший проєкт:
+     *  - зв'язки з задачами, які лишились у старому/іншому проєкті
+     *    (залежність технічно можлива лише між задачами одного проєкту —
+     *    те саме правило, що діє при створенні зв'язку);
+     *  - прив'язку до етапу дорожньої карти, якщо етап належить іншому проєкту.
+     */
+    public static function updateProject(int $id, int $newProjectId, int $actingUserId): void
+    {
+        $conn = Database::connection();
+
+        $conn->prepare(
+            "DELETE tr FROM task_relations tr
+             JOIN tasks other ON other.id = tr.related_task_id
+             WHERE tr.task_id = :task_id AND other.project_id != :new_project_id"
+        )->execute(['task_id' => $id, 'new_project_id' => $newProjectId]);
+
+        $conn->prepare(
+            "DELETE tr FROM task_relations tr
+             JOIN tasks other ON other.id = tr.task_id
+             WHERE tr.related_task_id = :task_id AND other.project_id != :new_project_id"
+        )->execute(['task_id' => $id, 'new_project_id' => $newProjectId]);
+
+        $conn->prepare(
+            "UPDATE tasks t
+             LEFT JOIN milestones m ON m.id = t.milestone_id
+             SET t.milestone_id = NULL
+             WHERE t.id = :task_id AND m.project_id IS NOT NULL AND m.project_id != :new_project_id"
+        )->execute(['task_id' => $id, 'new_project_id' => $newProjectId]);
+
+        $conn->prepare('UPDATE tasks SET project_id = :project_id WHERE id = :id')
+            ->execute(['project_id' => $newProjectId, 'id' => $id]);
+
+        Audit::log('task', $id, 'project_changed', $actingUserId, ['project_id' => $newProjectId]);
+    }
+
+    /** Незворотне видалення задачі. Коментарі, записи обліку часу й зв'язки видаляються каскадно (FK ON DELETE CASCADE). */
+    public static function delete(int $id, string $title, int $actingUserId): void
+    {
+        // Спершу — аудит зі знімком назви, бо після видалення задачі її вже не буде звідки прочитати.
+        Audit::log('task', $id, 'deleted', $actingUserId, ['title' => $title]);
+
+        $stmt = Database::connection()->prepare('DELETE FROM tasks WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
+
     /**
      * Усі задачі проєкту, прив'язані до якогось етапу, — ОДНИМ запитом,
      * для дорожньої карти. Раніше викликалось по одному запиту на кожен

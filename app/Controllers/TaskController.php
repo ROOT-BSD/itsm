@@ -131,6 +131,7 @@ class TaskController
             'users' => User::allActive(),
             'milestones' => Milestone::forProject((int) $task['project_id']),
             'timeLogs' => Task::timeLogsForTask($task['id']),
+            'projects' => Project::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
         ]);
     }
 
@@ -181,6 +182,51 @@ class TaskController
 
         Task::updateMilestone((int) $params['id'], $milestoneId, Auth::id());
         header('Location: /tasks/' . $params['id']);
+        exit;
+    }
+
+    public function updateDescription(array $params): void
+    {
+        Auth::requireLogin();
+        $this->findTaskOrFail((int) $params['id']);
+
+        $description = trim($_POST['description'] ?? '');
+        Task::updateDescription((int) $params['id'], $description !== '' ? $description : null, Auth::id());
+        header('Location: /tasks/' . $params['id']);
+        exit;
+    }
+
+    /** Перенесення задачі в інший проєкт — будь-який видимий користувачу (основний або підпроєкт), не лише в межах поточної ієрархії. */
+    public function updateProject(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+
+        $newProjectId = (int) ($_POST['project_id'] ?? 0);
+        $newProject = Project::find($newProjectId);
+        if (!$newProject || !Project::isVisibleTo($newProject, Auth::id(), Auth::hasRole(['admin']))) {
+            header('Location: /tasks/' . $params['id'] . '?error=' . urlencode('Проєкт не знайдено або немає до нього доступу'));
+            exit;
+        }
+
+        if ($newProjectId === (int) $task['project_id']) {
+            header('Location: /tasks/' . $params['id']);
+            exit;
+        }
+
+        Task::updateProject((int) $params['id'], $newProjectId, Auth::id());
+        header('Location: /tasks/' . $params['id']);
+        exit;
+    }
+
+    public function delete(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $projectId = (int) $task['project_id'];
+
+        Task::delete((int) $params['id'], $task['title'], Auth::id());
+        header('Location: /projects/' . $projectId);
         exit;
     }
 

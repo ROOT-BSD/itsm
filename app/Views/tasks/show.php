@@ -9,7 +9,14 @@
 <div class="card mb-4">
     <div class="card-body">
         <h3><?= \App\Core\View::e($task['title']) ?> <small class="text-muted">#<?= (int)$task['id'] ?></small></h3>
-        <p><?= nl2br(\App\Core\View::e($task['description'])) ?></p>
+
+        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/description" class="mb-3">
+            <?= \App\Core\Csrf::field() ?>
+            <label class="form-label">Опис</label>
+            <textarea name="description" class="form-control mb-2" rows="4"><?= \App\Core\View::e($task['description'] ?? '') ?></textarea>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Зберегти опис</button>
+        </form>
+
         <table class="table table-sm w-auto">
             <tr><th>Тип</th><td><?= \App\Core\View::e($task['type_name']) ?></td></tr>
             <tr><th>Пріоритет</th><td><?= \App\Core\View::e($task['priority']) ?></td></tr>
@@ -46,7 +53,7 @@
             </select>
         </form>
 
-        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/status" class="d-flex gap-2 align-items-center">
+        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/status" class="d-flex gap-2 align-items-center mb-2">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Статус:</label>
             <select name="status_id" class="form-select w-auto">
@@ -55,6 +62,28 @@
                 <?php endforeach; ?>
             </select>
             <button class="btn btn-sm btn-outline-primary" type="submit">Оновити</button>
+        </form>
+
+        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/project" class="d-flex gap-2 align-items-center mb-3">
+            <?= \App\Core\Csrf::field() ?>
+            <label class="form-label mb-0">Проєкт:</label>
+            <select name="project_id" class="form-select w-auto">
+                <?php foreach ($projects as $p): ?>
+                    <option value="<?= (int)$p['id'] ?>" <?= (int)$task['project_id'] === (int)$p['id'] ? 'selected' : '' ?>>
+                        <?= \App\Core\View::e($p['name']) ?><?= !empty($p['parent_id']) ? ' (підпроєкт «' . \App\Core\View::e($p['parent_name']) . '»)' : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Перенести</button>
+        </form>
+        <p class="text-muted small">
+            Перенесення в інший проєкт знімає прив'язку до етапу дорожньої карти й видаляє зв'язки з задачами, що лишаються в іншому проєкті — залежність можлива лише між задачами одного проєкту.
+        </p>
+
+        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/delete"
+              onsubmit="return confirm('Остаточно видалити задачу «<?= \App\Core\View::e($task['title']) ?>»? Коментарі, записи обліку часу та зв\'язки з іншими задачами буде видалено разом з нею. Дію не можна скасувати.');">
+            <?= \App\Core\Csrf::field() ?>
+            <button class="btn btn-sm btn-outline-danger" type="submit">🗑️ Видалити задачу</button>
         </form>
     </div>
 </div>
