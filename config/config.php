@@ -54,7 +54,7 @@ return (function (): array {
         ],
         'app' => [
             'name'    => 'ITSM System',
-            'version' => '0.1.2',
+            'version' => '0.1.3',
             'env'     => getenv('APP_ENV') ?: 'local', // local | production
             'url'     => getenv('APP_URL') ?: 'http://localhost:8000',
         ],

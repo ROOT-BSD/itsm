@@ -123,6 +123,37 @@ class Project
     }
 
     /**
+     * Мапа [id проєкту => ['id' => ID кореневого проєкту, 'name' => назва кореневого]]
+     * для АБСОЛЮТНО всіх проєктів у системі — щоб «згорнути» підпроєкт до його
+     * основного (найвищого в ієрархії) проєкту в загальних звітах. Основний
+     * проєкт мапиться сам на себе. Один запит на всю таблицю замість запиту
+     * на кожен рядок звіту (N+1) — таблиця проєктів невелика, тримати її в
+     * пам'яті й пройтись по ланцюжку parent_id дешевше, ніж рекурсивний SQL.
+     */
+    public static function rootProjectMap(): array
+    {
+        $rows = Database::connection()->query('SELECT id, parent_id, name FROM projects')->fetchAll();
+
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int) $row['id']] = ['parent_id' => $row['parent_id'] !== null ? (int) $row['parent_id'] : null, 'name' => $row['name']];
+        }
+
+        $map = [];
+        foreach ($byId as $id => $info) {
+            $currentId = $id;
+            $visited = [$currentId => true]; // захист від циклу, якщо він колись з'явиться напряму в БД
+            while ($byId[$currentId]['parent_id'] !== null && isset($byId[$byId[$currentId]['parent_id']]) && !isset($visited[$byId[$currentId]['parent_id']])) {
+                $currentId = $byId[$currentId]['parent_id'];
+                $visited[$currentId] = true;
+            }
+            $map[$id] = ['id' => $currentId, 'name' => $byId[$currentId]['name']];
+        }
+
+        return $map;
+    }
+
+    /**
      * ID цього проєкту й УСІХ його підпроєктів на будь-яку глибину вкладеності
      * (обхід у ширину) — для звітів, де робота над підпроєктом має враховуватись
      * як робота над батьківським проєктом. Інтерфейс наразі створює підпроєкти

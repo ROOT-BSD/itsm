@@ -394,16 +394,45 @@ class Task
     }
 
     /** Сумарні години по кожному проєкту по всій системі (для /admin/time). */
+    /** Підпроєкт рахується як частина основного (кореневого) проєкту — окремим рядком не показується. */
     public static function hoursByProjectAll(): array
     {
-        return Database::connection()->query(
+        $raw = Database::connection()->query(
             "SELECT p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             GROUP BY p.id, p.name
-             ORDER BY total_hours DESC"
+             GROUP BY p.id, p.name"
         )->fetchAll();
+
+        return self::rollUpToRootProjects($raw);
+    }
+
+    /**
+     * Переносить години підпроєкту на його основний (кореневий) проєкт і
+     * підсумовує в один рядок — щоб підпроєкт не з'являвся окремим рядком
+     * поруч зі своїм основним проєктом у загальних звітах.
+     *
+     * @param array<array{project_id: int|string, project_name: string, total_hours: mixed}> $rows
+     */
+    private static function rollUpToRootProjects(array $rows): array
+    {
+        $rootMap = Project::rootProjectMap();
+
+        $aggregated = [];
+        foreach ($rows as $row) {
+            $pid = (int) $row['project_id'];
+            $root = $rootMap[$pid] ?? ['id' => $pid, 'name' => $row['project_name']];
+            $rootId = $root['id'];
+
+            if (!isset($aggregated[$rootId])) {
+                $aggregated[$rootId] = ['project_id' => $rootId, 'project_name' => $root['name'], 'total_hours' => 0.0];
+            }
+            $aggregated[$rootId]['total_hours'] += (float) $row['total_hours'];
+        }
+
+        usort($aggregated, fn($a, $b) => $b['total_hours'] <=> $a['total_hours']);
+        return array_values($aggregated);
     }
 
     /**
@@ -566,18 +595,51 @@ class Task
     }
 
     /** Розбивка годин по періоду ТА проєкту одночасно, по всій системі (для /admin/time). */
+    /** Те саме, що вище, але підпроєкт так само згорнутий у свій основний (кореневий) проєкт у межах кожного періоду. */
     public static function hoursByPeriodAndProjectAll(string $period): array
     {
         [$selectExpr, $groupExpr] = self::periodSql($period);
 
-        return Database::connection()->query(
-            "SELECT {$selectExpr} AS period_label, p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
+        $raw = Database::connection()->query(
+            "SELECT {$selectExpr} AS period_label, MIN(tl.log_date) AS min_date,
+                    p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             GROUP BY {$groupExpr}, p.id, p.name
-             ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
+             GROUP BY {$groupExpr}, p.id, p.name"
         )->fetchAll();
+
+        $rootMap = Project::rootProjectMap();
+
+        $aggregated = [];
+        foreach ($raw as $row) {
+            $pid = (int) $row['project_id'];
+            $root = $rootMap[$pid] ?? ['id' => $pid, 'name' => $row['project_name']];
+            $key = $row['period_label'] . '|' . $root['id'];
+
+            if (!isset($aggregated[$key])) {
+                $aggregated[$key] = [
+                    'period_label' => $row['period_label'],
+                    'project_id' => $root['id'],
+                    'project_name' => $root['name'],
+                    'total_hours' => 0.0,
+                    'min_date' => $row['min_date'],
+                ];
+            }
+            $aggregated[$key]['total_hours'] += (float) $row['total_hours'];
+            $aggregated[$key]['min_date'] = min($aggregated[$key]['min_date'], $row['min_date']);
+        }
+
+        usort($aggregated, function ($a, $b) {
+            return $a['min_date'] === $b['min_date']
+                ? $b['total_hours'] <=> $a['total_hours']
+                : strcmp($b['min_date'], $a['min_date']);
+        });
+
+        return array_map(
+            fn($r) => ['period_label' => $r['period_label'], 'project_id' => $r['project_id'], 'project_name' => $r['project_name'], 'total_hours' => $r['total_hours']],
+            array_values($aggregated)
+        );
     }
 
     public static function types(): array
