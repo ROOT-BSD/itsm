@@ -3,8 +3,8 @@
 .env.new
 
 # Файли, завантажені користувачами через веб-інтерфейс
-/storage/uploads/*
-!/storage/uploads/.gitkeep
+#/storage/uploads/*
+#!/storage/uploads/.gitkeep
 
 # Системні файли
 .DS_Store
