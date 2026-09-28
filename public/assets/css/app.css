@@ -131,3 +131,8 @@
 .kanban-card-overdue {
     border-left: 3px solid #dc3545;
 }
+
+/* Керування SLA-нормативами (admin/queues.php) — компактні поля хвилин у рядку черги */
+.sla-minutes-input {
+    width: 90px;
+}

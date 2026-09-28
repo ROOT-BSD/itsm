@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS ticket_queues (
 
 CREATE TABLE IF NOT EXISTS sla_policies (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    queue_id INT NOT NULL,
+    queue_id INT NOT NULL UNIQUE,           -- один норматив на чергу; UNIQUE потрібен для коректного "upsert" при редагуванні через інтерфейс
     first_response_minutes INT NOT NULL,
     resolution_minutes INT NOT NULL,
     FOREIGN KEY (queue_id) REFERENCES ticket_queues(id)

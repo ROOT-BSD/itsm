@@ -59,15 +59,35 @@ class Ticket
     }
 
     /** Черги з кількістю тікетів у кожній — для списку в адмін-панелі. */
+    /** Черги з кількістю тікетів і поточним SLA-нормативом (NULL, якщо ще не налаштований) — для сторінки керування чергами. */
     public static function queuesWithTicketCount(): array
     {
         return Database::connection()->query(
-            "SELECT q.*, COUNT(t.id) AS tickets_count
+            "SELECT q.*, COUNT(t.id) AS tickets_count,
+                    sp.first_response_minutes, sp.resolution_minutes
              FROM ticket_queues q
              LEFT JOIN tickets t ON t.queue_id = q.id
-             GROUP BY q.id
+             LEFT JOIN sla_policies sp ON sp.queue_id = q.id
+             GROUP BY q.id, sp.first_response_minutes, sp.resolution_minutes
              ORDER BY q.id"
         )->fetchAll();
+    }
+
+    /** Створює норматив SLA для черги, якщо його ще немає, або оновлює наявний — один рядок на чергу (queue_id UNIQUE). */
+    public static function upsertSlaPolicy(int $queueId, int $firstResponseMinutes, int $resolutionMinutes): void
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO sla_policies (queue_id, first_response_minutes, resolution_minutes)
+             VALUES (:queue_id, :first_response_minutes, :resolution_minutes)
+             ON DUPLICATE KEY UPDATE
+                first_response_minutes = VALUES(first_response_minutes),
+                resolution_minutes = VALUES(resolution_minutes)'
+        );
+        $stmt->execute([
+            'queue_id' => $queueId,
+            'first_response_minutes' => $firstResponseMinutes,
+            'resolution_minutes' => $resolutionMinutes,
+        ]);
     }
 
     public static function createQueue(string $name, ?string $description, int $actingUserId): int

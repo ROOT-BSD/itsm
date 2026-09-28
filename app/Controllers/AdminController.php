@@ -404,6 +404,43 @@ class AdminController
         ]);
     }
 
+    /** Створення/оновлення нормативу SLA для конкретної черги — раніше можливе лише напряму в БД. */
+    public function updateSlaPolicy(array $params): void
+    {
+        $queueId = (int) $params['id'];
+        $firstResponse = (int) ($_POST['first_response_minutes'] ?? 0);
+        $resolution = (int) ($_POST['resolution_minutes'] ?? 0);
+
+        $queueExists = false;
+        foreach (Ticket::queues() as $q) {
+            if ((int) $q['id'] === $queueId) {
+                $queueExists = true;
+                break;
+            }
+        }
+        if (!$queueExists) {
+            header('Location: /admin/queues?error=' . urlencode('Чергу не знайдено'));
+            exit;
+        }
+        if ($firstResponse < 1 || $resolution < 1) {
+            header('Location: /admin/queues?error=' . urlencode('Нормативи мають бути додатними числами хвилин'));
+            exit;
+        }
+        if ($firstResponse > $resolution) {
+            header('Location: /admin/queues?error=' . urlencode('Норматив першої відповіді не може перевищувати норматив вирішення'));
+            exit;
+        }
+
+        Ticket::upsertSlaPolicy($queueId, $firstResponse, $resolution);
+        Audit::log('ticket_queue', $queueId, 'sla_policy_updated', Auth::id(), [
+            'first_response_minutes' => $firstResponse,
+            'resolution_minutes' => $resolution,
+        ]);
+
+        header('Location: /admin/queues?success=' . urlencode('Норматив SLA оновлено'));
+        exit;
+    }
+
     public function showCreateQueueForm(): void
     {
         View::render('admin/queues_create', [

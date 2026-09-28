@@ -166,5 +166,8 @@ $router->get('/admin/queues/create', function () {
 $router->post('/admin/queues', function () {
     (new AdminController())->storeQueue();
 });
+$router->post('/admin/queues/{id}/sla', function ($p) {
+    (new AdminController())->updateSlaPolicy($p);
+});
 
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

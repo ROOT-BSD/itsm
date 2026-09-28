@@ -31,6 +31,8 @@ $changeKeyLabels = [
     'name' => 'Назва',
     'title' => 'Назва',
     'email' => 'Email',
+    'first_response_minutes' => 'Перша відповідь (хв)',
+    'resolution_minutes' => 'Вирішення (хв)',
 ];
 
 // Значення поля relation_type — той самий переклад, що й на сторінці Ганта.
