@@ -34,7 +34,11 @@ return (function (): array {
                 continue;
             }
             [$key, $value] = array_map('trim', explode('=', $line, 2));
-            $value = trim($value, "\"'");
+            // Відкидається лише ОДНА парна обгортка лапок ("...", '...'). Раніше trim() зрізав усі лапки з країв,
+            // і пароль, що закінчується символом " чи ', мовчки псувався. Пробіли та # усередині значення допустимі.
+            if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && $value[-1] === $value[0]) {
+                $value = substr($value, 1, -1);
+            }
 
             if (getenv($key) === false) {
                 putenv("{$key}={$value}");
@@ -42,6 +46,12 @@ return (function (): array {
             }
         }
     }
+
+    // Порожнє значення в .env = "не задано" (щоб MAIL_IMAP_PORT= не дало порт 0).
+    $env = static fn(string $key, string $default = ''): string =>
+        (($v = getenv($key)) !== false && $v !== '') ? $v : $default;
+
+    $mailEncryption = strtolower($env('MAIL_IMAP_ENCRYPTION', 'ssl')); // ssl | tls (STARTTLS) | none
 
     return [
         'db' => [
@@ -51,6 +61,17 @@ return (function (): array {
             'username'=> getenv('DB_USERNAME') ?: 'itsm_user',
             'password'=> getenv('DB_PASSWORD') ?: 'change_me',
             'charset' => 'utf8mb4',
+        ],
+        // Підключення до поштової скриньки для email-to-ticket (IMAP). Пароль — лише тут, у .env, не в БД.
+        'mail' => [
+            'host'        => $env('MAIL_IMAP_HOST'),
+            'port'        => (int) $env('MAIL_IMAP_PORT', $mailEncryption === 'ssl' ? '993' : '143'),
+            'encryption'  => $mailEncryption,
+            'username'    => $env('MAIL_IMAP_USERNAME'),
+            'password'    => $env('MAIL_IMAP_PASSWORD'),
+            'folder'      => $env('MAIL_IMAP_FOLDER', 'INBOX'),
+            // false — лише для внутрішніх серверів із самопідписаним сертифікатом
+            'verify_cert' => filter_var($env('MAIL_IMAP_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
         ],
         'app' => [
             'name'    => 'ITSM System',

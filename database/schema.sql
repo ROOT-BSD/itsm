@@ -233,3 +233,22 @@ CREATE TABLE IF NOT EXISTS ticket_comments (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+-- Журнал обробки вхідної пошти (email-to-ticket). Одночасно:
+--  1) захист від повторної обробки того самого листа (UNIQUE message_id);
+--  2) відповідь на питання "чому мій лист не став тікетом" (пропущені теж записуються);
+--  3) зв'язок Message-ID → тікет, за яким відповіді в тій самій гілці листування
+--     потрапляють коментарем у вже наявний тікет.
+CREATE TABLE IF NOT EXISTS email_ingest_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    message_id VARCHAR(255) NOT NULL,        -- <id@host> з заголовка Message-ID або 'hash:<sha1>' для листів без нього
+    from_email VARCHAR(150) NOT NULL DEFAULT '',
+    subject VARCHAR(255) NOT NULL DEFAULT '',
+    result ENUM('ticket_created','comment_added','skipped') NOT NULL,
+    ticket_id INT NULL,
+    note VARCHAR(255) NULL,                  -- причина пропуску / примітка
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_email_ingest_message (message_id),
+    KEY idx_email_ingest_created (created_at),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE SET NULL
+) ENGINE=InnoDB;

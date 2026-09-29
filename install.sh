@@ -124,8 +124,8 @@ section "4. Перевірка розширень PHP"
 
 # Обов'язкові розширення для роботи застосунку
 REQUIRED_EXT="pdo pdo_mysql mbstring json session"
-# Знадобляться на наступних етапах (вкладення, LDAP/AD-інтеграція)
-OPTIONAL_EXT="fileinfo ldap openssl"
+# Опційні: openssl/iconv — для email-to-ticket; fileinfo, ldap — для наступних етапів (вкладення, AD-інтеграція)
+OPTIONAL_EXT="fileinfo ldap openssl iconv"
 
 if command -v php >/dev/null 2>&1; then
     # Зчитуємо список розширень один раз у змінну.
@@ -153,6 +153,8 @@ if command -v php >/dev/null 2>&1; then
             case "$ext" in
                 ldap) warn "Відсутнє розширення ${ext} — знадобиться для інтеграції з Active Directory (Епік 13)" ;;
                 fileinfo) warn "Відсутнє розширення ${ext} — знадобиться для завантаження вкладень (Епік 8)" ;;
+                openssl) warn "Відсутнє розширення ${ext} — email-to-ticket не зможе підключатися до пошти по SSL/STARTTLS (лише без шифрування)" ;;
+                iconv) warn "Відсутнє розширення ${ext} — email-to-ticket працюватиме, але рідкісні кодування листів (не UTF-8) розпізнаватимуться гірше" ;;
                 *) warn "Відсутнє опційне розширення ${ext}" ;;
             esac
         fi
@@ -462,7 +464,7 @@ SQL
 
     cat > "$ENV_FILE" <<ENV
 # Згенеровано install.sh $(date '+%Y-%m-%d %H:%M:%S')
-# УВАГА: цей файл містить пароль БД — не додавайте його в git (він у .gitignore)
+# УВАГА: цей файл містить пароль БД — нікуди його не публікуйте й не додавайте в git
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=${DB_NAME}
@@ -470,6 +472,21 @@ DB_USERNAME=${DB_USER}
 DB_PASSWORD=${DB_PASS}
 APP_ENV=production
 APP_URL=http://localhost
+
+# --- Email-to-ticket (необов'язково) ---
+# Підключення до поштової скриньки підтримки (IMAP): листи з неї автоматично стають тікетами.
+# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель -> Пошта -> тікети
+# і cron для bin/fetch-mail.php (див. README).
+# Коментарі — лише окремими рядками: файл не підтримує коментарі в кінці рядка зі значенням.
+# MAIL_IMAP_ENCRYPTION: ssl (порт 993), tls (STARTTLS, порт 143) або none.
+# MAIL_IMAP_VERIFY_CERT=false — лише для внутрішнього сервера з самопідписаним сертифікатом.
+#MAIL_IMAP_HOST=imap.example.org
+#MAIL_IMAP_PORT=993
+#MAIL_IMAP_ENCRYPTION=ssl
+#MAIL_IMAP_USERNAME=support@example.org
+#MAIL_IMAP_PASSWORD=
+#MAIL_IMAP_FOLDER=INBOX
+#MAIL_IMAP_VERIFY_CERT=true
 ENV
 
     chmod 600 "$ENV_FILE"

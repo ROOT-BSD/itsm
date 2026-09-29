@@ -73,4 +73,13 @@
             </div>
         </div>
     </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">📧 Пошта → тікети</h5>
+                <p class="card-text text-muted small">Автоматичне створення тікетів із листів у поштовій скриньці підтримки: підключення, черга, журнал обробки.</p>
+                <a href="/admin/email" class="btn btn-outline-secondary btn-sm">Відкрити</a>
+            </div>
+        </div>
+    </div>
 </div>

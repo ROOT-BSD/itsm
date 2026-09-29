@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\Router;
 use App\Controllers\AdminController;
 use App\Controllers\AuditController;
+use App\Controllers\EmailController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
@@ -168,6 +169,18 @@ $router->post('/admin/queues', function () {
 });
 $router->post('/admin/queues/{id}/sla', function ($p) {
     (new AdminController())->updateSlaPolicy($p);
+});
+$router->get('/admin/email', function () {
+    (new EmailController())->index();
+});
+$router->post('/admin/email', function () {
+    (new EmailController())->save();
+});
+$router->post('/admin/email/test', function () {
+    (new EmailController())->test();
+});
+$router->post('/admin/email/fetch', function () {
+    (new EmailController())->fetchNow();
 });
 
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

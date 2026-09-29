@@ -14,6 +14,7 @@ $entityTypeLabels = [
     'task_relation' => "Зв'язок задач",
     'ticket_queue' => 'Черга тікетів',
     'user' => 'Користувач',
+    'app_settings' => 'Налаштування',
 ];
 
 // Підписи для полів усередині JSON-колонки "changes" — щоб замість
@@ -33,6 +34,9 @@ $changeKeyLabels = [
     'email' => 'Email',
     'first_response_minutes' => 'Перша відповідь (хв)',
     'resolution_minutes' => 'Вирішення (хв)',
+    'email_ticket_enabled' => 'Обробка пошти',
+    'email_ticket_queue_id' => 'Черга для пошти (0 = перша)',
+    'from' => 'Відправник',
 ];
 
 // Значення поля relation_type — той самий переклад, що й на сторінці Ганта.

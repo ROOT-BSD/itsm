@@ -136,3 +136,8 @@
 .sla-minutes-input {
     width: 90px;
 }
+
+/* Пошта → тікети (admin/email.php) — колонка підписів у таблиці підключення */
+.email-table-label {
+    width: 45%;
+}

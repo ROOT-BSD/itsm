@@ -41,4 +41,7 @@ INSERT INTO users (full_name, email, password_hash, auth_source, role_id, is_act
 -- Блокування облікового запису після невдалих спроб входу (Адмін-панель → Безпека входу).
 INSERT INTO app_settings (setting_key, setting_value) VALUES
 ('max_login_attempts', '5'),
-('lockout_minutes', '15');
+('lockout_minutes', '15'),
+-- Email-to-ticket (Адмін-панель → Пошта → тікети): вимкнено, доки не налаштовано підключення в .env
+('email_ticket_enabled', '0'),
+('email_ticket_queue_id', '0');   -- 0 = перша черга
