@@ -41,6 +41,7 @@ $changeKeyLabels = [
     'app_url' => 'Домен застосунку',
     'error' => 'Помилка',
     'to' => 'Кому',
+    'csat_score' => 'Оцінка CSAT',
     'from' => 'Відправник',
 ];
 

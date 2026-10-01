@@ -23,7 +23,13 @@
                 <?php endif; ?>
             </td>
             <td><?= \App\Core\View::e($t['requester_name']) ?></td>
-            <td><?= \App\Core\View::e($t['operator_name'] ?? '— не призначено —') ?></td>
+            <td>
+                <?php if (empty($t['assigned_operator_id'])): ?>
+                    <span class="badge bg-warning text-dark">Непризначено</span>
+                <?php else: ?>
+                    <?= \App\Core\View::e($t['operator_name']) ?>
+                <?php endif; ?>
+            </td>
             <td><span class="badge bg-secondary"><?= \App\Core\View::e($t['status']) ?></span></td>
             <td>
                 <?php if ($t['sla']['response_overdue'] || $t['sla']['resolution_overdue']): ?>

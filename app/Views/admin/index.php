@@ -67,6 +67,15 @@
     <div class="col-md-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
+                <h5 class="card-title">⭐ CSAT — якість обслуговування</h5>
+                <p class="card-text text-muted small">Середня оцінка заявників, розбивка по чергах і операторах, останні оцінки.</p>
+                <a href="/admin/csat" class="btn btn-outline-secondary btn-sm">Переглянути звіт</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
                 <h5 class="card-title">🔒 Безпека входу</h5>
                 <p class="card-text text-muted small">Кількість невдалих спроб пароля до блокування облікового запису та тривалість блокування.</p>
                 <a href="/admin/security" class="btn btn-outline-secondary btn-sm">Налаштувати</a>

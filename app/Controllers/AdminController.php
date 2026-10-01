@@ -342,6 +342,17 @@ class AdminController
 
     // ---------- Черги тікетів ----------
 
+    /** Зведений звіт по зібраних CSAT-оцінках — загальна картина, по чергах, по операторах, останні оцінки. */
+    public function csat(): void
+    {
+        View::render('admin/csat', [
+            'summary' => Ticket::csatSummary(),
+            'byQueue' => Ticket::csatByQueue(),
+            'byOperator' => Ticket::csatByOperator(),
+            'recent' => Ticket::recentCsatRatings(50),
+        ]);
+    }
+
     /** Налаштування блокування облікового запису після невдалих спроб входу. */
     public function securitySettings(): void
     {

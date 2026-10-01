@@ -127,47 +127,56 @@ class Ticket
      * решта — лише ті, де вони заявник (requester_user_id) або призначений
      * оператор (assigned_operator_id).
      */
-    public static function allVisibleTo(int $userId, bool $isAdmin): array
+    /**
+     * @param bool $canSeeUnassigned Оператори служби підтримки й керівники ІТ-підрозділу додатково бачать
+     *                                непризначені тікети (без оператора) — щоб було що брати в роботу,
+     *                                а не лише свої вже призначені. Для адміна не має значення — він бачить усе.
+     */
+    public static function allVisibleTo(int $userId, bool $isAdmin, bool $canSeeUnassigned = false): array
     {
         if ($isAdmin) {
             return self::all();
         }
 
-        $stmt = Database::connection()->prepare(
-            "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
+        $sql = "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
              LEFT JOIN projects p ON p.id = t.project_id
-             WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2
-             ORDER BY t.created_at DESC"
-        );
+             WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2"
+            . ($canSeeUnassigned ? ' OR t.assigned_operator_id IS NULL' : '')
+            . ' ORDER BY t.created_at DESC';
+
+        $stmt = Database::connection()->prepare($sql);
         $stmt->execute(['uid1' => $userId, 'uid2' => $userId]);
         return $stmt->fetchAll();
     }
 
     /** Те саме, що allVisibleTo(), але без закритих тікетів — для головного списку `/tickets`. Закриті — на окремій сторінці «Архів». */
-    public static function allOpenVisibleTo(int $userId, bool $isAdmin): array
+    public static function allOpenVisibleTo(int $userId, bool $isAdmin, bool $canSeeUnassigned = false): array
     {
         return array_values(array_filter(
-            self::allVisibleTo($userId, $isAdmin),
+            self::allVisibleTo($userId, $isAdmin, $canSeeUnassigned),
             fn(array $t): bool => $t['status'] !== 'closed'
         ));
     }
 
     /** Лише закриті тікети, видимі цьому користувачу — для сторінки «Архів». */
-    public static function allClosedVisibleTo(int $userId, bool $isAdmin): array
+    public static function allClosedVisibleTo(int $userId, bool $isAdmin, bool $canSeeUnassigned = false): array
     {
         return array_values(array_filter(
-            self::allVisibleTo($userId, $isAdmin),
+            self::allVisibleTo($userId, $isAdmin, $canSeeUnassigned),
             fn(array $t): bool => $t['status'] === 'closed'
         ));
     }
 
-    /** Чи бачить цей користувач цей тікет: адмін / заявник / призначений оператор. */
-    public static function isVisibleTo(array $ticket, int $userId, bool $isAdmin): bool
+    /** Чи бачить цей користувач цей тікет: адмін / заявник / призначений оператор / (якщо дозволено) непризначений тікет. */
+    public static function isVisibleTo(array $ticket, int $userId, bool $isAdmin, bool $canSeeUnassigned = false): bool
     {
         if ($isAdmin) {
+            return true;
+        }
+        if ($canSeeUnassigned && empty($ticket['assigned_operator_id'])) {
             return true;
         }
         return (int) ($ticket['requester_user_id'] ?? 0) === $userId
@@ -247,16 +256,76 @@ class Ticket
     }
 
     /** Оцінка якості обслуговування (1–5) від заявника — лише для вже вирішеного/закритого тікета, і лише один раз. */
-    public static function submitCsat(int $id, int $score): void
+    /** @param int|null $actingUserId null для анонімного заявника (портал самообслуговування), інакше його user_id.
+     *  @return bool true, якщо оцінку справді застосовано (тікет був вирішений/закритий і ще не оцінений). */
+    public static function submitCsat(int $id, int $score, ?int $actingUserId = null): bool
     {
         $stmt = Database::connection()->prepare(
             "UPDATE tickets SET csat_score = :score
              WHERE id = :id AND status IN ('resolved','closed') AND csat_score IS NULL"
         );
         $stmt->execute(['score' => $score, 'id' => $id]);
-        if ($stmt->rowCount() > 0) {
-            Audit::log('ticket', $id, 'csat_submitted', null, ['csat_score' => $score]);
+        $applied = $stmt->rowCount() > 0;
+        if ($applied) {
+            Audit::log('ticket', $id, 'csat_submitted', $actingUserId, ['csat_score' => $score]);
         }
+        return $applied;
+    }
+
+    /** Загальна картина по всіх зібраних CSAT-оцінках — для адмін-звіту. */
+    public static function csatSummary(): array
+    {
+        $row = Database::connection()->query(
+            "SELECT COUNT(*) AS total, AVG(csat_score) AS avg_score,
+                    SUM(csat_score = 1) AS c1, SUM(csat_score = 2) AS c2, SUM(csat_score = 3) AS c3,
+                    SUM(csat_score = 4) AS c4, SUM(csat_score = 5) AS c5
+             FROM tickets WHERE csat_score IS NOT NULL"
+        )->fetch();
+        $row['avg_score'] = $row['avg_score'] !== null ? round((float) $row['avg_score'], 2) : null;
+        return $row;
+    }
+
+    /** Середня оцінка по кожній черзі, де є хоч одна оцінка. */
+    public static function csatByQueue(): array
+    {
+        return Database::connection()->query(
+            "SELECT q.name AS queue_name, COUNT(*) AS total, ROUND(AVG(t.csat_score), 2) AS avg_score
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             WHERE t.csat_score IS NOT NULL
+             GROUP BY q.id, q.name
+             ORDER BY avg_score DESC"
+        )->fetchAll();
+    }
+
+    /** Середня оцінка по кожному оператору, якому призначались оцінені тікети. */
+    public static function csatByOperator(): array
+    {
+        return Database::connection()->query(
+            "SELECT u.full_name AS operator_name, COUNT(*) AS total, ROUND(AVG(t.csat_score), 2) AS avg_score
+             FROM tickets t
+             JOIN users u ON u.id = t.assigned_operator_id
+             WHERE t.csat_score IS NOT NULL
+             GROUP BY u.id, u.full_name
+             ORDER BY avg_score DESC"
+        )->fetchAll();
+    }
+
+    /** Останні оцінені тікети — для таблиці в адмін-звіті. */
+    public static function recentCsatRatings(int $limit = 50): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT t.id, t.subject, t.csat_score, t.updated_at, q.name AS queue_name, op.full_name AS operator_name
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             WHERE t.csat_score IS NOT NULL
+             ORDER BY t.updated_at DESC
+             LIMIT :limit"
+        );
+        $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
     }
 
     /** Призначення оператора з наявних користувачів (виконавця тікета). */

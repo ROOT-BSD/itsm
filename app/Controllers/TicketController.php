@@ -13,11 +13,17 @@ class TicketController
     /** Допустимі значення статусу тікета (ENUM у БД). */
     private const STATUSES = ['new', 'in_progress', 'waiting_customer', 'resolved', 'closed'];
 
+    /** Оператори служби підтримки й керівники ІТ-підрозділу додатково бачать непризначені тікети — щоб було що брати в роботу. */
+    private function canSeeUnassigned(): bool
+    {
+        return Auth::hasRole(['it_manager', 'support_operator']);
+    }
+
     public function index(): void
     {
         Auth::requireLogin();
 
-        $tickets = Ticket::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin']));
+        $tickets = Ticket::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned());
         $policies = Ticket::slaPoliciesByQueue();
 
         foreach ($tickets as &$ticket) {
@@ -101,7 +107,7 @@ class TicketController
             echo 'Тікет не знайдено.';
             return;
         }
-        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
             http_response_code(403);
             echo 'Доступ до цього тікета обмежено — його бачать лише заявник, призначений оператор та адміністратор системи.';
             return;
@@ -112,6 +118,8 @@ class TicketController
             'comments' => Ticket::comments($ticket['id']),
             'users' => User::allActive(),
             'sla' => Ticket::slaStatus($ticket, Ticket::slaPoliciesByQueue()),
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
         ]);
     }
 
@@ -144,7 +152,7 @@ class TicketController
             echo 'Тікет не знайдено.';
             return;
         }
-        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
             http_response_code(403);
             echo 'Доступ до цього тікета обмежено.';
             return;
@@ -171,7 +179,7 @@ class TicketController
             echo 'Тікет не знайдено.';
             return;
         }
-        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']))) {
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
             http_response_code(403);
             echo 'Доступ до цього тікета обмежено.';
             return;
@@ -184,6 +192,41 @@ class TicketController
             Ticket::addComment((int) $params['id'], $authorType, Auth::id(), $body);
         }
         header('Location: /tickets/' . $params['id']);
+        exit;
+    }
+
+    /** Оцінка CSAT залогіненим заявником — лише своя оцінка, лише для вирішеного/закритого тікета, лише один раз. */
+    public function submitCsat(array $params): void
+    {
+        Auth::requireLogin();
+
+        $id = (int) $params['id'];
+        $ticket = Ticket::find($id);
+        if (!$ticket) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            return;
+        }
+        // Навмисно суворіше за звичайну видимість тікета: оцінювати якість вирішення
+        // може лише сам заявник, а не оператор чи адміністратор, що його переглядає.
+        if ((int) ($ticket['requester_user_id'] ?? 0) !== Auth::id()) {
+            http_response_code(403);
+            echo 'Оцінити звернення може лише заявник.';
+            return;
+        }
+
+        $score = (int) ($_POST['csat_score'] ?? 0);
+        if ($score < 1 || $score > 5) {
+            header('Location: /tickets/' . $id . '?error=' . urlencode('Оцінка має бути від 1 до 5'));
+            exit;
+        }
+
+        $applied = Ticket::submitCsat($id, $score, Auth::id());
+        if (!$applied) {
+            header('Location: /tickets/' . $id . '?error=' . urlencode('Оцінити можна лише вирішене чи закрите звернення, і лише один раз'));
+            exit;
+        }
+        header('Location: /tickets/' . $id . '?success=' . urlencode('Дякуємо за оцінку!'));
         exit;
     }
 

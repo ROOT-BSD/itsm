@@ -100,6 +100,7 @@ $router->get('/archive', fn() => (new ArchiveController())->index());
 $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
 $router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
+$router->post('/tickets/{id}/csat', fn($p) => $tickets->submitCsat($p));
 
 // --- Адмін-панель (лише роль admin — перевіряється в конструкторі AdminController) ---
 $router->get('/admin', function () {
@@ -116,6 +117,9 @@ $router->get('/admin/time', function () {
 });
 $router->get('/admin/audit', function () {
     (new AuditController())->index();
+});
+$router->get('/admin/csat', function () {
+    (new AdminController())->csat();
 });
 $router->get('/admin/users', function () {
     (new AdminController())->users();

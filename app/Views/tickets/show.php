@@ -2,8 +2,11 @@
     <a href="/tickets" class="text-decoration-none">&larr; Тікети</a>
 </div>
 
-<?php if (!empty($_GET['error'])): ?>
-    <div class="alert alert-danger"><?= \App\Core\View::e($_GET['error']) ?></div>
+<?php if (!empty($error)): ?>
+    <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
+<?php endif; ?>
+<?php if (!empty($success)): ?>
+    <div class="alert alert-success"><?= \App\Core\View::e($success) ?></div>
 <?php endif; ?>
 
 <div class="card mb-4">
@@ -90,3 +93,29 @@
         </form>
     </div>
 </div>
+
+<?php $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true); ?>
+<?php if ($isFinished && (int)($ticket['requester_user_id'] ?? 0) === \App\Core\Auth::id()): ?>
+    <div class="card mt-3">
+        <div class="card-body">
+            <?php if ($ticket['csat_score'] !== null): ?>
+                <p class="mb-0">Дякуємо, ви вже оцінили це звернення: <strong><?= (int)$ticket['csat_score'] ?> з 5</strong>.</p>
+            <?php else: ?>
+                <p class="mb-2">Наскільки ви задоволені вирішенням звернення?</p>
+                <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/csat" class="d-flex gap-2">
+                    <?= \App\Core\Csrf::field() ?>
+                    <?php for ($i = 1; $i <= 5; $i++): ?>
+                        <button type="submit" name="csat_score" value="<?= $i ?>" class="btn btn-outline-primary"><?= $i ?></button>
+                    <?php endfor; ?>
+                </form>
+                <div class="form-text mt-1">1 — незадовільно, 5 — відмінно</div>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php elseif ($ticket['csat_score'] !== null): ?>
+    <div class="card mt-3">
+        <div class="card-body text-muted">
+            Оцінка заявника: <strong><?= (int)$ticket['csat_score'] ?> з 5</strong>
+        </div>
+    </div>
+<?php endif; ?>

@@ -21,9 +21,10 @@ class ArchiveController
     {
         Auth::requireLogin();
         $isAdmin = Auth::hasRole(['admin']);
+        $canSeeUnassigned = Auth::hasRole(['it_manager', 'support_operator']);
 
         View::render('archive/index', [
-            'tickets' => Ticket::allClosedVisibleTo(Auth::id(), $isAdmin),
+            'tickets' => Ticket::allClosedVisibleTo(Auth::id(), $isAdmin, $canSeeUnassigned),
             'tasks' => Task::allClosedVisibleTo(Auth::id(), $isAdmin),
             'projects' => Project::closedVisibleTo(Auth::id(), $isAdmin),
         ]);

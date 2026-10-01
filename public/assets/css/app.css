@@ -146,3 +146,14 @@
 .app-url-input {
     max-width: 380px;
 }
+
+/* Звіт CSAT (admin/csat.php) — рядок розподілу оцінок 1-5 */
+.csat-dist-label {
+    width: 1.2em;
+}
+.csat-dist-bar {
+    height: 10px;
+}
+.csat-dist-count {
+    width: 3em;
+}
