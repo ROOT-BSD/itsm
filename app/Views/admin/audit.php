@@ -36,6 +36,11 @@ $changeKeyLabels = [
     'resolution_minutes' => 'Вирішення (хв)',
     'email_ticket_enabled' => 'Обробка пошти',
     'email_ticket_queue_id' => 'Черга для пошти (0 = перша)',
+    'email_autoreply_enabled' => 'Автовідповідь заявнику',
+    'email_notifications_enabled' => 'Email-сповіщення про активність',
+    'app_url' => 'Домен застосунку',
+    'error' => 'Помилка',
+    'to' => 'Кому',
     'from' => 'Відправник',
 ];
 

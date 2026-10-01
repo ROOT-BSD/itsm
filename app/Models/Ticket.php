@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\NotificationService;
 
 /**
  * Мінімальна реалізація Service Desk (Епік 12): створення тікета,
@@ -145,6 +146,24 @@ class Ticket
         return $stmt->fetchAll();
     }
 
+    /** Те саме, що allVisibleTo(), але без закритих тікетів — для головного списку `/tickets`. Закриті — на окремій сторінці «Архів». */
+    public static function allOpenVisibleTo(int $userId, bool $isAdmin): array
+    {
+        return array_values(array_filter(
+            self::allVisibleTo($userId, $isAdmin),
+            fn(array $t): bool => $t['status'] !== 'closed'
+        ));
+    }
+
+    /** Лише закриті тікети, видимі цьому користувачу — для сторінки «Архів». */
+    public static function allClosedVisibleTo(int $userId, bool $isAdmin): array
+    {
+        return array_values(array_filter(
+            self::allVisibleTo($userId, $isAdmin),
+            fn(array $t): bool => $t['status'] === 'closed'
+        ));
+    }
+
     /** Чи бачить цей користувач цей тікет: адмін / заявник / призначений оператор. */
     public static function isVisibleTo(array $ticket, int $userId, bool $isAdmin): bool
     {
@@ -171,6 +190,7 @@ class Ticket
     }
 
     /** Тікети, прив'язані до конкретного проєкту — для розділу «Пов'язані тікети» на сторінці проєкту. */
+    /** Тікети, прив'язані до конкретного проєкту — для розділу «Пов'язані тікети» на сторінці проєкту. Закриті приховані — дивіться сторінку «Архів». */
     public static function forProject(int $projectId): array
     {
         $stmt = Database::connection()->prepare(
@@ -178,7 +198,7 @@ class Ticket
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
-             WHERE t.project_id = :project_id
+             WHERE t.project_id = :project_id AND t.status != 'closed'
              ORDER BY t.created_at DESC"
         );
         $stmt->execute(['project_id' => $projectId]);
@@ -263,6 +283,7 @@ class Ticket
 
         Database::connection()->prepare($sql)->execute($fields);
         Audit::log('ticket', $id, 'status_changed_to_' . $status, $actingUserId);
+        NotificationService::ticketStatusChanged($id, $status, $actingUserId);
     }
 
     public static function addComment(int $ticketId, string $authorType, ?int $authorId, string $body): void
@@ -284,6 +305,8 @@ class Ticket
                 'UPDATE tickets SET first_response_at = COALESCE(first_response_at, NOW()) WHERE id = :id'
             )->execute(['id' => $ticketId]);
         }
+
+        NotificationService::ticketCommentAdded($ticketId, $authorType, $authorId);
     }
 
     public static function comments(int $ticketId): array

@@ -28,6 +28,7 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link" href="/projects">Проєкти</a></li>
                 <li class="nav-item"><a class="nav-link" href="/calendar">Календар</a></li>
                 <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
+                <li class="nav-item"><a class="nav-link" href="/archive">Архів</a></li>
                 <?php if (Auth::hasRole(['admin'])): ?>
                 <li class="nav-item"><a class="nav-link" href="/admin">Адмін-панель</a></li>
                 <?php endif; ?>

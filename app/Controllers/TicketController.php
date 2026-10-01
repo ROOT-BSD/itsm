@@ -17,7 +17,7 @@ class TicketController
     {
         Auth::requireLogin();
 
-        $tickets = Ticket::allVisibleTo(Auth::id(), Auth::hasRole(['admin']));
+        $tickets = Ticket::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin']));
         $policies = Ticket::slaPoliciesByQueue();
 
         foreach ($tickets as &$ticket) {

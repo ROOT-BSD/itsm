@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\NotificationService;
 
 class Task
 {
@@ -65,6 +66,15 @@ class Task
         return $stmt->fetchAll();
     }
 
+    /** Те саме, що forProject(), але без закритих — для таблиці задач на сторінці проєкту. Канбан і Гант і далі показують усі статуси (потрібні для картини процесу); закриті задачі — на сторінці «Архів». */
+    public static function openForProject(int $projectId): array
+    {
+        return array_values(array_filter(
+            self::forProject($projectId),
+            fn(array $t): bool => empty($t['is_closed'])
+        ));
+    }
+
     /**
      * Усі відкриті задачі з проєктів, видимих користувачу (адмін/автор
      * проєкту/відповідальний за проєкт) — для загальної сторінки "Відкриті
@@ -89,6 +99,32 @@ class Task
         }
 
         $sql .= ' ORDER BY p.name ASC, t.due_date IS NULL, t.due_date ASC';
+
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    /** Те саме, що allOpenVisibleTo(), але лише ЗАКРИТІ задачі — для сторінки «Архів». */
+    public static function allClosedVisibleTo(int $userId, bool $isAdmin): array
+    {
+        $sql = "SELECT t.*, ts.name AS status_name, tt.name AS type_name, p.name AS project_name,
+                       asg.full_name AS assignee_name,
+                       DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted
+                FROM tasks t
+                JOIN task_statuses ts ON ts.id = t.status_id
+                JOIN task_types tt ON tt.id = t.type_id
+                JOIN projects p ON p.id = t.project_id
+                LEFT JOIN users asg ON asg.id = t.assignee_id
+                WHERE ts.is_closed = 1";
+        $params = [];
+
+        if (!$isAdmin) {
+            $sql .= ' AND (p.created_by = :uid1 OR p.responsible_user_id = :uid2)';
+            $params = ['uid1' => $userId, 'uid2' => $userId];
+        }
+
+        $sql .= ' ORDER BY p.name ASC, t.updated_at DESC';
 
         $stmt = Database::connection()->prepare($sql);
         $stmt->execute($params);
@@ -137,6 +173,7 @@ class Task
 
         $taskId = (int) Database::connection()->lastInsertId();
         Audit::log('task', $taskId, 'created', $data['author_id']);
+        NotificationService::taskCreated($taskId, $data['assignee_id'] ?: null, (int) $data['author_id']);
         return $taskId;
     }
 
@@ -149,9 +186,15 @@ class Task
 
     public static function updateAssignee(int $id, ?int $assigneeId, int $actingUserId): void
     {
+        $previousStmt = Database::connection()->prepare('SELECT assignee_id FROM tasks WHERE id = :id');
+        $previousStmt->execute(['id' => $id]);
+        $previousAssigneeId = $previousStmt->fetchColumn();
+        $previousAssigneeId = $previousAssigneeId !== false && $previousAssigneeId !== null ? (int) $previousAssigneeId : null;
+
         $stmt = Database::connection()->prepare('UPDATE tasks SET assignee_id = :assignee_id WHERE id = :id');
         $stmt->execute(['assignee_id' => $assigneeId ?: null, 'id' => $id]);
         Audit::log('task', $id, 'assignee_changed', $actingUserId, ['assignee_id' => $assigneeId]);
+        NotificationService::taskAssigneeChanged($id, $assigneeId ?: null, $previousAssigneeId, $actingUserId);
     }
 
     /** Прив'язка задачі до етапу/контрольної точки (дорожня карта) — або зняття прив'язки. */
@@ -245,6 +288,10 @@ class Task
         );
         $stmt->execute(['start_date' => $startDate, 'due_date' => $dueDate, 'id' => $id]);
         Audit::log('task', $id, 'dates_changed', $actingUserId, ['start_date' => $startDate, 'due_date' => $dueDate]);
+
+        // Термін переносять — старі нагадування (2 дні/1 день/настав термін) уже не відповідають
+        // новій даті; прибираємо їх, щоб вони мали шанс спрацювати заново для нового терміну.
+        Database::connection()->prepare('DELETE FROM task_due_reminders WHERE task_id = :id')->execute(['id' => $id]);
     }
 
     /** Створення зв'язку залежності між двома задачами (для діаграми Ганта). */

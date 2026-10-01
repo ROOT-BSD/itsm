@@ -15,8 +15,10 @@
 #   10. Додає колонку tickets.access_token (портал самообслуговування /support), якщо її ще немає
 #   11. Додає унікальність SLA-нормативу на чергу (керування нормативами в інтерфейсі), якщо її ще немає
 #   12. Додає таблицю журналу обробки пошти для email-to-ticket, якщо її ще немає
-#   13. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   14. Перевстановлює права доступу на файли для веб-сервера
+#   13. Додає налаштування автовідповіді заявнику (email-to-ticket), якщо його ще немає
+#   14. Додає таблицю нагадувань про термін і налаштування email-сповіщень, якщо їх ще немає
+#   15. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   16. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -405,8 +407,63 @@ else
     ok "Таблиця email_ingest_log вже є — нічого робити не треба"
 fi
 
-# ---------- 13. Очищення застарілого кешу PDF-шрифтів ----------
-section "13. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 13. Налаштування автовідповіді email-to-ticket ----------
+section "13. Перевірка налаштування автовідповіді заявнику"
+
+AUTOREPLY_SETTING_EXISTS=$(echo "
+    SELECT COUNT(*) FROM app_settings WHERE setting_key = 'email_autoreply_enabled';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${AUTOREPLY_SETTING_EXISTS:-0}" -eq 0 ]; then
+    info "Налаштування email_autoreply_enabled не знайдено — додаю (вимкнено за замовчуванням)..."
+
+    MIGRATION_AUTOREPLY="${SCRIPT_DIR}/database/migrations/012_add_email_autoreply_setting.sql"
+    if [ ! -f "$MIGRATION_AUTOREPLY" ]; then
+        fail "Файл ${MIGRATION_AUTOREPLY} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_AUTOREPLY" >/dev/null 2>&1; then
+        ok "Додано — автовідповідь можна ввімкнути в Адмін-панель → Пошта → тікети (після налаштування SMTP)"
+    else
+        fail "Помилка додавання налаштування email_autoreply_enabled"
+        exit 1
+    fi
+else
+    ok "Налаштування email_autoreply_enabled вже є — нічого робити не треба"
+fi
+
+# ---------- 14. Email-сповіщення про активність і нагадування про термін ----------
+section "14. Перевірка таблиці нагадувань про термін і налаштування сповіщень"
+
+REMINDERS_TABLE_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'task_due_reminders';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${REMINDERS_TABLE_EXISTS:-0}" -eq 0 ]; then
+    info "Таблицю task_due_reminders не знайдено — додаю (разом з налаштуванням email-сповіщень)..."
+
+    MIGRATION_NOTIFICATIONS="${SCRIPT_DIR}/database/migrations/013_add_email_notifications.sql"
+    if [ ! -f "$MIGRATION_NOTIFICATIONS" ]; then
+        fail "Файл ${MIGRATION_NOTIFICATIONS} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_NOTIFICATIONS" >/dev/null 2>&1; then
+        ok "Додано — email-сповіщення можна ввімкнути в Адмін-панель → Пошта → тікети (після налаштування SMTP)"
+    else
+        fail "Помилка додавання таблиці task_due_reminders"
+        exit 1
+    fi
+else
+    ok "Таблиця task_due_reminders вже є — нічого робити не треба"
+fi
+
+# ---------- 15. Очищення застарілого кешу PDF-шрифтів ----------
+section "15. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -422,8 +479,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 14. Права доступу ----------
-section "14. Права доступу до файлів"
+# ---------- 16. Права доступу ----------
+section "16. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

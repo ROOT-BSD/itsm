@@ -487,6 +487,20 @@ APP_URL=http://localhost
 #MAIL_IMAP_PASSWORD=
 #MAIL_IMAP_FOLDER=INBOX
 #MAIL_IMAP_VERIFY_CERT=true
+
+# --- Автовідповідь заявнику (необов'язково, потребує вже налаштованого IMAP вище) ---
+# Без окремих MAIL_SMTP_* успадковує сервер/логін/пароль з MAIL_IMAP_* — типова
+# ситуація, коли отримання й надсилання йдуть через ту саму скриньку. Мінімум
+# додайте адресу відправника нижче, увімкніть галочку в Адмін-панель -> Пошта -> тікети.
+# MAIL_SMTP_ENCRYPTION: ssl (порт 465), tls (STARTTLS, порт 587) або none.
+#MAIL_SMTP_FROM_EMAIL=support@example.org
+#MAIL_SMTP_FROM_NAME=Служба підтримки
+#MAIL_SMTP_HOST=smtp.example.org
+#MAIL_SMTP_PORT=587
+#MAIL_SMTP_ENCRYPTION=tls
+#MAIL_SMTP_USERNAME=support@example.org
+#MAIL_SMTP_PASSWORD=
+#MAIL_SMTP_VERIFY_CERT=true
 ENV
 
     chmod 600 "$ENV_FILE"

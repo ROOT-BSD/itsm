@@ -12,6 +12,7 @@ use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
 use App\Controllers\ProfileController;
 use App\Controllers\TicketController;
+use App\Controllers\ArchiveController;
 use App\Controllers\SupportController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectController;
@@ -93,6 +94,9 @@ $router->get('/tickets', fn() => $tickets->index());
 $router->get('/tickets/create', fn() => $tickets->showCreateForm());
 $router->post('/tickets', fn() => $tickets->store());
 $router->get('/tickets/{id}', fn($p) => $tickets->show($p));
+
+// --- Архів (закриті тікети/задачі/проєкти) ---
+$router->get('/archive', fn() => (new ArchiveController())->index());
 $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
 $router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
@@ -178,6 +182,15 @@ $router->post('/admin/email', function () {
 });
 $router->post('/admin/email/test', function () {
     (new EmailController())->test();
+});
+$router->post('/admin/email/test-smtp', function () {
+    (new EmailController())->testSmtp();
+});
+$router->post('/admin/email/send-test', function () {
+    (new EmailController())->sendTestEmail();
+});
+$router->post('/admin/email/app-url', function () {
+    (new EmailController())->saveAppUrl();
 });
 $router->post('/admin/email/fetch', function () {
     (new EmailController())->fetchNow();

@@ -46,8 +46,41 @@ class EmailTicketService
         return ($c['host'] ?? '') !== '' && ($c['username'] ?? '') !== '' && ($c['password'] ?? '') !== '';
     }
 
+    /**
+     * Що не так у налаштуваннях підключення (.env), або null, якщо все гаразд. Перевіряється ДО будь-якої
+     * спроби з'єднання: помилку налаштування має бути видно як помилку налаштування, а не як загадкову
+     * мережеву («No route to host» на порт 0), і пароль не повинен піти в мережу за хибних параметрів.
+     */
+    public static function configProblem(): ?string
+    {
+        $c = Config::get('mail', []);
+
+        $encryption = (string) ($c['encryption'] ?? '');
+        if (!in_array($encryption, ['ssl', 'tls', 'none'], true)) {
+            return "Невідоме значення MAIL_IMAP_ENCRYPTION: «{$encryption}». Допустимо: ssl (порт 993), tls або starttls (STARTTLS, порт 143), none. "
+                . 'Підключення не виконується, щоб пароль скриньки не пішов у мережу без шифрування.';
+        }
+
+        $port = (string) ($c['port'] ?? '');
+        if (!ctype_digit($port) || (int) $port < 1 || (int) $port > 65535) {
+            return "MAIL_IMAP_PORT має бути цілим числом від 1 до 65535, а в .env зараз: «{$port}». "
+                . 'Зазвичай 993 для ssl і 143 для tls/none. Можна взагалі не вказувати — тоді підставиться за типом шифрування.';
+        }
+
+        $host = (string) ($c['host'] ?? '');
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $host) || preg_match('/\s/', $host)
+            || (str_contains($host, ':') && !str_starts_with($host, '['))) {
+            return "MAIL_IMAP_HOST має бути лише іменем сервера (наприклад, mail.example.org) — без «imap://», пробілів і порту; "
+                . "порт вказується окремо в MAIL_IMAP_PORT. Зараз: «{$host}».";
+        }
+        return null;
+    }
+
     private static function connect(): ImapClient
     {
+        if (($problem = self::configProblem()) !== null) {
+            throw new ImapException($problem);
+        }
         $c = Config::get('mail', []);
         $client = new ImapClient($c['host'], (int) $c['port'], $c['encryption'], (bool) $c['verify_cert']);
         $client->connect();
@@ -187,12 +220,42 @@ class EmailTicketService
             }
             self::log($messageId, $m['from_email'], $m['subject'], $outcome['action'], $outcome['ticket_id'], $outcome['note']);
             $pdo->commit();
+
+            // Навмисно ПІСЛЯ commit(): збій надсилання листа (SMTP недоступний тощо)
+            // не повинен відкотити вже успішно створений тікет. MailerService::send()
+            // сам ловить SmtpException і повертає ['ok' => false, ...] — сюди виняток
+            // не долітає в жодному разі.
+            if ($outcome['action'] === 'ticket_created' && Setting::get('email_autoreply_enabled', '0') === '1') {
+                self::sendAutoReply((int) $outcome['ticket_id'], $m);
+            }
+
             return $outcome;
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             throw $e;
+        }
+    }
+
+    /** Автовідповідь заявнику з посиланням для відстеження — лише при СТВОРЕННІ тікета, не на кожен коментар у гілці. */
+    private static function sendAutoReply(int $ticketId, array $m): void
+    {
+        $ticket = Ticket::find($ticketId);
+        if (!$ticket || empty($ticket['access_token'])) {
+            return;
+        }
+
+        $trackUrl = Setting::appUrl() . '/support/track/' . $ticket['access_token'];
+        $greeting = $m['from_name'] !== '' ? "Доброго дня, {$m['from_name']}!" : 'Доброго дня!';
+        $body = "{$greeting}\n\n"
+            . "Ваше звернення «{$ticket['subject']}» зареєстровано під номером #{$ticketId}.\n\n"
+            . "Відстежити статус і, за потреби, додати повідомлення можна за посиланням:\n{$trackUrl}\n\n"
+            . "Це автоматичний лист — відповідати на нього не потрібно, скористайтесь посиланням вище.";
+
+        $result = MailerService::send($m['from_email'], $m['from_name'], "Ваше звернення отримано [#{$ticketId}]", $body, $m['message_id'] ?: null);
+        if (!$result['ok']) {
+            Audit::log('ticket', $ticketId, 'autoreply_failed', null, ['error' => mb_substr($result['message'], 0, 200)]);
         }
     }
 

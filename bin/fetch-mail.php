@@ -31,6 +31,11 @@ try {
         exit(2);
     }
 
+    if (($problem = EmailTicketService::configProblem()) !== null) {
+        fwrite(STDERR, $stamp('Помилка в налаштуваннях .env: ' . $problem));
+        exit(2);
+    }
+
     if (in_array('--test', $args, true)) {
         $check = EmailTicketService::testConnection();
         echo $stamp($check['message']);

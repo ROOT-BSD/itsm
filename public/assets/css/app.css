@@ -141,3 +141,8 @@
 .email-table-label {
     width: 45%;
 }
+
+/* Домен застосунку (admin/email.php) — поле вводу URL не на всю ширину картки */
+.app-url-input {
+    max-width: 380px;
+}

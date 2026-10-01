@@ -9,6 +9,16 @@
 <?php
 $statusLabels = ['active' => 'Активний', 'archived' => 'Архівний', 'closed' => 'Закритий'];
 $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
+// Українська плюралізація: 1 підпроєкт, 2–4 підпроєкти, 5+ (і 11–14) підпроєктів.
+$subProjectsWord = static function (int $n): string {
+    if ($n % 10 === 1 && $n % 100 !== 11) {
+        return 'підпроєкт';
+    }
+    if (in_array($n % 10, [2, 3, 4], true) && !in_array($n % 100, [12, 13, 14], true)) {
+        return 'підпроєкти';
+    }
+    return 'підпроєктів';
+};
 ?>
 <?php foreach ($projects as $p): ?>
     <div class="col-md-4 mb-3">
@@ -18,6 +28,9 @@ $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => '
                 <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($p['description'] ?? '', 0, 100, '…')) ?></p>
                 <span class="badge bg-<?= $statusColors[$p['status']] ?? 'secondary' ?>"><?= \App\Core\View::e($statusLabels[$p['status']] ?? $p['status']) ?></span>
                 <span class="badge bg-info text-dark"><?= (int)$p['open_tasks_count'] ?> відкритих задач</span>
+                <?php if ((int)$p['sub_projects_count'] > 0): ?>
+                    <span class="badge bg-light text-dark border">📁 <?= (int)$p['sub_projects_count'] ?> <?= $subProjectsWord((int)$p['sub_projects_count']) ?></span>
+                <?php endif; ?>
                 <?php if (in_array((int)$p['id'], $overdueProjectIds, true)): ?>
                     <span class="badge bg-danger">⚠️ Прострочено етап</span>
                 <?php endif; ?>

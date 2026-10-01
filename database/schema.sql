@@ -252,3 +252,18 @@ CREATE TABLE IF NOT EXISTS email_ingest_log (
     KEY idx_email_ingest_created (created_at),
     FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
+-- Журнал надісланих нагадувань про наближення/настання терміну виконання
+-- задачі. UNIQUE (task_id, reminder_type) — щоб те саме нагадування не
+-- надсилалось повторно при кожному запуску cron (він може виконуватись
+-- частіше, ніж раз на день). Записи видаляються каскадно при видаленні
+-- задачі, а також очищуються вручну (Task::updateDates()), якщо термін
+-- переносять, — щоб нагадування коректно спрацювали заново для нової дати.
+CREATE TABLE IF NOT EXISTS task_due_reminders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    reminder_type ENUM('2d','1d','due') NOT NULL,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_task_reminder (task_id, reminder_type),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

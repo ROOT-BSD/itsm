@@ -36,6 +36,13 @@ class ImapClient
     public function connect(): void
     {
         $encryption = strtolower($this->encryption);
+        // Захист на рівні клієнта: невідомий тип шифрування НЕ повинен мовчки означати «без шифрування».
+        if (!in_array($encryption, ['ssl', 'tls', 'none'], true)) {
+            throw new ImapException("Невідомий тип шифрування «{$this->encryption}» — допустимо ssl, tls (STARTTLS) або none. Підключення не виконано.");
+        }
+        if ($this->port < 1 || $this->port > 65535) {
+            throw new ImapException("Некоректний порт {$this->port} — потрібне число від 1 до 65535.");
+        }
         $scheme = $encryption === 'ssl' ? 'ssl' : 'tcp';
 
         $context = stream_context_create(['ssl' => [
@@ -324,6 +331,16 @@ class ImapClient
         if (preg_match('/wrong version number|unexpected eof|handshake|ssl routines|SSL operation failed/i', $detail)) {
             return "Не вдалося встановити захищене з'єднання з {$target}. Найчастіше причина — невідповідність порту та типу шифрування: "
                 . 'порт 993 потребує MAIL_IMAP_ENCRYPTION=ssl, порт 143 — tls (STARTTLS) або none.';
+        }
+        if (preg_match('/no route to host|network is unreachable/i', $detail)) {
+            return "Немає маршруту до сервера {$target} (No route to host). Це майже завжди мережа, а не налаштування застосунку: "
+                . 'файрвол на сервері ITSM (вихідні з\'єднання), файрвол чи обмеження за IP на поштовому сервері (адресу сервера ITSM не дозволено) '
+                . "або ізольована підмережа. Перевірте з сервера ITSM командою: nc -vz {$this->host} {$this->port}";
+        }
+        if (stripos($detail, 'permission denied') !== false) {
+            return "Системі заборонено відкривати вихідні з'єднання до {$target} (Permission denied). "
+                . 'На RHEL/CentOS/Fedora із SELinux для веб-сервера: setsebool -P httpd_can_network_connect 1. '
+                . 'Із cron і командного рядка (php bin/fetch-mail.php) це обмеження не діє.';
         }
         if (stripos($detail, 'refused') !== false) {
             return "Сервер {$target} відхилив з'єднання — перевірте адресу, порт і що IMAP увімкнено на сервері.";

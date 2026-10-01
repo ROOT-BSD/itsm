@@ -51,7 +51,22 @@ return (function (): array {
     $env = static fn(string $key, string $default = ''): string =>
         (($v = getenv($key)) !== false && $v !== '') ? $v : $default;
 
-    $mailEncryption = strtolower($env('MAIL_IMAP_ENCRYPTION', 'ssl')); // ssl | tls (STARTTLS) | none
+    // ssl | tls (STARTTLS) | none. «starttls» — природна назва для того самого, що й «tls». Будь-яке ІНШЕ значення
+    // лишається як є й відхиляється перевіркою EmailTicketService::configProblem() — воно НЕ повинно мовчки
+    // перетворюватись на з'єднання без шифрування (пароль скриньки пішов би відкритим текстом).
+    $mailEncryptionRaw = strtolower($env('MAIL_IMAP_ENCRYPTION', 'ssl'));
+    $mailEncryption = ['starttls' => 'tls'][$mailEncryptionRaw] ?? $mailEncryptionRaw;
+
+    // SMTP для вихідної пошти (автовідповідь заявнику з посиланням для відстеження).
+    // Явно не заданий MAIL_SMTP_* успадковує відповідний MAIL_IMAP_* — на практиці це
+    // та сама поштова скринька (той самий логін/пароль/сервер), і дублювати налаштування
+    // в .env не потрібно. Порт SMTP типово ІНШИЙ за IMAP навіть на тому самому сервері,
+    // тож MAIL_IMAP_PORT сюди НЕ успадковується.
+    $smtpEncryptionRaw = strtolower($env('MAIL_SMTP_ENCRYPTION', 'tls'));
+    $smtpEncryption = ['starttls' => 'tls'][$smtpEncryptionRaw] ?? $smtpEncryptionRaw;
+    $smtpHost = $env('MAIL_SMTP_HOST', $env('MAIL_IMAP_HOST'));
+    $smtpUsername = $env('MAIL_SMTP_USERNAME', $env('MAIL_IMAP_USERNAME'));
+    $smtpPassword = $env('MAIL_SMTP_PASSWORD', $env('MAIL_IMAP_PASSWORD'));
 
     return [
         'db' => [
@@ -65,7 +80,9 @@ return (function (): array {
         // Підключення до поштової скриньки для email-to-ticket (IMAP). Пароль — лише тут, у .env, не в БД.
         'mail' => [
             'host'        => $env('MAIL_IMAP_HOST'),
-            'port'        => (int) $env('MAIL_IMAP_PORT', $mailEncryption === 'ssl' ? '993' : '143'),
+            // Рядок, а не (int): приведення "IMAP" до int дало б 0 і мовчазну спробу підключитись до порту 0.
+            // Коректність (ціле 1–65535) перевіряє EmailTicketService::configProblem().
+            'port'        => $env('MAIL_IMAP_PORT', $mailEncryption === 'ssl' ? '993' : '143'),
             'encryption'  => $mailEncryption,
             'username'    => $env('MAIL_IMAP_USERNAME'),
             'password'    => $env('MAIL_IMAP_PASSWORD'),
@@ -73,9 +90,21 @@ return (function (): array {
             // false — лише для внутрішніх серверів із самопідписаним сертифікатом
             'verify_cert' => filter_var($env('MAIL_IMAP_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
         ],
+        // Вихідна пошта (SMTP) — наразі лише автовідповідь заявнику email-to-ticket.
+        'smtp' => [
+            'host'        => $smtpHost,
+            'port'        => $env('MAIL_SMTP_PORT', $smtpEncryption === 'ssl' ? '465' : '587'),
+            'encryption'  => $smtpEncryption,           // ssl | tls (STARTTLS) | none
+            'username'    => $smtpUsername,
+            'password'    => $smtpPassword,
+            // Адреса та ім'я в заголовку From автовідповіді. За замовчуванням — сама скринька підтримки.
+            'from_email'  => $env('MAIL_SMTP_FROM_EMAIL', $smtpUsername),
+            'from_name'   => $env('MAIL_SMTP_FROM_NAME', 'ITSM Підтримка'),
+            'verify_cert' => filter_var($env('MAIL_SMTP_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
+        ],
         'app' => [
             'name'    => 'ITSM System',
-            'version' => '0.1.3',
+            'version' => '0.2.0',
             'env'     => getenv('APP_ENV') ?: 'local', // local | production
             'url'     => getenv('APP_URL') ?: 'http://localhost:8000',
         ],

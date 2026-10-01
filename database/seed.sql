@@ -44,4 +44,7 @@ INSERT INTO app_settings (setting_key, setting_value) VALUES
 ('lockout_minutes', '15'),
 -- Email-to-ticket (Адмін-панель → Пошта → тікети): вимкнено, доки не налаштовано підключення в .env
 ('email_ticket_enabled', '0'),
-('email_ticket_queue_id', '0');   -- 0 = перша черга
+('email_ticket_queue_id', '0'),   -- 0 = перша черга
+('email_autoreply_enabled', '0'),
+-- Email-сповіщення про активність тікетів, створення/призначення проєктів і задач, нагадування про термін
+('email_notifications_enabled', '0');  -- автовідповідь заявнику з посиланням для відстеження — вимкнено, доки SMTP не перевірено

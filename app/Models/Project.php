@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\NotificationService;
 
 class Project
 {
@@ -15,7 +16,8 @@ class Project
         return Database::connection()->query(
             "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
                     parent.name AS parent_name,
-                    COALESCE(ot.open_count, 0) AS open_tasks_count
+                    COALESCE(ot.open_count, 0) AS open_tasks_count,
+                    COALESCE(sp.sub_count, 0) AS sub_projects_count
              FROM projects p
              JOIN users u ON u.id = p.created_by
              LEFT JOIN users r ON r.id = p.responsible_user_id
@@ -26,8 +28,32 @@ class Project
                  JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
                  GROUP BY t.project_id
              ) ot ON ot.project_id = p.id
+             LEFT JOIN (
+                 SELECT parent_id, COUNT(*) AS sub_count
+                 FROM projects
+                 WHERE parent_id IS NOT NULL AND status != 'closed'
+                 GROUP BY parent_id
+             ) sp ON sp.parent_id = p.id
              ORDER BY p.created_at DESC"
         )->fetchAll();
+    }
+
+    /** Основні (не підпроєкти) проєкти, видимі цьому користувачу, БЕЗ закритих — для головного списку `/projects`. Закриті — на сторінці «Архів». */
+    public static function topLevelVisibleTo(int $userId, bool $isAdmin): array
+    {
+        return array_values(array_filter(
+            self::allVisibleTo($userId, $isAdmin),
+            fn(array $p): bool => empty($p['parent_id']) && $p['status'] !== 'closed'
+        ));
+    }
+
+    /** Лише закриті проєкти (основні й підпроєкти), видимі цьому користувачу — для сторінки «Архів». */
+    public static function closedVisibleTo(int $userId, bool $isAdmin): array
+    {
+        return array_values(array_filter(
+            self::allVisibleTo($userId, $isAdmin),
+            fn(array $p): bool => $p['status'] === 'closed'
+        ));
     }
 
     /**
@@ -36,19 +62,6 @@ class Project
      * (responsible_user_id). Використовується замість all() усюди, де
      * список показується не-адміну (список проєктів, дашборд).
      */
-    /**
-     * Те саме, що allVisibleTo(), але без підпроєктів (p.parent_id IS NULL) —
-     * для головного списку «Проєкти», де підпроєкти лише засмічували б список.
-     * Підпроєкт видно на сторінці свого батьківського проєкту (карткою), а не тут.
-     */
-    public static function topLevelVisibleTo(int $userId, bool $isAdmin): array
-    {
-        return array_values(array_filter(
-            self::allVisibleTo($userId, $isAdmin),
-            fn(array $p): bool => empty($p['parent_id'])
-        ));
-    }
-
     public static function allVisibleTo(int $userId, bool $isAdmin): array
     {
         if ($isAdmin) {
@@ -58,7 +71,8 @@ class Project
         $stmt = Database::connection()->prepare(
             "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
                     parent.name AS parent_name,
-                    COALESCE(ot.open_count, 0) AS open_tasks_count
+                    COALESCE(ot.open_count, 0) AS open_tasks_count,
+                    COALESCE(sp.sub_count, 0) AS sub_projects_count
              FROM projects p
              JOIN users u ON u.id = p.created_by
              LEFT JOIN users r ON r.id = p.responsible_user_id
@@ -69,6 +83,12 @@ class Project
                  JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
                  GROUP BY t.project_id
              ) ot ON ot.project_id = p.id
+             LEFT JOIN (
+                 SELECT parent_id, COUNT(*) AS sub_count
+                 FROM projects
+                 WHERE parent_id IS NOT NULL AND status != 'closed'
+                 GROUP BY parent_id
+             ) sp ON sp.parent_id = p.id
              WHERE p.created_by = :uid1 OR p.responsible_user_id = :uid2
              ORDER BY p.created_at DESC"
         );
@@ -103,6 +123,7 @@ class Project
     }
 
     /** Прямі підпроєкти цього проєкту (без вкладених онуків) — для розділу «Підпроєкти» на сторінці проєкту. */
+    /** Прямі підпроєкти цього проєкту (без вкладених онуків), БЕЗ закритих — для розділу «Підпроєкти» на сторінці проєкту. Закриті — на сторінці «Архів». */
     public static function subProjectsOf(int $parentId): array
     {
         $stmt = Database::connection()->prepare(
@@ -115,7 +136,7 @@ class Project
                  JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
                  GROUP BY t.project_id
              ) ot ON ot.project_id = p.id
-             WHERE p.parent_id = :parent_id
+             WHERE p.parent_id = :parent_id AND p.status != 'closed'
              ORDER BY p.created_at DESC"
         );
         $stmt->execute(['parent_id' => $parentId]);
@@ -225,16 +246,25 @@ class Project
 
         $projectId = (int) Database::connection()->lastInsertId();
         Audit::log('project', $projectId, 'created', $createdBy);
+        NotificationService::projectCreated($projectId, $responsibleUserId ?: null, $createdBy);
         return $projectId;
     }
 
     public static function updateResponsible(int $id, ?int $responsibleUserId, int $actingUserId): void
     {
+        // Читаємо ПОПЕРЕДНЄ значення до оновлення — щоб не слати сповіщення повторно,
+        // якщо адміністратор просто зберіг форму з тим самим відповідальним.
+        $previousStmt = Database::connection()->prepare('SELECT responsible_user_id FROM projects WHERE id = :id');
+        $previousStmt->execute(['id' => $id]);
+        $previousResponsibleUserId = $previousStmt->fetchColumn();
+        $previousResponsibleUserId = $previousResponsibleUserId !== false && $previousResponsibleUserId !== null ? (int) $previousResponsibleUserId : null;
+
         $stmt = Database::connection()->prepare(
             'UPDATE projects SET responsible_user_id = :responsible_user_id WHERE id = :id'
         );
         $stmt->execute(['responsible_user_id' => $responsibleUserId ?: null, 'id' => $id]);
         Audit::log('project', $id, 'responsible_changed', $actingUserId, ['responsible_user_id' => $responsibleUserId]);
+        NotificationService::projectResponsibleChanged($id, $responsibleUserId ?: null, $previousResponsibleUserId, $actingUserId);
     }
 
     public static function updateVisibility(int $id, string $visibility, int $actingUserId): void

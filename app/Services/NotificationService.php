@@ -1,0 +1,282 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Audit;
+use App\Models\Setting;
+use App\Models\Ticket;
+use App\Models\User;
+
+/**
+ * Email-сповіщення про активність у системі — тікети (відповідь, зміна
+ * статусу), проєкти й задачі (створення з відповідальним/виконавцем,
+ * призначення), наближення й настання терміну виконання задачі.
+ *
+ * Кожен публічний метод — окрема подія, викликається напряму з відповідної
+ * моделі одразу після зміни в БД (той самий підхід, що й Audit::log()).
+ * Усі методи мовчки нічого не роблять, якщо сповіщення вимкнені або SMTP не
+ * налаштовано, і НІКОЛИ не кидають виняток — лист, що не надіслався, не
+ * повинен зривати дію, яка його спричинила (MailerService::send() і сам
+ * ніколи не кидає, тут — додатковий страховий try/catch на випадок помилки
+ * при підготовці листа, наприклад збою запиту до БД).
+ */
+class NotificationService
+{
+    private static function enabled(): bool
+    {
+        return Setting::get('email_notifications_enabled', '0') === '1' && MailerService::isConfigured();
+    }
+
+    // ---------- Тікети ----------
+
+    /**
+     * Новий коментар до тікета — сповіщаємо "іншу сторону": коментар
+     * оператора йде заявнику, коментар заявника — призначеному оператору.
+     * Спрацьовує однаково для коментаря через веб-інтерфейс і через
+     * email-to-ticket (обидва шляхи ведуть через Ticket::addComment()).
+     */
+    public static function ticketCommentAdded(int $ticketId, string $authorType, ?int $authorId): void
+    {
+        if (!self::enabled()) {
+            return;
+        }
+        try {
+            $ticket = Ticket::find($ticketId);
+            if (!$ticket) {
+                return;
+            }
+
+            if ($authorType === 'operator') {
+                if ((int) $ticket['requester_user_id'] === (int) $authorId) {
+                    return; // оператор і заявник — та сама людина (рідкісний випадок) — не сповіщаємо саму себе
+                }
+                self::sendTicketMail(
+                    $ticket['requester_email'],
+                    $ticket['requester_name'],
+                    !empty($ticket['requester_user_id']),
+                    $ticket,
+                    "Нова відповідь у зверненні «{$ticket['subject']}» [#{$ticketId}]",
+                    'Оператор залишив нове повідомлення у вашому зверненні.'
+                );
+            } else {
+                $operatorId = $ticket['assigned_operator_id'] ?? null;
+                if (!$operatorId || (int) $operatorId === (int) $authorId) {
+                    return; // немає призначеного оператора, або це він сам собі коментує
+                }
+                $operator = User::findById((int) $operatorId);
+                if (!$operator || !$operator['is_active']) {
+                    return;
+                }
+                self::sendTicketMail(
+                    $operator['email'],
+                    $operator['full_name'],
+                    true,
+                    $ticket,
+                    "Нова відповідь заявника у зверненні «{$ticket['subject']}» [#{$ticketId}]",
+                    'Заявник залишив нове повідомлення у зверненні, яке на вас призначене.'
+                );
+            }
+        } catch (\Throwable) {
+            // навмисно мовчки — лист не надіслався, але коментар уже успішно збережено
+        }
+    }
+
+    /** Зміна статусу тікета — сповіщаємо і заявника, і призначеного оператора, окрім того, хто саме її зробив. */
+    public static function ticketStatusChanged(int $ticketId, string $newStatus, int $actingUserId): void
+    {
+        if (!self::enabled()) {
+            return;
+        }
+        try {
+            $ticket = Ticket::find($ticketId);
+            if (!$ticket) {
+                return;
+            }
+
+            $labels = ['new' => 'Новий', 'in_progress' => 'В роботі', 'waiting_customer' => 'Очікує відповіді заявника', 'resolved' => 'Вирішено', 'closed' => 'Закрито'];
+            $statusLabel = $labels[$newStatus] ?? $newStatus;
+            $subject = "Змінено статус звернення «{$ticket['subject']}» [#{$ticketId}]";
+            $body = "Новий статус звернення: {$statusLabel}.";
+
+            if ((int) $ticket['requester_user_id'] !== $actingUserId) {
+                self::sendTicketMail($ticket['requester_email'], $ticket['requester_name'], !empty($ticket['requester_user_id']), $ticket, $subject, $body);
+            }
+
+            $operatorId = $ticket['assigned_operator_id'] ?? null;
+            if ($operatorId && (int) $operatorId !== $actingUserId) {
+                $operator = User::findById((int) $operatorId);
+                if ($operator && $operator['is_active']) {
+                    self::sendTicketMail($operator['email'], $operator['full_name'], true, $ticket, $subject, $body);
+                }
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    private static function sendTicketMail(string $email, string $name, bool $hasAccount, array $ticket, string $subject, string $intro): void
+    {
+        $link = Setting::appUrl() . ($hasAccount ? '/tickets/' . $ticket['id'] : '/support/track/' . $ticket['access_token']);
+        $body = "{$intro}\n\nПереглянути звернення:\n{$link}\n\nЦе автоматичний лист.";
+        $result = MailerService::send($email, $name, $subject, $body);
+        if (!$result['ok']) {
+            Audit::log('ticket', (int) $ticket['id'], 'notification_failed', null, ['to' => $email, 'error' => mb_substr($result['message'], 0, 200)]);
+        }
+    }
+
+    // ---------- Проєкти ----------
+
+    /** Проєкт створено з одразу вказаним відповідальним — окреме сповіщення про призначення (нижче) при створенні не дублюється. */
+    public static function projectCreated(int $projectId, ?int $responsibleUserId, int $createdBy): void
+    {
+        if (!self::enabled() || !$responsibleUserId || $responsibleUserId === $createdBy) {
+            return;
+        }
+        self::sendProjectResponsibleMail($projectId, $responsibleUserId, isNew: true);
+    }
+
+    /** Відповідального проєкту змінено — сповіщаємо нового (лише якщо він справді змінився, не при повторному збереженні того самого значення). */
+    public static function projectResponsibleChanged(int $projectId, ?int $responsibleUserId, ?int $previousResponsibleUserId, int $actingUserId): void
+    {
+        if (!self::enabled() || !$responsibleUserId || $responsibleUserId === $previousResponsibleUserId || $responsibleUserId === $actingUserId) {
+            return;
+        }
+        self::sendProjectResponsibleMail($projectId, $responsibleUserId, isNew: false);
+    }
+
+    private static function sendProjectResponsibleMail(int $projectId, int $responsibleUserId, bool $isNew): void
+    {
+        try {
+            $project = \App\Models\Project::find($projectId);
+            $user = User::findById($responsibleUserId);
+            if (!$project || !$user || !$user['is_active']) {
+                return;
+            }
+
+            $link = Setting::appUrl() . '/projects/' . $projectId;
+            $subject = $isNew
+                ? "Вас призначено відповідальним за новий проєкт «{$project['name']}»"
+                : "Вас призначено відповідальним за проєкт «{$project['name']}»";
+            $body = "Доброго дня, {$user['full_name']}!\n\n{$subject}.\n\nПереглянути проєкт:\n{$link}\n\nЦе автоматичний лист.";
+            $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+            if (!$result['ok']) {
+                Audit::log('project', $projectId, 'notification_failed', null, ['to' => $user['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    // ---------- Задачі ----------
+
+    /** Задачу створено з одразу вказаним виконавцем. */
+    public static function taskCreated(int $taskId, ?int $assigneeId, int $authorId): void
+    {
+        if (!self::enabled() || !$assigneeId || $assigneeId === $authorId) {
+            return;
+        }
+        self::sendTaskAssigneeMail($taskId, $assigneeId, isNew: true);
+    }
+
+    /** Виконавця задачі змінено — сповіщаємо нового, лише якщо він справді змінився. */
+    public static function taskAssigneeChanged(int $taskId, ?int $assigneeId, ?int $previousAssigneeId, int $actingUserId): void
+    {
+        if (!self::enabled() || !$assigneeId || $assigneeId === $previousAssigneeId || $assigneeId === $actingUserId) {
+            return;
+        }
+        self::sendTaskAssigneeMail($taskId, $assigneeId, isNew: false);
+    }
+
+    private static function sendTaskAssigneeMail(int $taskId, int $assigneeId, bool $isNew): void
+    {
+        try {
+            $task = \App\Models\Task::find($taskId);
+            $user = User::findById($assigneeId);
+            if (!$task || !$user || !$user['is_active']) {
+                return;
+            }
+
+            $link = Setting::appUrl() . '/tasks/' . $taskId;
+            $subject = $isNew
+                ? "Вас призначено виконавцем нової задачі «{$task['title']}»"
+                : "Вас призначено виконавцем задачі «{$task['title']}»";
+            $due = !empty($task['due_date']) ? "\nТермін виконання: {$task['due_date']}." : '';
+            $body = "Доброго дня, {$user['full_name']}!\n\n{$subject} (проєкт «{$task['project_name']}»).{$due}\n\nПереглянути задачу:\n{$link}\n\nЦе автоматичний лист.";
+            $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+            if (!$result['ok']) {
+                Audit::log('task', $taskId, 'notification_failed', null, ['to' => $user['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    // ---------- Нагадування про термін виконання задачі (викликається з cron) ----------
+
+    /**
+     * Перевіряє незакриті задачі з призначеним виконавцем на три пороги:
+     * 2 дні до терміну, 1 день до терміну, настання терміну (включно з уже
+     * простроченими, якщо нагадування про це ще не надсилалось). Кожне
+     * нагадування — рівно один раз на задачу (UNIQUE у task_due_reminders).
+     *
+     * @return array{sent: int, skipped_reason: string|null}
+     */
+    public static function sendDueDateReminders(): array
+    {
+        if (!self::enabled()) {
+            return ['sent' => 0, 'skipped_reason' => 'Сповіщення вимкнені або SMTP не налаштовано'];
+        }
+
+        $sent = 0;
+        $sent += self::sendRemindersForThreshold('2d', '+2 days', exact: true);
+        $sent += self::sendRemindersForThreshold('1d', '+1 day', exact: true);
+        $sent += self::sendRemindersForThreshold('due', 'today', exact: false); // exact=false: і сьогодні, і вже прострочені
+        return ['sent' => $sent, 'skipped_reason' => null];
+    }
+
+    private static function sendRemindersForThreshold(string $type, string $dateExpr, bool $exact): int
+    {
+        $targetDate = date('Y-m-d', strtotime($dateExpr));
+        $comparison = $exact ? 't.due_date = :target_date' : 't.due_date <= :target_date';
+
+        $stmt = \App\Core\Database::connection()->prepare(
+            "SELECT t.id, t.title, t.due_date, t.assignee_id, p.name AS project_name
+             FROM tasks t
+             JOIN task_statuses ts ON ts.id = t.status_id
+             JOIN projects p ON p.id = t.project_id
+             LEFT JOIN task_due_reminders r ON r.task_id = t.id AND r.reminder_type = :type
+             WHERE ts.is_closed = 0 AND t.assignee_id IS NOT NULL AND r.id IS NULL AND {$comparison}"
+        );
+        $stmt->execute(['type' => $type, 'target_date' => $targetDate]);
+        $tasks = $stmt->fetchAll();
+
+        $sent = 0;
+        foreach ($tasks as $task) {
+            try {
+                $user = User::findById((int) $task['assignee_id']);
+                if ($user && $user['is_active']) {
+                    $label = match ($type) {
+                        '2d' => 'через 2 дні',
+                        '1d' => 'завтра',
+                        default => $task['due_date'] < date('Y-m-d') ? 'вже прострочено' : 'сьогодні',
+                    };
+                    $link = Setting::appUrl() . '/tasks/' . $task['id'];
+                    $subject = "Нагадування: термін задачі «{$task['title']}» — {$label}";
+                    $body = "Доброго дня, {$user['full_name']}!\n\n"
+                        . "Термін виконання задачі «{$task['title']}» (проєкт «{$task['project_name']}») — {$task['due_date']} ({$label}).\n\n"
+                        . "Переглянути задачу:\n{$link}\n\nЦе автоматичний лист.";
+                    $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+                    if (!$result['ok']) {
+                        continue; // не позначаємо як надіслане — спробуємо знову наступного запуску
+                    }
+                }
+
+                // Позначаємо оброблено навіть якщо виконавець неактивний — щоб не перевіряти його щоразу.
+                \App\Core\Database::connection()
+                    ->prepare('INSERT IGNORE INTO task_due_reminders (task_id, reminder_type) VALUES (:task_id, :type)')
+                    ->execute(['task_id' => $task['id'], 'type' => $type]);
+                $sent++;
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+        return $sent;
+    }
+}

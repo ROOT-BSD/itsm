@@ -92,7 +92,7 @@ class ProjectController
 
         View::render('projects/show', [
             'project' => $project,
-            'tasks' => Task::forProject($project['id']),
+            'tasks' => Task::openForProject($project['id']),
             'users' => User::allActive(),
             'subProjects' => Project::subProjectsOf($project['id']),
             'linkedTickets' => Ticket::forProject($project['id']),
