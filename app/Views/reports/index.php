@@ -18,13 +18,11 @@
         <label class="form-label">Період</label>
         <div class="d-flex gap-3 mb-2">
             <div class="form-check">
-                <input class="form-check-input" type="radio" name="period_type" id="period_week" value="week" checked
-                       onchange="setPeriodType('week')">
+                <input class="form-check-input" type="radio" name="period_type" id="period_week" value="week" checked>
                 <label class="form-check-label" for="period_week">Тиждень</label>
             </div>
             <div class="form-check">
-                <input class="form-check-input" type="radio" name="period_type" id="period_month" value="month"
-                       onchange="setPeriodType('month')">
+                <input class="form-check-input" type="radio" name="period_type" id="period_month" value="month">
                 <label class="form-check-label" for="period_month">Місяць</label>
             </div>
         </div>
@@ -37,14 +35,14 @@
         ?>
         <div id="week_field" class="row g-2">
             <div class="col-6 col-sm-4">
-                <select id="week_year" class="form-select" onchange="updateWeekValue()">
+                <select id="week_year" class="form-select">
                     <?php foreach ($years as $y): ?>
                         <option value="<?= $y ?>" <?= $y === $currentYear ? 'selected' : '' ?>><?= $y ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-6 col-sm-4">
-                <select id="week_number" class="form-select" onchange="updateWeekValue()">
+                <select id="week_number" class="form-select">
                     <?php for ($w = 1; $w <= 53; $w++): ?>
                         <option value="<?= $w ?>" <?= $w === $currentWeek ? 'selected' : '' ?>>Тиждень <?= $w ?></option>
                     <?php endfor; ?>
@@ -55,7 +53,7 @@
 
         <div id="month_field" class="row g-2 d-none">
             <div class="col-6 col-sm-4">
-                <select id="month_year" class="form-select" onchange="updateMonthValue()">
+                <select id="month_year" class="form-select">
                     <?php foreach ($years as $y): ?>
                         <option value="<?= $y ?>" <?= $y === $currentYear ? 'selected' : '' ?>><?= $y ?></option>
                     <?php endforeach; ?>
@@ -66,7 +64,7 @@
                 $monthNames = [1 => 'Січень', 2 => 'Лютий', 3 => 'Березень', 4 => 'Квітень', 5 => 'Травень', 6 => 'Червень',
                                7 => 'Липень', 8 => 'Серпень', 9 => 'Вересень', 10 => 'Жовтень', 11 => 'Листопад', 12 => 'Грудень'];
                 ?>
-                <select id="month_number" class="form-select" onchange="updateMonthValue()">
+                <select id="month_number" class="form-select">
                     <?php foreach ($monthNames as $num => $name): ?>
                         <option value="<?= $num ?>" <?= $num === $currentMonth ? 'selected' : '' ?>><?= $name ?></option>
                     <?php endforeach; ?>
@@ -76,7 +74,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="<?= \App\Core\Csp::nonce() ?>">
         // Прихований інпут з required все одно бере участь у валідації форми
         // (навіть коли display:none) — браузер тоді мовчки блокує сабміт без
         // видимого повідомлення. Тому required вмикаємо ЛИШЕ на активному полі.
@@ -114,6 +112,15 @@
         // Початкові значення прихованих полів одразу при завантаженні сторінки
         updateWeekValue();
         updateMonthValue();
+
+        // CSP не дозволяє onchange="" — ті самі виклики тепер через addEventListener.
+        // Елементи вже є в DOM на цей момент (розмітка вище за цим <script> у документі).
+        document.getElementById('period_week').addEventListener('change', function () { setPeriodType('week'); });
+        document.getElementById('period_month').addEventListener('change', function () { setPeriodType('month'); });
+        document.getElementById('week_year').addEventListener('change', updateWeekValue);
+        document.getElementById('week_number').addEventListener('change', updateWeekValue);
+        document.getElementById('month_year').addEventListener('change', updateMonthValue);
+        document.getElementById('month_number').addEventListener('change', updateMonthValue);
     </script>
 
     <div class="mb-3">

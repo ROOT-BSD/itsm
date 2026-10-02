@@ -17,8 +17,10 @@
 #   12. Додає таблицю журналу обробки пошти для email-to-ticket, якщо її ще немає
 #   13. Додає налаштування автовідповіді заявнику (email-to-ticket), якщо його ще немає
 #   14. Додає таблицю нагадувань про термін і налаштування email-сповіщень, якщо їх ще немає
-#   15. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   16. Перевстановлює права доступу на файли для веб-сервера
+#   15. Додає гранульовані перемикачі email-сповіщень (тікети/проєкти/задачі/нагадування) замість однієї спільної галочки
+#   16. Додає колонку автопризначення оператора для черги тікетів, якщо її ще немає
+#   17. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   18. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -462,8 +464,64 @@ else
     ok "Таблиця task_due_reminders вже є — нічого робити не треба"
 fi
 
-# ---------- 15. Очищення застарілого кешу PDF-шрифтів ----------
-section "15. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 15. Гранульовані перемикачі email-сповіщень ----------
+section "15. Перевірка гранульованих перемикачів email-сповіщень"
+
+GRANULAR_SETTING_EXISTS=$(echo "
+    SELECT COUNT(*) FROM app_settings WHERE setting_key = 'email_notify_tickets_enabled';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${GRANULAR_SETTING_EXISTS:-0}" -eq 0 ]; then
+    info "Гранульовані налаштування email-сповіщень не знайдено — додаю (замість однієї спільної галочки)..."
+    info "Якщо стара спільна галочка вже була увімкнена — усі чотири нові стануть увімкненими, нічого не вимкнеться."
+
+    MIGRATION_GRANULAR="${SCRIPT_DIR}/database/migrations/014_add_granular_notification_settings.sql"
+    if [ ! -f "$MIGRATION_GRANULAR" ]; then
+        fail "Файл ${MIGRATION_GRANULAR} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_GRANULAR" >/dev/null 2>&1; then
+        ok "Додано — тікети/проєкти/задачі/нагадування тепер вмикаються окремо в Адмін-панель → Пошта → тікети"
+    else
+        fail "Помилка додавання гранульованих налаштувань email-сповіщень"
+        exit 1
+    fi
+else
+    ok "Гранульовані налаштування email-сповіщень вже є — нічого робити не треба"
+fi
+
+# ---------- 16. Автопризначення оператора для черги тікетів ----------
+section "16. Перевірка колонки автопризначення оператора для черги"
+
+QUEUE_OPERATOR_COLUMN_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ticket_queues' AND COLUMN_NAME = 'default_operator_id';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${QUEUE_OPERATOR_COLUMN_EXISTS:-0}" -eq 0 ]; then
+    info "Колонку ticket_queues.default_operator_id не знайдено — додаю..."
+
+    MIGRATION_QUEUE_OPERATOR="${SCRIPT_DIR}/database/migrations/015_add_queue_default_operator.sql"
+    if [ ! -f "$MIGRATION_QUEUE_OPERATOR" ]; then
+        fail "Файл ${MIGRATION_QUEUE_OPERATOR} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_QUEUE_OPERATOR" >/dev/null 2>&1; then
+        ok "Додано — автопризначення оператора налаштовується в Адмін-панель → Черги тікетів"
+    else
+        fail "Помилка додавання колонки ticket_queues.default_operator_id"
+        exit 1
+    fi
+else
+    ok "Колонка ticket_queues.default_operator_id вже є — нічого робити не треба"
+fi
+
+# ---------- 17. Очищення застарілого кешу PDF-шрифтів ----------
+section "17. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -479,8 +537,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 16. Права доступу ----------
-section "16. Права доступу до файлів"
+# ---------- 18. Права доступу ----------
+section "18. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

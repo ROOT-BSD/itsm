@@ -27,7 +27,7 @@
 
 <?php if (!empty($tasks)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/frappe-gantt/1.2.1/frappe-gantt.umd.min.js"></script>
-<script>
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
 (function () {
     const CSRF_TOKEN = <?= json_encode(\App\Core\Csrf::token()) ?>;
     const errorBox = document.getElementById('gantt-error');

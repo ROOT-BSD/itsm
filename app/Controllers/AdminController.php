@@ -410,6 +410,7 @@ class AdminController
     {
         View::render('admin/queues', [
             'queues' => Ticket::queuesWithTicketCount(),
+            'users' => User::allActive(),
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ]);
@@ -449,6 +450,43 @@ class AdminController
         ]);
 
         header('Location: /admin/queues?success=' . urlencode('Норматив SLA оновлено'));
+        exit;
+    }
+
+    /** Автопризначення оператора для черги — новий тікет у цій черзі одразу отримає цю людину. */
+    public function updateQueueDefaultOperator(array $params): void
+    {
+        $queueId = (int) $params['id'];
+        $operatorId = !empty($_POST['default_operator_id']) ? (int) $_POST['default_operator_id'] : null;
+
+        $queueExists = false;
+        foreach (Ticket::queues() as $q) {
+            if ((int) $q['id'] === $queueId) {
+                $queueExists = true;
+                break;
+            }
+        }
+        if (!$queueExists) {
+            header('Location: /admin/queues?error=' . urlencode('Чергу не знайдено'));
+            exit;
+        }
+
+        if ($operatorId !== null) {
+            $operatorExists = false;
+            foreach (User::allActive() as $u) {
+                if ((int) $u['id'] === $operatorId) {
+                    $operatorExists = true;
+                    break;
+                }
+            }
+            if (!$operatorExists) {
+                header('Location: /admin/queues?error=' . urlencode('Користувача не знайдено або він неактивний'));
+                exit;
+            }
+        }
+
+        Ticket::updateQueueDefaultOperator($queueId, $operatorId, Auth::id());
+        header('Location: /admin/queues?success=' . urlencode('Автопризначення оновлено'));
         exit;
     }
 

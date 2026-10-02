@@ -40,7 +40,7 @@
             <td>
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/status" class="d-flex gap-1">
                     <?= \App\Core\Csrf::field() ?>
-                    <select name="status" class="form-select form-select-sm bg-<?= $statusColors[$p['status']] ?? 'secondary' ?> text-white" onchange="this.form.requestSubmit()">
+                    <select name="status" class="form-select form-select-sm bg-<?= $statusColors[$p['status']] ?? 'secondary' ?> text-white auto-submit-select">
                         <?php foreach ($statusLabels as $code => $label): ?>
                             <option value="<?= $code ?>" <?= $p['status'] === $code ? 'selected' : '' ?>><?= $label ?></option>
                         <?php endforeach; ?>
@@ -50,7 +50,7 @@
             <td>
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/visibility" class="d-flex gap-1">
                     <?= \App\Core\Csrf::field() ?>
-                    <select name="visibility" class="form-select form-select-sm" onchange="this.form.requestSubmit()">
+                    <select name="visibility" class="form-select form-select-sm auto-submit-select">
                         <?php foreach ($visibilityLabels as $code => $label): ?>
                             <option value="<?= $code ?>" <?= $p['visibility'] === $code ? 'selected' : '' ?>><?= $label ?></option>
                         <?php endforeach; ?>
@@ -62,7 +62,7 @@
             <td>
                 <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/delete"
                       class="d-flex gap-1"
-                      onsubmit="return confirm('Остаточно видалити проєкт «<?= \App\Core\View::e($p['name']) ?>» та всі його задачі?');">
+                      data-confirm="Остаточно видалити проєкт «<?= \App\Core\View::e($p['name']) ?>» та всі його задачі?">
     <?= \App\Core\Csrf::field() ?>
                     <input type="text" name="confirm_name" class="form-control form-control-sm"
                            placeholder="Введіть назву проєкту для підтвердження" required>

@@ -45,7 +45,7 @@
     <?php endforeach; ?>
 </div>
 
-<script>
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
 (function () {
     const CSRF_TOKEN = <?= json_encode(\App\Core\Csrf::token()) ?>;
     const board = document.getElementById('kanban-board');

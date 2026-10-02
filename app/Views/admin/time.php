@@ -43,7 +43,7 @@ $periods = [
                         <?php foreach ($p['totals'] as $row): ?>
                             <tr>
                                 <td>
-                                    <a href="#" class="text-decoration-none" onclick="filterAllRecords('<?= $code ?>', <?= htmlspecialchars(json_encode($row['period_label']), ENT_QUOTES) ?>); return false;">
+                                    <a href="#" class="text-decoration-none js-filter-link" data-period-type="<?= \App\Core\View::e($code) ?>" data-period-value="<?= \App\Core\View::e($row['period_label']) ?>">
                                         <?= \App\Core\View::e($row['period_label']) ?>
                                     </a>
                                 </td>
@@ -61,7 +61,7 @@ $periods = [
                         <?php foreach ($p['byUser'] as $row): ?>
                             <tr>
                                 <td>
-                                    <a href="#" class="text-decoration-none" onclick="filterAllRecords('<?= $code ?>', <?= htmlspecialchars(json_encode($row['period_label']), ENT_QUOTES) ?>); return false;">
+                                    <a href="#" class="text-decoration-none js-filter-link" data-period-type="<?= \App\Core\View::e($code) ?>" data-period-value="<?= \App\Core\View::e($row['period_label']) ?>">
                                         <?= \App\Core\View::e($row['period_label']) ?>
                                     </a>
                                 </td>
@@ -80,7 +80,7 @@ $periods = [
                         <?php foreach ($p['byProject'] as $row): ?>
                             <tr>
                                 <td>
-                                    <a href="#" class="text-decoration-none" onclick="filterAllRecords('<?= $code ?>', <?= htmlspecialchars(json_encode($row['period_label']), ENT_QUOTES) ?>); return false;">
+                                    <a href="#" class="text-decoration-none js-filter-link" data-period-type="<?= \App\Core\View::e($code) ?>" data-period-value="<?= \App\Core\View::e($row['period_label']) ?>">
                                         <?= \App\Core\View::e($row['period_label']) ?>
                                     </a>
                                 </td>
@@ -145,7 +145,7 @@ $periods = [
         </button>
         <div id="filter-status" class="small text-muted d-none">
             Показано записи за: <strong id="filter-status-value"></strong>
-            <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="resetAllRecordsFilter(); return false;">Скинути</button>
+            <button type="button" class="btn btn-sm btn-link p-0 ms-2 js-reset-filter">Скинути</button>
         </div>
     </div>
     <div class="collapse" id="all-records-collapse">
@@ -179,7 +179,7 @@ $periods = [
     </div>
 </div>
 
-<script>
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
 function filterAllRecords(periodType, periodValue) {
     const collapseEl = document.getElementById('all-records-collapse');
     // Розгортаємо спойлер, якщо він ще згорнутий
@@ -208,4 +208,16 @@ function resetAllRecordsFilter() {
     });
     document.getElementById('filter-status').classList.add('d-none');
 }
+
+// CSP не дозволяє onclick="" — ті самі дії тепер через клас і data-атрибути вище.
+document.querySelectorAll('.js-filter-link').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+        e.preventDefault();
+        filterAllRecords(link.dataset.periodType, link.dataset.periodValue);
+    });
+});
+document.querySelector('.js-reset-filter')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    resetAllRecordsFilter();
+});
 </script>

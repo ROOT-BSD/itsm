@@ -53,7 +53,10 @@ class EmailController
             ],
             'enabled' => Setting::get('email_ticket_enabled', '0') === '1',
             'autoreplyEnabled' => Setting::get('email_autoreply_enabled', '0') === '1',
-            'notificationsEnabled' => Setting::get('email_notifications_enabled', '0') === '1',
+            'notifyTicketsEnabled' => Setting::get('email_notify_tickets_enabled', '0') === '1',
+            'notifyProjectsEnabled' => Setting::get('email_notify_projects_enabled', '0') === '1',
+            'notifyTasksEnabled' => Setting::get('email_notify_tasks_enabled', '0') === '1',
+            'notifyRemindersEnabled' => Setting::get('email_notify_reminders_enabled', '0') === '1',
             'remindersScriptPath' => dirname(__DIR__, 2) . '/bin/send-reminders.php',
             'queueId' => (int) Setting::get('email_ticket_queue_id', '0'),
             'queues' => Ticket::queues(),
@@ -92,7 +95,10 @@ class EmailController
     {
         $enabled = !empty($_POST['enabled']);
         $autoreplyEnabled = !empty($_POST['autoreply_enabled']);
-        $notificationsEnabled = !empty($_POST['notifications_enabled']);
+        $notifyTickets = !empty($_POST['notify_tickets_enabled']);
+        $notifyProjects = !empty($_POST['notify_projects_enabled']);
+        $notifyTasks = !empty($_POST['notify_tasks_enabled']);
+        $notifyReminders = !empty($_POST['notify_reminders_enabled']);
         $queueId = (int) ($_POST['queue_id'] ?? 0);
 
         if ($queueId !== 0 && !in_array($queueId, array_map(fn($q) => (int) $q['id'], Ticket::queues()), true)) {
@@ -101,18 +107,25 @@ class EmailController
         // Не даємо ввімкнути автовідповідь/сповіщення без налаштованого SMTP — інакше кожна дія
         // (коментар, зміна статусу тощо) мовчки «намагалась» би надіслати лист і щоразу писала
         // б помилку в журнал аудиту.
-        if (($autoreplyEnabled || $notificationsEnabled) && !MailerService::isConfigured()) {
+        $anyNotification = $autoreplyEnabled || $notifyTickets || $notifyProjects || $notifyTasks || $notifyReminders;
+        if ($anyNotification && !MailerService::isConfigured()) {
             $this->redirect('error', 'Спершу налаштуйте надсилання пошти (SMTP) — заповніть MAIL_SMTP_* у .env.');
         }
 
         Setting::set('email_ticket_enabled', $enabled ? '1' : '0');
         Setting::set('email_autoreply_enabled', $autoreplyEnabled ? '1' : '0');
-        Setting::set('email_notifications_enabled', $notificationsEnabled ? '1' : '0');
+        Setting::set('email_notify_tickets_enabled', $notifyTickets ? '1' : '0');
+        Setting::set('email_notify_projects_enabled', $notifyProjects ? '1' : '0');
+        Setting::set('email_notify_tasks_enabled', $notifyTasks ? '1' : '0');
+        Setting::set('email_notify_reminders_enabled', $notifyReminders ? '1' : '0');
         Setting::set('email_ticket_queue_id', (string) $queueId);
         Audit::log('app_settings', 0, 'email_settings_changed', Auth::id(), [
             'email_ticket_enabled' => $enabled ? 'так' : 'ні',
             'email_autoreply_enabled' => $autoreplyEnabled ? 'так' : 'ні',
-            'email_notifications_enabled' => $notificationsEnabled ? 'так' : 'ні',
+            'email_notify_tickets_enabled' => $notifyTickets ? 'так' : 'ні',
+            'email_notify_projects_enabled' => $notifyProjects ? 'так' : 'ні',
+            'email_notify_tasks_enabled' => $notifyTasks ? 'так' : 'ні',
+            'email_notify_reminders_enabled' => $notifyReminders ? 'так' : 'ні',
             'email_ticket_queue_id' => (string) $queueId,
         ]);
 

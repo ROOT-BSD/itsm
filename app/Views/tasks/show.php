@@ -47,7 +47,7 @@
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/milestone" class="d-flex gap-2 align-items-center mb-2">
             <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Етап:</label>
-            <select name="milestone_id" class="form-select w-auto" onchange="this.form.requestSubmit()">
+            <select name="milestone_id" class="form-select w-auto auto-submit-select">
                 <option value="">— не прив'язано —</option>
                 <?php foreach ($milestones as $m): ?>
                     <option value="<?= (int)$m['id'] ?>" <?= (int)($task['milestone_id'] ?? 0) === (int)$m['id'] ? 'selected' : '' ?>>
@@ -85,7 +85,7 @@
         </p>
 
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/delete"
-              onsubmit="return confirm('Остаточно видалити задачу «<?= \App\Core\View::e($task['title']) ?>»? Коментарі, записи обліку часу та зв\'язки з іншими задачами буде видалено разом з нею. Дію не можна скасувати.');">
+              data-confirm="Остаточно видалити задачу «<?= \App\Core\View::e($task['title']) ?>»? Коментарі, записи обліку часу та зв'язки з іншими задачами буде видалено разом з нею. Дію не можна скасувати.">
             <?= \App\Core\Csrf::field() ?>
             <button class="btn btn-sm btn-outline-danger" type="submit">🗑️ Видалити задачу</button>
         </form>

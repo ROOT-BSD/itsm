@@ -47,14 +47,14 @@ $statusColors = ['planned' => 'secondary', 'in_progress' => 'primary', 'complete
                         <div class="d-flex gap-2 align-items-start">
                             <form method="post" action="/projects/<?= (int)$project['id'] ?>/milestones/<?= (int)$milestone['id'] ?>/status" class="d-flex gap-1">
                                 <?= \App\Core\Csrf::field() ?>
-                                <select name="status" class="form-select form-select-sm" onchange="this.form.requestSubmit()">
+                                <select name="status" class="form-select form-select-sm auto-submit-select">
                                     <?php foreach ($statusLabels as $code => $label): ?>
                                         <option value="<?= $code ?>" <?= $milestone['status'] === $code ? 'selected' : '' ?>><?= $label ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </form>
                             <form method="post" action="/projects/<?= (int)$project['id'] ?>/milestones/<?= (int)$milestone['id'] ?>/delete"
-                                  onsubmit="return confirm('Видалити етап «<?= \App\Core\View::e($milestone['title']) ?>»? Прив\'язані задачі НЕ видаляються, лише втратять прив\'язку до цього етапу.');">
+                                  data-confirm="Видалити етап «<?= \App\Core\View::e($milestone['title']) ?>»? Прив'язані задачі НЕ видаляються, лише втратять прив'язку до цього етапу.">
                                 <?= \App\Core\Csrf::field() ?>
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Видалити</button>
                             </form>

@@ -3,6 +3,7 @@
 require __DIR__ . '/../app/autoload.php';
 
 use App\Core\Auth;
+use App\Core\Csp;
 use App\Core\Router;
 use App\Controllers\AdminController;
 use App\Controllers\AuditController;
@@ -19,6 +20,7 @@ use App\Controllers\ProjectController;
 use App\Controllers\TaskController;
 
 Auth::start();
+Csp::sendHeaders();
 
 $router = new Router();
 
@@ -177,6 +179,9 @@ $router->post('/admin/queues', function () {
 });
 $router->post('/admin/queues/{id}/sla', function ($p) {
     (new AdminController())->updateSlaPolicy($p);
+});
+$router->post('/admin/queues/{id}/default-operator', function ($p) {
+    (new AdminController())->updateQueueDefaultOperator($p);
 });
 $router->get('/admin/email', function () {
     (new EmailController())->index();

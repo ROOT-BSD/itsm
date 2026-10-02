@@ -16,11 +16,11 @@
 
 <table class="table table-bordered bg-white align-middle">
     <thead>
-        <tr><th>Назва</th><th>Опис</th><th>Тікетів у черзі</th><th>SLA: перша відповідь / вирішення (хв)</th></tr>
+        <tr><th>Назва</th><th>Опис</th><th>Тікетів у черзі</th><th>SLA: перша відповідь / вирішення (хв)</th><th>Автопризначення оператора</th></tr>
     </thead>
     <tbody>
     <?php if (empty($queues)): ?>
-        <tr><td colspan="4" class="text-center text-muted">Черг ще немає</td></tr>
+        <tr><td colspan="5" class="text-center text-muted">Черг ще немає</td></tr>
     <?php else: foreach ($queues as $q): ?>
         <tr>
             <td><?= \App\Core\View::e($q['name']) ?></td>
@@ -38,6 +38,22 @@
                 </form>
                 <?php if ($q['first_response_minutes'] === null): ?>
                     <div class="form-text text-warning">Норматив ще не налаштовано — прострочення для цієї черги не рахується.</div>
+                <?php endif; ?>
+            </td>
+            <td>
+                <form method="post" action="/admin/queues/<?= (int)$q['id'] ?>/default-operator">
+                    <?= \App\Core\Csrf::field() ?>
+                    <select name="default_operator_id" class="form-select form-select-sm auto-submit-select">
+                        <option value="">— без автопризначення —</option>
+                        <?php foreach ($users as $u): ?>
+                            <option value="<?= (int)$u['id'] ?>" <?= (int)($q['default_operator_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
+                                <?= \App\Core\View::e($u['full_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+                <?php if (!empty($q['default_operator_id'])): ?>
+                    <div class="form-text">Новий тікет у цій черзі одразу отримає: <?= \App\Core\View::e($q['default_operator_name']) ?></div>
                 <?php endif; ?>
             </td>
         </tr>

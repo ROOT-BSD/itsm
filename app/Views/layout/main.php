@@ -53,5 +53,27 @@ use App\Core\Auth;
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
+// CSP блокує inline-обробники (onclick="" тощо) так само, як сторонній <script> —
+// тому замість них в усьому застосунку два делеговані обробники тут, в одному
+// nonce'd блоці, активному на кожній сторінці.
+
+// <form data-confirm="текст"> — підтверджувальне діалогове вікно перед сабмітом
+// (було: onsubmit="return confirm('текст')" або onclick="return confirm(...)" на кнопці).
+document.addEventListener('submit', function (e) {
+    const form = e.target.closest('form[data-confirm]');
+    if (form && !confirm(form.dataset.confirm)) {
+        e.preventDefault();
+    }
+});
+
+// <select class="auto-submit-select"> — одразу надсилає форму при зміні значення
+// (було: onchange="this.form.requestSubmit()").
+document.addEventListener('change', function (e) {
+    if (e.target.matches('select.auto-submit-select')) {
+        e.target.form.requestSubmit();
+    }
+});
+</script>
 </body>
 </html>

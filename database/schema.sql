@@ -190,7 +190,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE TABLE IF NOT EXISTS ticket_queues (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    description VARCHAR(255)
+    description VARCHAR(255),
+    default_operator_id INT NULL,  -- автопризначення: новий тікет у цій черзі одразу отримує цього оператора (Адмін-панель → Черги тікетів)
+    FOREIGN KEY (default_operator_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS sla_policies (

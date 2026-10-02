@@ -40,12 +40,12 @@
             </td>
             <td>
                 <?php if ($u['auth_source'] === 'local'): ?>
-                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/password" class="d-flex gap-1">
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/password" class="d-flex gap-1"
+                      data-confirm="Змінити пароль для <?= \App\Core\View::e($u['email']) ?>?">
     <?= \App\Core\Csrf::field() ?>
                     <input type="password" name="new_password" class="form-control form-control-sm" placeholder="Новий пароль" minlength="8" required>
                     <input type="password" name="confirm_password" class="form-control form-control-sm" placeholder="Повтор" minlength="8" required>
-                    <button type="submit" class="btn btn-sm btn-primary text-nowrap"
-                            onclick="return confirm('Змінити пароль для <?= \App\Core\View::e($u['email']) ?>?');">
+                    <button type="submit" class="btn btn-sm btn-primary text-nowrap">
                         Змінити
                     </button>
                 </form>
@@ -64,21 +64,21 @@
                 <?php endif; ?>
 
                 <?php if ((int)$u['id'] !== \App\Core\Auth::id()): ?>
-                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/active" class="d-inline">
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/active" class="d-inline"
+                      <?= (int)$u['is_active'] === 1 ? 'data-confirm="Деактивувати обліковий запис?"' : '' ?>>
     <?= \App\Core\Csrf::field() ?>
                     <?php if ((int)$u['is_active'] === 1): ?>
                         <input type="hidden" name="active" value="0">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                onclick="return confirm('Деактивувати обліковий запис?');">Деактивувати</button>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Деактивувати</button>
                     <?php else: ?>
                         <input type="hidden" name="active" value="1">
                         <button type="submit" class="btn btn-sm btn-outline-success">Активувати</button>
                     <?php endif; ?>
                 </form>
-                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/delete" class="d-inline">
+                <form method="post" action="/admin/users/<?= (int)$u['id'] ?>/delete" class="d-inline"
+                      data-confirm="Видалити користувача «<?= \App\Core\View::e($u['full_name']) ?>» назавжди? Це можливо лише якщо з ним не пов’язані жодні дані.">
     <?= \App\Core\Csrf::field() ?>
-                    <button type="submit" class="btn btn-sm btn-outline-danger"
-                            onclick="return confirm('Видалити користувача «<?= \App\Core\View::e($u['full_name']) ?>» назавжди? Це можливо лише якщо з ним не пов’язані жодні дані.');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
                         Видалити
                     </button>
                 </form>

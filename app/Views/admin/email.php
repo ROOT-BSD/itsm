@@ -137,17 +137,26 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                             <div class="form-text text-warning">Спершу налаштуйте надсилання пошти (SMTP) ліворуч.</div>
                         <?php endif; ?>
                     </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="notifications_enabled" id="notifications_enabled" value="1" <?= $notificationsEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
-                        <label class="form-check-label" for="notifications_enabled">Надсилати email-сповіщення про активність (тікети, проєкти, задачі, терміни)</label>
-                        <?php if (!$smtpConfigured): ?>
-                            <div class="form-text text-warning">Спершу налаштуйте надсилання пошти (SMTP) ліворуч.</div>
-                        <?php endif; ?>
-                        <div class="form-text">
-                            Тікети — нова відповідь, зміна статусу. Проєкти й задачі — створення з відповідальним/виконавцем, зміна призначення.
-                            Нагадування про термін задачі — за 2 дні, за 1 день і в день настання (потребує окремого запису в cron, див. нижче).
-                        </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notify_tickets_enabled" id="notify_tickets_enabled" value="1" <?= $notifyTicketsEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_tickets_enabled">Сповіщення про тікети — нова відповідь, зміна статусу</label>
                     </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notify_projects_enabled" id="notify_projects_enabled" value="1" <?= $notifyProjectsEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_projects_enabled">Сповіщення про проєкти — створення з відповідальним, зміна призначення</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notify_tasks_enabled" id="notify_tasks_enabled" value="1" <?= $notifyTasksEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_tasks_enabled">Сповіщення про задачі — створення з виконавцем, зміна призначення</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="notify_reminders_enabled" id="notify_reminders_enabled" value="1" <?= $notifyRemindersEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_reminders_enabled">Нагадування про термін задачі — за 2 дні, за 1 день, у день настання</label>
+                        <div class="form-text">Потребує окремого запису в cron (див. нижче) — самої галочки недостатньо.</div>
+                    </div>
+                    <?php if (!$smtpConfigured): ?>
+                        <div class="form-text text-warning mb-3">Усі чотири сповіщення вище вимкнені, доки не налаштовано надсилання пошти (SMTP) ліворуч.</div>
+                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label">Черга для тікетів з пошти</label>
                         <select name="queue_id" class="form-select">
@@ -177,7 +186,7 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                 <p class="small mb-1">Для автоматичної обробки додайте в cron (наприклад, кожні 5 хвилин):</p>
 <pre class="bg-light border rounded p-2 small mb-0">*/5 * * * *  www-data  php <?= \App\Core\View::e($scriptPath) ?> >> /var/log/itsm-mail.log 2>&1</pre>
 
-                <?php if ($notificationsEnabled): ?>
+                <?php if ($notifyRemindersEnabled): ?>
                 <p class="small mb-1 mt-3">Для нагадувань про термін задачі (раз на день зранку):</p>
 <pre class="bg-light border rounded p-2 small mb-0">0 8 * * *  www-data  php <?= \App\Core\View::e($remindersScriptPath) ?> >> /var/log/itsm-reminders.log 2>&1</pre>
                 <?php endif; ?>

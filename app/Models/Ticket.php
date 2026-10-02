@@ -65,13 +65,32 @@ class Ticket
     {
         return Database::connection()->query(
             "SELECT q.*, COUNT(t.id) AS tickets_count,
-                    sp.first_response_minutes, sp.resolution_minutes
+                    sp.first_response_minutes, sp.resolution_minutes,
+                    op.full_name AS default_operator_name
              FROM ticket_queues q
              LEFT JOIN tickets t ON t.queue_id = q.id
              LEFT JOIN sla_policies sp ON sp.queue_id = q.id
-             GROUP BY q.id, sp.first_response_minutes, sp.resolution_minutes
+             LEFT JOIN users op ON op.id = q.default_operator_id
+             GROUP BY q.id, sp.first_response_minutes, sp.resolution_minutes, op.full_name
              ORDER BY q.id"
         )->fetchAll();
+    }
+
+    /** Автопризначення: якщо в черги є default_operator_id, новий тікет одразу отримує цього оператора. */
+    public static function defaultOperatorForQueue(int $queueId): ?int
+    {
+        $stmt = Database::connection()->prepare('SELECT default_operator_id FROM ticket_queues WHERE id = :id');
+        $stmt->execute(['id' => $queueId]);
+        $value = $stmt->fetchColumn();
+        return ($value !== false && $value !== null) ? (int) $value : null;
+    }
+
+    /** Оновлення автопризначеного оператора для черги (Адмін-панель → Черги тікетів). */
+    public static function updateQueueDefaultOperator(int $queueId, ?int $operatorId, int $actingUserId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE ticket_queues SET default_operator_id = :operator_id WHERE id = :id');
+        $stmt->execute(['operator_id' => $operatorId ?: null, 'id' => $queueId]);
+        Audit::log('ticket_queue', $queueId, 'default_operator_changed', $actingUserId, ['default_operator_id' => $operatorId]);
     }
 
     /** Створює норматив SLA для черги, якщо його ще немає, або оновлює наявний — один рядок на чергу (queue_id UNIQUE). */
@@ -216,9 +235,14 @@ class Ticket
 
     public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description, ?int $projectId = null): int
     {
+        // Автопризначення: якщо в черги налаштований оператор за замовчуванням — новий тікет одразу його отримує.
+        // Той самий Ticket::create() використовують усі три шляхи створення тікета (звичайна форма, портал
+        // самообслуговування, email-to-ticket), тож автопризначення працює однаково для всіх трьох.
+        $defaultOperatorId = self::defaultOperatorForQueue($queueId);
+
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tickets (queue_id, project_id, access_token, requester_name, requester_email, requester_user_id, subject, description, status)
-             VALUES (:queue_id, :project_id, :access_token, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new")'
+            'INSERT INTO tickets (queue_id, project_id, access_token, requester_name, requester_email, requester_user_id, subject, description, status, assigned_operator_id)
+             VALUES (:queue_id, :project_id, :access_token, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new", :assigned_operator_id)'
         );
         $stmt->execute([
             'queue_id' => $queueId,
@@ -229,10 +253,14 @@ class Ticket
             'requester_user_id' => $requesterUserId,
             'subject' => $subject,
             'description' => $description,
+            'assigned_operator_id' => $defaultOperatorId,
         ]);
 
         $ticketId = (int) Database::connection()->lastInsertId();
         Audit::log('ticket', $ticketId, 'created', $requesterUserId);
+        if ($defaultOperatorId !== null) {
+            Audit::log('ticket', $ticketId, 'auto_assigned_operator', null, ['assigned_operator_id' => $defaultOperatorId]);
+        }
         return $ticketId;
     }
 

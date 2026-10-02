@@ -22,9 +22,24 @@ use App\Models\User;
  */
 class NotificationService
 {
-    private static function enabled(): bool
+    private static function ticketsEnabled(): bool
     {
-        return Setting::get('email_notifications_enabled', '0') === '1' && MailerService::isConfigured();
+        return Setting::get('email_notify_tickets_enabled', '0') === '1' && MailerService::isConfigured();
+    }
+
+    private static function projectsEnabled(): bool
+    {
+        return Setting::get('email_notify_projects_enabled', '0') === '1' && MailerService::isConfigured();
+    }
+
+    private static function tasksEnabled(): bool
+    {
+        return Setting::get('email_notify_tasks_enabled', '0') === '1' && MailerService::isConfigured();
+    }
+
+    private static function remindersEnabled(): bool
+    {
+        return Setting::get('email_notify_reminders_enabled', '0') === '1' && MailerService::isConfigured();
     }
 
     // ---------- Тікети ----------
@@ -37,7 +52,7 @@ class NotificationService
      */
     public static function ticketCommentAdded(int $ticketId, string $authorType, ?int $authorId): void
     {
-        if (!self::enabled()) {
+        if (!self::ticketsEnabled()) {
             return;
         }
         try {
@@ -84,7 +99,7 @@ class NotificationService
     /** Зміна статусу тікета — сповіщаємо і заявника, і призначеного оператора, окрім того, хто саме її зробив. */
     public static function ticketStatusChanged(int $ticketId, string $newStatus, int $actingUserId): void
     {
-        if (!self::enabled()) {
+        if (!self::ticketsEnabled()) {
             return;
         }
         try {
@@ -128,7 +143,7 @@ class NotificationService
     /** Проєкт створено з одразу вказаним відповідальним — окреме сповіщення про призначення (нижче) при створенні не дублюється. */
     public static function projectCreated(int $projectId, ?int $responsibleUserId, int $createdBy): void
     {
-        if (!self::enabled() || !$responsibleUserId || $responsibleUserId === $createdBy) {
+        if (!self::projectsEnabled() || !$responsibleUserId || $responsibleUserId === $createdBy) {
             return;
         }
         self::sendProjectResponsibleMail($projectId, $responsibleUserId, isNew: true);
@@ -137,7 +152,7 @@ class NotificationService
     /** Відповідального проєкту змінено — сповіщаємо нового (лише якщо він справді змінився, не при повторному збереженні того самого значення). */
     public static function projectResponsibleChanged(int $projectId, ?int $responsibleUserId, ?int $previousResponsibleUserId, int $actingUserId): void
     {
-        if (!self::enabled() || !$responsibleUserId || $responsibleUserId === $previousResponsibleUserId || $responsibleUserId === $actingUserId) {
+        if (!self::projectsEnabled() || !$responsibleUserId || $responsibleUserId === $previousResponsibleUserId || $responsibleUserId === $actingUserId) {
             return;
         }
         self::sendProjectResponsibleMail($projectId, $responsibleUserId, isNew: false);
@@ -170,7 +185,7 @@ class NotificationService
     /** Задачу створено з одразу вказаним виконавцем. */
     public static function taskCreated(int $taskId, ?int $assigneeId, int $authorId): void
     {
-        if (!self::enabled() || !$assigneeId || $assigneeId === $authorId) {
+        if (!self::tasksEnabled() || !$assigneeId || $assigneeId === $authorId) {
             return;
         }
         self::sendTaskAssigneeMail($taskId, $assigneeId, isNew: true);
@@ -179,7 +194,7 @@ class NotificationService
     /** Виконавця задачі змінено — сповіщаємо нового, лише якщо він справді змінився. */
     public static function taskAssigneeChanged(int $taskId, ?int $assigneeId, ?int $previousAssigneeId, int $actingUserId): void
     {
-        if (!self::enabled() || !$assigneeId || $assigneeId === $previousAssigneeId || $assigneeId === $actingUserId) {
+        if (!self::tasksEnabled() || !$assigneeId || $assigneeId === $previousAssigneeId || $assigneeId === $actingUserId) {
             return;
         }
         self::sendTaskAssigneeMail($taskId, $assigneeId, isNew: false);
@@ -220,7 +235,7 @@ class NotificationService
      */
     public static function sendDueDateReminders(): array
     {
-        if (!self::enabled()) {
+        if (!self::remindersEnabled()) {
             return ['sent' => 0, 'skipped_reason' => 'Сповіщення вимкнені або SMTP не налаштовано'];
         }
 

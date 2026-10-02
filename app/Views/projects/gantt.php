@@ -89,14 +89,14 @@
                         <td>
                             <form method="post" action="/projects/<?= (int)$project['id'] ?>/relations/<?= (int)$r['id'] ?>" class="d-flex gap-1">
                                 <?= \App\Core\Csrf::field() ?>
-                                <select name="relation_type" class="form-select form-select-sm" onchange="this.form.requestSubmit()">
+                                <select name="relation_type" class="form-select form-select-sm auto-submit-select">
                                     <?php foreach ($relationLabels as $code => $label): ?>
                                         <option value="<?= $code ?>" <?= $r['relation_type'] === $code ? 'selected' : '' ?>><?= $label ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </form>
                             <form method="post" action="/projects/<?= (int)$project['id'] ?>/relations/<?= (int)$r['id'] ?>/delete"
-                                  onsubmit="return confirm('Видалити цей зв\'язок?');" class="mt-1">
+                                  data-confirm="Видалити цей зв'язок?" class="mt-1">
                                 <?= \App\Core\Csrf::field() ?>
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Видалити</button>
                             </form>
@@ -111,7 +111,7 @@
 
 <?php if (!empty($tasks)): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/frappe-gantt/1.2.1/frappe-gantt.umd.min.js"></script>
-<script>
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
 (function () {
     const CSRF_TOKEN = <?= json_encode(\App\Core\Csrf::token()) ?>;
     const errorBox = document.getElementById('gantt-error');
