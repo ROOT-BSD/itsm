@@ -50,4 +50,6 @@ INSERT INTO app_settings (setting_key, setting_value) VALUES
 ('email_notify_tickets_enabled', '0'),    -- нова відповідь, зміна статусу тікета
 ('email_notify_projects_enabled', '0'),   -- створення проєкту/призначення відповідального
 ('email_notify_tasks_enabled', '0'),      -- створення задачі/призначення виконавця
-('email_notify_reminders_enabled', '0');  -- нагадування про термін виконання задачі (2 дні/1 день/настав)
+('email_notify_reminders_enabled', '0'),  -- нагадування про термін виконання задачі (2 дні/1 день/настав)
+-- Active Directory (Адмін-панель → Active Directory): вимкнено, доки не налаштовано підключення в .env
+('ad_sync_enabled', '0');

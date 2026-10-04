@@ -22,11 +22,7 @@ class Auth
         self::$lastError = null;
         $user = User::findByEmail($email);
 
-        if (!$user || $user['auth_source'] !== 'local') {
-            // Обліковий запис з AD-автентифікацією не може заходити локальним паролем.
-            // Логіка bind-запиту до AD реалізується окремим класом App\Core\AdAuth (Епік 13, R2).
-            // Навмисно те саме повідомлення, що й для невірного пароля нижче —
-            // щоб не підказувати стороннім, які email узагалі існують у системі.
+        if (!$user) {
             self::$lastError = 'Невірний email або пароль';
             return false;
         }
@@ -38,13 +34,19 @@ class Auth
 
         // Блокування прив'язане до КОНКРЕТНОГО користувача (не IP і не сесії) —
         // саме так, як просили: одна людина, яка забула пароль, не впливає на інших.
+        // Застосовується однаково для local і ad — захист від підбору пароля на AD-акаунт
+        // через цей застосунок має сенс незалежно від того, чи є в самого AD власний lockout.
         if (!empty($user['locked_until']) && strtotime($user['locked_until']) > time()) {
             $minutesLeft = (int) ceil((strtotime($user['locked_until']) - time()) / 60);
             self::$lastError = "Обліковий запис тимчасово заблоковано через забагато невдалих спроб входу. Спробуйте ще раз через {$minutesLeft} хв.";
             return false;
         }
 
-        if (!password_verify($password, $user['password_hash'])) {
+        $credentialsValid = $user['auth_source'] === 'ad'
+            ? AdAuth::authenticate($user['ad_username'] ?? '', $password) !== null
+            : password_verify($password, $user['password_hash'] ?? '');
+
+        if (!$credentialsValid) {
             $maxAttempts = (int) Setting::get('max_login_attempts', '5');
             $lockoutMinutes = (int) Setting::get('lockout_minutes', '15');
 

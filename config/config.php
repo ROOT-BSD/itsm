@@ -102,6 +102,26 @@ return (function (): array {
             'from_name'   => $env('MAIL_SMTP_FROM_NAME', 'ITSM Підтримка'),
             'verify_cert' => filter_var($env('MAIL_SMTP_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
         ],
+        // Active Directory: автентифікація користувачів із auth_source='ad' і фоновий
+        // імпорт/синхронізація (bin/sync-ad-users.php). Значення атрибутів за замовчуванням —
+        // як у реальному Active Directory (sAMAccountName, memberOf); для OpenLDAP чи іншого
+        // сервера їх можна перевизначити через .env без зміни коду.
+        'ad' => [
+            'host'               => $env('AD_HOST'),
+            'port'               => (int) $env('AD_PORT', '389'),
+            'encryption'         => strtolower($env('AD_ENCRYPTION', 'none')), // none | starttls | ldaps
+            'base_dn'            => $env('AD_BASE_DN'),
+            // Службовий обліковий запис лише для ПОШУКУ користувачів (сам вхід — окремий bind як сам користувач).
+            'bind_dn'            => $env('AD_BIND_DN'),
+            'bind_password'      => $env('AD_BIND_PASSWORD'),
+            'user_filter'        => $env('AD_USER_FILTER', '(&(objectClass=user)(sAMAccountName={username}))'),
+            'sync_filter'        => $env('AD_SYNC_FILTER', '(&(objectClass=user)(mail=*))'),
+            'username_attribute' => $env('AD_USERNAME_ATTR', 'sAMAccountName'),
+            'email_attribute'    => $env('AD_EMAIL_ATTR', 'mail'),
+            'name_attribute'     => $env('AD_NAME_ATTR', 'displayName'),
+            'group_attribute'    => $env('AD_GROUP_ATTR', 'memberOf'),
+            'verify_cert'        => filter_var($env('AD_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
+        ],
         'app' => [
             'name'    => 'ITSM System',
             'version' => '0.2.0',

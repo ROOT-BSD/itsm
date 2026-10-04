@@ -8,6 +8,7 @@ use App\Core\Router;
 use App\Controllers\AdminController;
 use App\Controllers\AuditController;
 use App\Controllers\EmailController;
+use App\Controllers\AdController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
@@ -182,6 +183,27 @@ $router->post('/admin/queues/{id}/sla', function ($p) {
 });
 $router->post('/admin/queues/{id}/default-operator', function ($p) {
     (new AdminController())->updateQueueDefaultOperator($p);
+});
+$router->get('/admin/ad', function () {
+    (new AdController())->index();
+});
+$router->post('/admin/ad', function () {
+    (new AdController())->save();
+});
+$router->post('/admin/ad/connection', function () {
+    (new AdController())->saveConnection();
+});
+$router->post('/admin/ad/test', function () {
+    (new AdController())->test();
+});
+$router->post('/admin/ad/sync', function () {
+    (new AdController())->syncNow();
+});
+$router->post('/admin/ad/mappings', function () {
+    (new AdController())->saveMapping();
+});
+$router->post('/admin/ad/mappings/{id}/delete', function ($p) {
+    (new AdController())->deleteMapping($p);
 });
 $router->get('/admin/email', function () {
     (new EmailController())->index();

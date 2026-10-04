@@ -151,7 +151,7 @@ if command -v php >/dev/null 2>&1; then
             ok "Розширення ${ext} (опційне)"
         else
             case "$ext" in
-                ldap) warn "Відсутнє розширення ${ext} — знадобиться для інтеграції з Active Directory (Епік 13)" ;;
+                ldap) warn "Відсутнє розширення ${ext} — потрібне для входу через Active Directory та синхронізації користувачів (Адмін-панель → Active Directory)" ;;
                 fileinfo) warn "Відсутнє розширення ${ext} — знадобиться для завантаження вкладень (Епік 8)" ;;
                 openssl) warn "Відсутнє розширення ${ext} — email-to-ticket не зможе підключатися до пошти по SSL/STARTTLS (лише без шифрування)" ;;
                 iconv) warn "Відсутнє розширення ${ext} — email-to-ticket працюватиме, але рідкісні кодування листів (не UTF-8) розпізнаватимуться гірше" ;;
@@ -501,6 +501,26 @@ APP_URL=http://localhost
 #MAIL_SMTP_USERNAME=support@example.org
 #MAIL_SMTP_PASSWORD=
 #MAIL_SMTP_VERIFY_CERT=true
+
+# --- Active Directory (необов'язково) ---
+# Вхід для AD-користувачів і фонова синхронізація (bin/sync-ad-users.php).
+# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель -> Active Directory.
+# AD_ENCRYPTION: ldaps (порт 636), starttls (порт 389) або none.
+# Атрибути нижче вже відповідають реальному Active Directory — перевизначайте лише для іншого LDAP-сервера.
+#AD_HOST=dc01.company.local
+#AD_PORT=389
+#AD_ENCRYPTION=starttls
+#AD_BASE_DN=dc=company,dc=local
+#AD_BIND_DN=cn=svc-itsm,ou=Service,dc=company,dc=local
+#AD_BIND_PASSWORD=
+#AD_USER_FILTER=(&(objectClass=user)(sAMAccountName={username}))
+#AD_SYNC_FILTER=(&(objectClass=user)(mail=*))
+#AD_USERNAME_ATTR=sAMAccountName
+#AD_EMAIL_ATTR=mail
+#AD_NAME_ATTR=displayName
+#AD_GROUP_ATTR=memberOf
+#AD_DEFAULT_ROLE=requester
+#AD_VERIFY_CERT=true
 ENV
 
     chmod 600 "$ENV_FILE"

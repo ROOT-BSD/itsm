@@ -15,6 +15,7 @@ $entityTypeLabels = [
     'ticket_queue' => 'Черга тікетів',
     'user' => 'Користувач',
     'app_settings' => 'Налаштування',
+    'ad_group_role_mapping' => 'Відповідність AD-груп ролям',
 ];
 
 // Підписи для полів усередині JSON-колонки "changes" — щоб замість
@@ -37,6 +38,12 @@ $changeKeyLabels = [
     'first_response_minutes' => 'Перша відповідь (хв)',
     'resolution_minutes' => 'Вирішення (хв)',
     'email_ticket_enabled' => 'Обробка пошти',
+    'ad_sync_enabled' => 'Синхронізація з AD',
+    'ad_host' => 'Сервер AD',
+    'ad_encrypted' => 'Шифрування',
+    'ad_group' => 'Група AD',
+    'ad_username' => 'Логін AD',
+    'role_id' => 'Роль',
     'email_ticket_queue_id' => 'Черга для пошти (0 = перша)',
     'email_autoreply_enabled' => 'Автовідповідь заявнику',
     'email_notify_tickets_enabled' => 'Сповіщення про тікети',

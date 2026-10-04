@@ -76,6 +76,15 @@
     <div class="col-md-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
+                <h5 class="card-title">🗂️ Active Directory</h5>
+                <p class="card-text text-muted small">Підключення до AD, синхронізація користувачів, відповідність груп ролям.</p>
+                <a href="/admin/ad" class="btn btn-outline-secondary btn-sm">Налаштування</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
                 <h5 class="card-title">🔒 Безпека входу</h5>
                 <p class="card-text text-muted small">Кількість невдалих спроб пароля до блокування облікового запису та тривалість блокування.</p>
                 <a href="/admin/security" class="btn btn-outline-secondary btn-sm">Налаштувати</a>

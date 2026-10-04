@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(150) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NULL,               -- NULL, якщо тільки AD-автентифікація
     auth_source ENUM('local','ad') NOT NULL DEFAULT 'local',
+    ad_username VARCHAR(100) NULL,                 -- sAMAccountName (чи інший налаштований атрибут) — для AD-пошуку при вході, email лишається незмінним ключем входу
     role_id INT NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     failed_login_attempts INT NOT NULL DEFAULT 0,  -- скидається до 0 при вдалому вході
@@ -193,6 +194,19 @@ CREATE TABLE IF NOT EXISTS ticket_queues (
     description VARCHAR(255),
     default_operator_id INT NULL,  -- автопризначення: новий тікет у цій черзі одразу отримує цього оператора (Адмін-панель → Черги тікетів)
     FOREIGN KEY (default_operator_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Відповідність групи AD (значення атрибуту memberOf, звичайно повний DN, напр.
+-- "cn=ITSM-Operators,ou=Groups,dc=example,dc=com") локальній ролі. Під час синхронізації
+-- (bin/sync-ad-users.php) кожен AD-користувач отримує роль ПЕРШОЇ групи зі списку своїх
+-- memberOf, для якої є відповідність тут, за порядком rank (менше число — вищий пріоритет);
+-- якщо жодна група не збіглась — роль за замовчуванням (AD_DEFAULT_ROLE / 'requester').
+CREATE TABLE IF NOT EXISTS ad_group_role_mapping (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ad_group VARCHAR(255) NOT NULL UNIQUE,
+    role_id INT NOT NULL,
+    rank INT NOT NULL DEFAULT 100,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS sla_policies (
