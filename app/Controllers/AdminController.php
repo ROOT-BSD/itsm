@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\LdapDn;
 use App\Core\View;
 use App\Models\Project;
 use App\Models\Task;
@@ -92,8 +93,31 @@ class AdminController
 
     public function users(): void
     {
+        $all = User::all();
+        $localUsers = array_values(array_filter($all, fn($u) => $u['auth_source'] === 'local'));
+        $adUsers = array_values(array_filter($all, fn($u) => $u['auth_source'] === 'ad'));
+
+        // Групування AD-користувачів за організаційним підрозділом (OU) з їхнього DN. Сортуємо за
+        // читабельною назвою «Батьківський › Дочірній», тож вкладені OU йдуть поруч із батьківськими
+        // («Kyiv › IT», «Kyiv › Sales», потім «Lviv»). Користувачі поза будь-яким OU (напр., зі
+        // стандартного контейнера CN=Users) — останньою групою, щоб справжні OU були на видноті.
+        $groups = [];
+        foreach ($adUsers as $u) {
+            $ou = (string) ($u['ad_ou'] ?? '');
+            $groups[$ou]['label'] = LdapDn::ouLabel($ou);
+            $groups[$ou]['users'][] = $u;
+        }
+        $adGroups = array_values($groups);
+        usort($adGroups, function (array $a, array $b): int {
+            if ($a['label'] === '' || $b['label'] === '') {
+                return ($a['label'] === '') <=> ($b['label'] === '');
+            }
+            return mb_strtolower($a['label']) <=> mb_strtolower($b['label']);
+        });
+
         View::render('admin/users', [
-            'users' => User::all(),
+            'localUsers' => $localUsers,
+            'adGroups' => $adGroups,
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ]);

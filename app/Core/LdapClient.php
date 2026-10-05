@@ -15,6 +15,12 @@ namespace App\Core;
  */
 class LdapClient
 {
+    /** Розмір сторінки пошуку — з запасом нижче за типові серверні ліміти (500 в OpenLDAP, 1000 в AD). */
+    private const PAGE_SIZE = 200;
+
+    /** Код LDAP «перевищено ліміт розміру» (RFC 4511, sizeLimitExceeded). */
+    private const LDAP_SIZELIMIT_EXCEEDED = 4;
+
     /** @var \LDAP\Connection|resource|null */
     private $conn = null;
 
@@ -34,6 +40,16 @@ class LdapClient
 
     public function connect(): void
     {
+        // ext-ldap в install.sh — "опційне" розширення, тож його може не бути. Без цієї перевірки
+        // виклик ldap_connect() давав би фатальну Error (HTTP 500) замість повідомлення адміністратору —
+        // а LdapException усі викликачі (AdAuth, AdSyncService) уже коректно обробляють.
+        if (!function_exists('ldap_connect')) {
+            throw new LdapException(
+                'Розширення PHP «ldap» не встановлено — без нього інтеграція з Active Directory неможлива. '
+                . 'Встановіть його (наприклад, sudo apt install php-ldap) і перезапустіть PHP-FPM/Apache.'
+            );
+        }
+
         if (!$this->verifyCert) {
             // ext-ldap читає налаштування TLS з /etc/ldap/ldap.conf, а не з контексту виклику —
             // єдиний спосіб вимкнути перевірку сертифіката програмно, до ldap_connect().
@@ -76,30 +92,69 @@ class LdapClient
     }
 
     /**
+     * Повертає ВСІ записи за фільтром — постраничним пошуком (RFC 2696, його підтримує і Active
+     * Directory, і OpenLDAP). Без цього сервер мовчки віддає лише перші N записів (у AD — 1000,
+     * у OpenLDAP для звичайного акаунта — 500) БЕЗ жодної помилки, і синхронізація, побачивши
+     * «неповний» каталог, вважала б решту користувачів зниклими й деактивувала їх.
+     *
+     * Якщо сервер усе ж віддав неповний результат (не підтримує посторінковість) — кидається
+     * LdapException, а не повертається те, що встигло прийти: краще впасти, ніж мовчки зіпсувати дані.
+     *
      * @param string[] $attributes
      * @return array<int, array<string, mixed>> кожен запис — ['dn' => ..., 'атрибут' => 'значення' | ['значення', ...]]
      */
     public function search(string $baseDn, string $filter, array $attributes = []): array
     {
-        $result = @ldap_search($this->conn, $baseDn, $filter, $attributes);
-        if ($result === false) {
-            throw new LdapException($this->explainError($this->conn, 'Помилка пошуку в каталозі'));
-        }
-
-        $entries = ldap_get_entries($this->conn, $result);
         $out = [];
-        for ($i = 0; $i < $entries['count']; $i++) {
-            $entry = $entries[$i];
-            $row = ['dn' => $entry['dn']];
-            foreach ($entry as $key => $value) {
-                if (!is_string($key) || !is_array($value)) {
-                    continue;
-                }
-                unset($value['count']);
-                $row[strtolower($key)] = count($value) === 1 ? $value[0] : array_values($value);
+        $cookie = '';
+
+        do {
+            $controls = [[
+                'oid' => LDAP_CONTROL_PAGEDRESULTS,
+                'iscritical' => false,
+                'value' => ['size' => self::PAGE_SIZE, 'cookie' => $cookie],
+            ]];
+            $result = @ldap_search($this->conn, $baseDn, $filter, $attributes, 0, 0, 0, LDAP_DEREF_NEVER, $controls);
+            if ($result === false) {
+                throw new LdapException($this->explainError($this->conn, 'Помилка пошуку в каталозі'));
             }
-            $out[] = $row;
-        }
+
+            $errorCode = 0;
+            $matchedDn = '';
+            $errorMessage = '';
+            $referrals = [];
+            $responseControls = [];
+            if (!@ldap_parse_result($this->conn, $result, $errorCode, $matchedDn, $errorMessage, $referrals, $responseControls)) {
+                throw new LdapException($this->explainError($this->conn, 'Не вдалося розібрати відповідь каталогу'));
+            }
+            if ($errorCode === self::LDAP_SIZELIMIT_EXCEEDED) {
+                throw new LdapException(
+                    'Каталог повернув лише частину записів (перевищено ліміт розміру відповіді сервера), '
+                    . 'і постраничний пошук не спрацював. Результат неповний, тож використовувати його небезпечно '
+                    . '(синхронізація могла б помилково деактивувати користувачів) — операцію скасовано.'
+                );
+            }
+            if ($errorCode !== 0) {
+                throw new LdapException("Помилка пошуку в каталозі: {$errorMessage} (код {$errorCode}).");
+            }
+
+            $entries = ldap_get_entries($this->conn, $result);
+            for ($i = 0; $i < $entries['count']; $i++) {
+                $entry = $entries[$i];
+                $row = ['dn' => $entry['dn']];
+                foreach ($entry as $key => $value) {
+                    if (!is_string($key) || !is_array($value)) {
+                        continue;
+                    }
+                    unset($value['count']);
+                    $row[strtolower($key)] = count($value) === 1 ? $value[0] : array_values($value);
+                }
+                $out[] = $row;
+            }
+
+            $cookie = $responseControls[LDAP_CONTROL_PAGEDRESULTS]['value']['cookie'] ?? '';
+        } while ($cookie !== '' && $cookie !== null);
+
         return $out;
     }
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Core\AdAuth;
 use App\Core\Config;
 use App\Core\LdapClient;
+use App\Core\LdapDn;
 use App\Core\LdapException;
 use App\Models\AdGroupMapping;
 use App\Models\Audit;
@@ -29,11 +30,21 @@ class AdSyncService
         return Setting::get('ad_sync_enabled', '0') === '1' && AdAuth::isConfigured();
     }
 
-    /** @return array{status: string, message: string} status: ok|disabled|error */
-    public static function sync(): array
+    /**
+     * @param bool $force true — ручний запуск з адмін-панелі («Синхронізувати зараз»): галочка
+     *                    «Синхронізувати користувачів з AD» не потрібна, достатньо налаштованого
+     *                    підключення. false — запуск за розкладом (cron): галочка обов'язкова.
+     * @return array{status: string, message: string} status: ok|disabled|error
+     */
+    public static function sync(bool $force = false): array
     {
-        if (!self::enabled()) {
-            return ['status' => 'disabled', 'message' => 'Синхронізація вимкнена або AD не налаштовано'];
+        if ($force ? !AdAuth::isConfigured() : !self::enabled()) {
+            return [
+                'status' => 'disabled',
+                'message' => $force
+                    ? 'Підключення до AD не налаштовано'
+                    : 'Синхронізація вимкнена (галочка в Адмін-панель → Active Directory) або AD не налаштовано',
+            ];
         }
 
         $ad = Config::get('ad', []);
@@ -71,6 +82,7 @@ class AdSyncService
             $groupsRaw = $entry[strtolower($ad['group_attribute'])] ?? [];
             $groups = is_array($groupsRaw) ? $groupsRaw : ($groupsRaw !== '' ? [$groupsRaw] : []);
             $roleId = AdGroupMapping::roleIdForGroups($groups) ?? $defaultRoleId;
+            $ou = LdapDn::ouPath((string) $entry['dn']);
 
             try {
                 $existing = User::findByEmail($email);
@@ -80,11 +92,11 @@ class AdSyncService
                 }
 
                 if ($existing) {
-                    User::updateFromAd((int) $existing['id'], $name, $username, $roleId);
+                    User::updateFromAd((int) $existing['id'], $name, $username, $roleId, $ou);
                     Audit::log('user', (int) $existing['id'], 'ad_sync_updated', null, ['ad_username' => $username, 'role_id' => $roleId]);
                     $updated++;
                 } else {
-                    $newId = User::createFromAd($name, $email, $username, $roleId);
+                    $newId = User::createFromAd($name, $email, $username, $roleId, $ou);
                     Audit::log('user', $newId, 'ad_sync_created', null, ['ad_username' => $username, 'role_id' => $roleId]);
                     $created++;
                 }

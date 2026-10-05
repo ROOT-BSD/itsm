@@ -124,7 +124,7 @@ class AdController
     public function syncNow(): void
     {
         @set_time_limit(120);
-        $result = AdSyncService::sync();
+        $result = AdSyncService::sync(true);
         $this->redirect($result['status'] !== 'error' ? 'success' : 'error', $result['message']);
     }
 

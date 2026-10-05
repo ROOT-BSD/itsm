@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NULL,               -- NULL, якщо тільки AD-автентифікація
     auth_source ENUM('local','ad') NOT NULL DEFAULT 'local',
     ad_username VARCHAR(100) NULL,                 -- sAMAccountName (чи інший налаштований атрибут) — для AD-пошуку при вході, email лишається незмінним ключем входу
+    ad_ou VARCHAR(500) NULL,                       -- шлях OU з DN користувача в AD (лише OU=, без CN-контейнерів і DC=) — для групування на сторінці «Користувачі»
     role_id INT NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     failed_login_attempts INT NOT NULL DEFAULT 0,  -- скидається до 0 при вдалому вході

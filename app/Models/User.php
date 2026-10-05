@@ -125,28 +125,35 @@ class User
     }
 
     /** Створення користувача з AD-синхронізації (bin/sync-ad-users.php) — без пароля, вхід лише через bind до AD. */
-    public static function createFromAd(string $fullName, string $email, string $adUsername, int $roleId): int
+    public static function createFromAd(string $fullName, string $email, string $adUsername, int $roleId, string $adOu = ''): int
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO users (full_name, email, password_hash, auth_source, ad_username, role_id, is_active)
-             VALUES (:full_name, :email, NULL, "ad", :ad_username, :role_id, 1)'
+            'INSERT INTO users (full_name, email, password_hash, auth_source, ad_username, ad_ou, role_id, is_active)
+             VALUES (:full_name, :email, NULL, "ad", :ad_username, :ad_ou, :role_id, 1)'
         );
         $stmt->execute([
             'full_name' => $fullName,
             'email' => $email,
             'ad_username' => $adUsername,
+            'ad_ou' => $adOu !== '' ? $adOu : null,
             'role_id' => $roleId,
         ]);
         return (int) Database::connection()->lastInsertId();
     }
 
-    /** Оновлення вже синхронізованого AD-користувача — ім'я, роль (за групами) і username могли змінитись в AD. Активується повторно, якщо раніше був деактивований через зникнення з AD. */
-    public static function updateFromAd(int $userId, string $fullName, string $adUsername, int $roleId): void
+    /** Оновлення вже синхронізованого AD-користувача — ім'я, роль (за групами), username і OU (якщо користувача перенесли в AD) могли змінитись. Активується повторно, якщо раніше був деактивований через зникнення з AD. */
+    public static function updateFromAd(int $userId, string $fullName, string $adUsername, int $roleId, string $adOu = ''): void
     {
         $stmt = Database::connection()->prepare(
-            'UPDATE users SET full_name = :full_name, ad_username = :ad_username, role_id = :role_id, is_active = 1 WHERE id = :id'
+            'UPDATE users SET full_name = :full_name, ad_username = :ad_username, ad_ou = :ad_ou, role_id = :role_id, is_active = 1 WHERE id = :id'
         );
-        $stmt->execute(['full_name' => $fullName, 'ad_username' => $adUsername, 'role_id' => $roleId, 'id' => $userId]);
+        $stmt->execute([
+            'full_name' => $fullName,
+            'ad_username' => $adUsername,
+            'ad_ou' => $adOu !== '' ? $adOu : null,
+            'role_id' => $roleId,
+            'id' => $userId,
+        ]);
     }
 
     /** Усі користувачі з auth_source='ad' — для визначення, кого синхронізація більше не бачить у каталозі (деактивація). */
