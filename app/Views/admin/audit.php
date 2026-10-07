@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
+    <?php require __DIR__ . '/_back.php'; ?>
 </div>
 
 <h3 class="mb-4">Журнал аудиту</h3>
@@ -10,6 +10,7 @@ $entityTypeLabels = [
     'project' => 'Проєкт',
     'task' => 'Задача',
     'ticket' => 'Тікет',
+    'wiki_page' => 'Сторінка вікі',
     'milestone' => 'Етап',
     'task_relation' => "Зв'язок задач",
     'ticket_queue' => 'Черга тікетів',
@@ -24,6 +25,7 @@ $changeKeyLabels = [
     'status_id' => 'Статус',
     'assignee_id' => 'Виконавець',
     'responsible_user_id' => 'Відповідальний',
+    'member_user_id' => 'Учасник проєкту',
     'operator_id' => 'Оператор',
     'default_operator_id' => 'Оператор за замовчуванням',
     'assigned_operator_id' => 'Призначений оператор',
@@ -54,6 +56,11 @@ $changeKeyLabels = [
     'error' => 'Помилка',
     'to' => 'Кому',
     'csat_score' => 'Оцінка CSAT',
+    'slug' => 'Адреса',
+    'version' => 'Версія',
+    'restored_version' => 'Відновлено з версії',
+    'file' => 'Файл',
+    'size_kb' => 'Розмір, КБ',
     'from' => 'Відправник',
 ];
 

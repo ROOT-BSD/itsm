@@ -34,7 +34,7 @@
     </div>
     <div class="mb-3">
         <label class="form-label">Відповідальний за проєкт (виконавець)</label>
-        <select name="responsible_user_id" class="form-select">
+        <select name="responsible_user_id" class="form-select user-select">
             <option value="">— не призначено —</option>
             <?php foreach ($users as $u): ?>
                 <option value="<?= (int)$u['id'] ?>"><?= \App\Core\View::e($u['full_name']) ?> (<?= \App\Core\View::e($u['role_name']) ?>)</option>

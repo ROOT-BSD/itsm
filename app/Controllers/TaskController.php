@@ -132,6 +132,7 @@ class TaskController
             'milestones' => Milestone::forProject((int) $task['project_id']),
             'timeLogs' => Task::timeLogsForTask($task['id']),
             'projects' => Project::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
+            'attachments' => \App\Models\Attachment::forOwner('task', (int) $task['id']),
         ]);
     }
 
@@ -335,7 +336,7 @@ class TaskController
         }
         if (!Project::isVisibleTo($project, Auth::id(), Auth::hasRole(['admin']))) {
             http_response_code(403);
-            echo 'Доступ до цього проєкту обмежено — його бачать лише автор, відповідальний та адміністратор системи.';
+            echo 'Доступ до цього проєкту обмежено — його бачать лише автор, відповідальний, учасники проєкту та адміністратор системи.';
             exit;
         }
         return $project;

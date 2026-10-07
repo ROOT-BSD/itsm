@@ -41,9 +41,16 @@ class Project
     /** Основні (не підпроєкти) проєкти, видимі цьому користувачу, БЕЗ закритих — для головного списку `/projects`. Закриті — на сторінці «Архів». */
     public static function topLevelVisibleTo(int $userId, bool $isAdmin): array
     {
+        $visible = self::allVisibleTo($userId, $isAdmin);
+        $visibleIds = array_flip(array_map('intval', array_column($visible, 'id')));
+
+        // Підпроєкти зазвичай показуються на сторінці основного проєкту. Але якщо користувач бачить підпроєкт,
+        // а батьківський проєкт — ні (доступ надається кожному проєкту окремо), підпроєкт без цього нізвідки було б
+        // відкрити зі списку, тож він потрапляє у список сам — із позначкою «Підпроєкт».
         return array_values(array_filter(
-            self::allVisibleTo($userId, $isAdmin),
-            fn(array $p): bool => empty($p['parent_id']) && $p['status'] !== 'closed'
+            $visible,
+            fn(array $p): bool => $p['status'] !== 'closed'
+                && (empty($p['parent_id']) || !isset($visibleIds[(int) $p['parent_id']]))
         ));
     }
 
@@ -58,9 +65,10 @@ class Project
 
     /**
      * Проєкти, видимі конкретному користувачу: адміністратор бачить усі,
-     * решта — лише ті, де вони автор (created_by) або відповідальний
-     * (responsible_user_id). Використовується замість all() усюди, де
-     * список показується не-адміну (список проєктів, дашборд).
+     * решта — лише ті, де вони автор (created_by), відповідальний
+     * (responsible_user_id) або явно доданий учасник (project_members).
+     * Використовується замість all() усюди, де список показується не-адміну
+     * (список проєктів, дашборд).
      */
     public static function allVisibleTo(int $userId, bool $isAdmin): array
     {
@@ -68,6 +76,7 @@ class Project
             return self::all();
         }
 
+        [$accessSql, $accessParams] = self::accessCondition('p', 'acc', $userId);
         $stmt = Database::connection()->prepare(
             "SELECT p.*, u.full_name AS created_by_name, r.full_name AS responsible_name,
                     parent.name AS parent_name,
@@ -89,21 +98,178 @@ class Project
                  WHERE parent_id IS NOT NULL AND status != 'closed'
                  GROUP BY parent_id
              ) sp ON sp.parent_id = p.id
-             WHERE p.created_by = :uid1 OR p.responsible_user_id = :uid2
+             WHERE {$accessSql}
              ORDER BY p.created_at DESC"
         );
-        $stmt->execute(['uid1' => $userId, 'uid2' => $userId]);
+        $stmt->execute($accessParams);
         return $stmt->fetchAll();
     }
 
-    /** Чи бачить цей користувач цей проєкт: адмін / автор / відповідальний. */
+    /**
+     * SQL-умова «цей користувач має доступ до проєкту» (для не-адміністратора): він автор, відповідальний або учасник.
+     * ЄДИНЕ місце цього правила — його підставляють і Project, і Task, і дашборд, тож новий спосіб отримати доступ
+     * додається лише тут. Імена параметрів мають унікальний префікс: в одному запиті умова інколи підставляється
+     * кілька разів, а PDO не дозволяє повторювати іменований параметр.
+     *
+     * @param string $table псевдонім або ім'я таблиці projects у запиті ("p" чи "projects") — лише внутрішні константи, не ввід користувача
+     * @param string $prefix унікальний у межах запиту префікс імен параметрів
+     * @return array{0: string, 1: array<string, int>} [фрагмент SQL у дужках, параметри]
+     */
+    public static function accessCondition(string $table, string $prefix, int $userId): array
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $table) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $prefix)) {
+            throw new \InvalidArgumentException('Недопустимий псевдонім таблиці чи префікс параметрів');
+        }
+        $params = ["{$prefix}1" => $userId, "{$prefix}2" => $userId];
+        $sql = "({$table}.created_by = :{$prefix}1 OR {$table}.responsible_user_id = :{$prefix}2";
+        // Якщо міграцію 021 ще не виконано (таблиці немає), учасників просто немає — доступ такий, як до появи функції.
+        // Без цієї перевірки пропущений update.sh перетворював би на помилку 500 КОЖЕН запит, що перевіряє доступ до проєкту.
+        if (self::membersTableExists()) {
+            $sql .= " OR EXISTS (SELECT 1 FROM project_members pm_{$prefix} WHERE pm_{$prefix}.project_id = {$table}.id AND pm_{$prefix}.user_id = :{$prefix}3)";
+            $params["{$prefix}3"] = $userId;
+        }
+        return [$sql . ')', $params];
+    }
+
+    private static ?bool $membersTableExists = null;
+
+    /**
+     * Чи створено таблицю учасників (міграція 021). Перевіряється раз на запит; відповідь «ні» означає, що на сервері
+     * оновили файли, але не запустили update.sh — застосунок тоді працює без учасників і показує адміністратору підказку.
+     */
+    public static function membersTableExists(): bool
+    {
+        if (self::$membersTableExists === null) {
+            $stmt = Database::connection()->query(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_members'"
+            );
+            self::$membersTableExists = $stmt !== false && (int) $stmt->fetchColumn() > 0;
+        }
+        return self::$membersTableExists;
+    }
+
+    /** Чи бачить цей користувач цей проєкт: адмін / автор / відповідальний / доданий учасник. */
     public static function isVisibleTo(array $project, int $userId, bool $isAdmin): bool
     {
         if ($isAdmin) {
             return true;
         }
         return (int) $project['created_by'] === $userId
+            || (int) ($project['responsible_user_id'] ?? 0) === $userId
+            || self::isMember((int) $project['id'], $userId);
+    }
+
+    // ------------------------------------------------------------------ учасники проєкту
+
+    public static function isMember(int $projectId, int $userId): bool
+    {
+        if (!self::membersTableExists()) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('SELECT 1 FROM project_members WHERE project_id = :project AND user_id = :user');
+        $stmt->execute(['project' => $projectId, 'user' => $userId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /** Учасники проєкту (без автора й відповідального — вони мають доступ завжди й показуються окремо). @return array<int, array<string, mixed>> */
+    public static function members(int $projectId): array
+    {
+        if (!self::membersTableExists()) {
+            return [];
+        }
+        $stmt = Database::connection()->prepare(
+            'SELECT u.id, u.full_name, u.email, u.is_active, pm.created_at, a.full_name AS added_by_name
+             FROM project_members pm
+             JOIN users u ON u.id = pm.user_id
+             LEFT JOIN users a ON a.id = pm.added_by
+             WHERE pm.project_id = :project
+             ORDER BY u.full_name'
+        );
+        $stmt->execute(['project' => $projectId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Керувати складом учасників можуть адміністратор, автор і відповідальний проєкту; сам учасник — ні (права не розповзаються). */
+    public static function canManageMembers(array $project, int $userId, bool $isAdmin): bool
+    {
+        return $isAdmin
+            || (int) $project['created_by'] === $userId
             || (int) ($project['responsible_user_id'] ?? 0) === $userId;
+    }
+
+    /**
+     * Кого можна додати: активні користувачі, які ще не мають доступу до цього проєкту
+     * (крім автора, відповідального та вже доданих учасників).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function memberCandidates(array $project): array
+    {
+        if (!self::membersTableExists()) {
+            return [];
+        }
+        $stmt = Database::connection()->prepare(
+            'SELECT u.id, u.full_name, u.email
+             FROM users u
+             WHERE u.is_active = 1
+               AND u.id <> :creator
+               AND u.id <> :responsible
+               AND NOT EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = :project AND pm.user_id = u.id)
+             ORDER BY u.full_name'
+        );
+        $stmt->execute([
+            'creator' => (int) $project['created_by'],
+            'responsible' => (int) ($project['responsible_user_id'] ?? 0),
+            'project' => (int) $project['id'],
+        ]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Надає користувачу доступ до проєкту.
+     *
+     * @return string 'added' — додано; 'exists' — уже учасник; 'owner' — автор чи відповідальний (мають доступ і так);
+     *                'invalid' — такого активного користувача немає; 'unavailable' — таблицю учасників ще не створено (update.sh)
+     */
+    public static function addMember(int $projectId, int $userId, int $actingUserId): string
+    {
+        if (!self::membersTableExists()) {
+            return 'unavailable';
+        }
+        $project = self::find($projectId);
+        $user = $project ? User::findById($userId) : null;
+        if (!$project || !$user || !(int) $user['is_active']) {
+            return 'invalid';
+        }
+        if ((int) $project['created_by'] === $userId || (int) ($project['responsible_user_id'] ?? 0) === $userId) {
+            return 'owner';
+        }
+
+        // INSERT IGNORE: два одночасні додавання того самого користувача не дадуть помилки, а лише один з них побачить «added».
+        $stmt = Database::connection()->prepare('INSERT IGNORE INTO project_members (project_id, user_id, added_by) VALUES (:project, :user, :by)');
+        $stmt->execute(['project' => $projectId, 'user' => $userId, 'by' => $actingUserId]);
+        if ($stmt->rowCount() === 0) {
+            return 'exists';
+        }
+
+        Audit::log('project', $projectId, 'member_added', $actingUserId, ['member_user_id' => $userId]);
+        NotificationService::projectMemberAdded($projectId, $userId, $actingUserId);
+        return 'added';
+    }
+
+    /** Забирає доступ в учасника. @return bool true — його було в учасниках */
+    public static function removeMember(int $projectId, int $userId, int $actingUserId): bool
+    {
+        if (!self::membersTableExists()) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('DELETE FROM project_members WHERE project_id = :project AND user_id = :user');
+        $stmt->execute(['project' => $projectId, 'user' => $userId]);
+        if ($stmt->rowCount() === 0) {
+            return false;
+        }
+        Audit::log('project', $projectId, 'member_removed', $actingUserId, ['member_user_id' => $userId]);
+        return true;
     }
 
     public static function find(int $id): ?array
@@ -299,8 +465,14 @@ class Project
         // як окрема сутність для довідки — тут фіксуємо сам факт і назву.
         Audit::log('project', $id, 'deleted', $userId, ['name' => $project['name']]);
 
+        // Видалення проєкту каскадно видаляє його задачі, а з ними — рядки їхніх вкладень у БД.
+        // Файли на диску так не зникнуть, тож імена збираємо заздалегідь (див. Task::delete).
+        $attachmentFiles = Attachment::storedNamesForProject($id);
+
         $stmt = Database::connection()->prepare('DELETE FROM projects WHERE id = :id');
         $stmt->execute(['id' => $id]);
+
+        \App\Services\AttachmentService::deleteFiles($attachmentFiles);
 
         return true;
     }

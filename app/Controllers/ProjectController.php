@@ -90,8 +90,16 @@ class ProjectController
         Auth::requireLogin();
         $project = $this->requireProjectAccess((int) $params['id']);
 
+        $canManageMembers = Project::canManageMembers($project, Auth::id(), Auth::hasRole(['admin']));
+
         View::render('projects/show', [
             'project' => $project,
+            'membersAvailable' => Project::membersTableExists(),
+            'members' => Project::members((int) $project['id']),
+            'canManageMembers' => $canManageMembers,
+            'memberCandidates' => $canManageMembers ? Project::memberCandidates($project) : [],
+            'success' => $_GET['success'] ?? null,
+            'error' => $_GET['error'] ?? null,
             'tasks' => Task::openForProject($project['id']),
             'users' => User::allActive(),
             'subProjects' => Project::subProjectsOf($project['id']),
@@ -328,6 +336,57 @@ class ProjectController
         exit;
     }
 
+    /** Надати користувачу доступ до проєкту (автор, відповідальний, адміністратор). */
+    public function addMember(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+        $this->requireMemberManager($project);
+
+        $result = Project::addMember((int) $project['id'], (int) ($_POST['user_id'] ?? 0), Auth::id());
+        [$key, $message] = match ($result) {
+            'added' => ['success', 'Доступ до проєкту надано.'],
+            'exists' => ['error', 'Цей користувач уже має доступ до проєкту.'],
+            'unavailable' => ['error', 'Надання доступу ще не активовано: на сервері не виконано оновлення бази даних. Попросіть адміністратора запустити update.sh.'],
+            'owner' => ['error', 'Автор і відповідальний за проєкт мають доступ завжди — додавати їх не треба.'],
+            default => ['error', 'Оберіть користувача зі списку.'],
+        };
+        $this->backToProject((int) $project['id'], $key, $message);
+    }
+
+    /** Забрати доступ до проєкту в учасника. */
+    public function removeMember(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+        $this->requireMemberManager($project);
+
+        if (!Project::membersTableExists()) {
+            $this->backToProject((int) $project['id'], 'error', 'Надання доступу ще не активовано: на сервері не виконано оновлення бази даних. Попросіть адміністратора запустити update.sh.');
+        }
+        $removed = Project::removeMember((int) $project['id'], (int) $params['userId'], Auth::id());
+        $this->backToProject(
+            (int) $project['id'],
+            $removed ? 'success' : 'error',
+            $removed ? 'Доступ до проєкту скасовано.' : 'Цей користувач не є учасником проєкту.'
+        );
+    }
+
+    private function requireMemberManager(array $project): void
+    {
+        if (!Project::canManageMembers($project, Auth::id(), Auth::hasRole(['admin']))) {
+            http_response_code(403);
+            echo 'Керувати доступом до проєкту можуть лише його автор, відповідальний та адміністратор системи.';
+            exit;
+        }
+    }
+
+    private function backToProject(int $projectId, string $key, string $message): never
+    {
+        header('Location: /projects/' . $projectId . '?' . $key . '=' . urlencode($message) . '#project-access');
+        exit;
+    }
+
     public function updateResponsible(array $params): void
     {
         Auth::requireLogin();
@@ -354,7 +413,7 @@ class ProjectController
         }
         if (!Project::isVisibleTo($project, Auth::id(), Auth::hasRole(['admin']))) {
             http_response_code(403);
-            echo 'Доступ до цього проєкту обмежено — його бачать лише автор, відповідальний та адміністратор системи.';
+            echo 'Доступ до цього проєкту обмежено — його бачать лише автор, відповідальний, учасники проєкту та адміністратор системи.';
             exit;
         }
         return $project;

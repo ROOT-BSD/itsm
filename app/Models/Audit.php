@@ -107,6 +107,7 @@ class Audit
             'assignee_id' => ['users', 'full_name'],
             'responsible_user_id' => ['users', 'full_name'],
             'operator_id' => ['users', 'full_name'],
+            'member_user_id' => ['users', 'full_name'],
             'milestone_id' => ['milestones', 'title'],
             'related_task_id' => ['tasks', 'title'],
         ];

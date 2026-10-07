@@ -5,6 +5,9 @@
 <?php if (!empty($_GET['error'])): ?>
     <div class="alert alert-danger"><?= \App\Core\View::e($_GET['error']) ?></div>
 <?php endif; ?>
+<?php if (!empty($_GET['success'])): ?>
+    <div class="alert alert-success"><?= \App\Core\View::e($_GET['success']) ?></div>
+<?php endif; ?>
 
 <div class="card mb-4">
     <div class="card-body">
@@ -33,7 +36,7 @@
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/assignee" class="d-flex gap-2 align-items-center mb-2">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Виконавець:</label>
-            <select name="assignee_id" class="form-select w-auto">
+            <select name="assignee_id" class="form-select w-auto user-select">
                 <option value="">— не призначено —</option>
                 <?php foreach ($users as $u): ?>
                     <option value="<?= (int)$u['id'] ?>" <?= (int)($task['assignee_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
@@ -91,6 +94,12 @@
         </form>
     </div>
 </div>
+
+<?php
+$attachmentOwnerType = 'task';
+$attachmentOwnerId = (int) $task['id'];
+require __DIR__ . '/../attachments/_panel.php';
+?>
 
 <div class="card mb-4">
     <div class="card-header">Облік часу</div>

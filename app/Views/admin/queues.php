@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
+    <?php require __DIR__ . '/_back.php'; ?>
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -43,7 +43,7 @@
             <td>
                 <form method="post" action="/admin/queues/<?= (int)$q['id'] ?>/default-operator">
                     <?= \App\Core\Csrf::field() ?>
-                    <select name="default_operator_id" class="form-select form-select-sm auto-submit-select">
+                    <select name="default_operator_id" class="form-select form-select-sm auto-submit-select user-select">
                         <option value="">— без автопризначення —</option>
                         <?php foreach ($users as $u): ?>
                             <option value="<?= (int)$u['id'] ?>" <?= (int)($q['default_operator_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>

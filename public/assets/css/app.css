@@ -157,3 +157,99 @@
 .csat-dist-count {
     width: 3em;
 }
+
+/* Вкладення (app/Views/attachments/_panel.php) */
+.attachment-thumb {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+.attachment-icon {
+    width: 56px;
+    height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+}
+
+/* Пошук у списках вибору людини (public/assets/js/user-select.js) */
+.user-combobox {
+    position: relative;
+}
+.user-combobox-inline {
+    display: inline-block;
+    min-width: 18rem;
+}
+.user-combobox-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1055;
+    min-width: 100%;
+    width: max-content;
+    max-width: 90vw;
+    max-height: 16rem;
+    overflow-y: auto;
+    margin: 2px 0 0;
+    padding: 0;
+    /* Власні фон і рамка: список має лишатись читабельним поверх сторінки незалежно від стилів Bootstrap. */
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.175);
+    border-radius: 0.375rem;
+    list-style: none;
+}
+.user-combobox-item {
+    cursor: pointer;
+    background-color: #fff;
+}
+.user-combobox-item.active {
+    background-color: #0d6efd;
+    color: #fff;
+}
+.user-combobox-current {
+    font-weight: 600;
+}
+.user-combobox-match {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-weight: 700;
+    text-decoration: underline;
+}
+/* Підпис порожнього варіанта («— не призначено —») виглядає так само, як значення звичайного списку. */
+.user-combobox input::placeholder {
+    color: inherit;
+    opacity: 1;
+}
+
+/* Список вибраних зображень у формах створення тікета (public/assets/js/paste-images.js) */
+.paste-thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+/* Вікі (app/Views/wiki/*, App\Core\Markdown) */
+.wiki-content { overflow-wrap: break-word; }  /* НЕ «anywhere»: воно стискає колонки таблиць до одного символу й рве слова посеред */
+.wiki-content h1, .wiki-content h2, .wiki-content h3, .wiki-content h4 { margin-top: 1.6rem; margin-bottom: .8rem; scroll-margin-top: 1rem; }
+.wiki-content h2 { font-size: 1.5rem; padding-bottom: .3rem; border-bottom: 1px solid #dee2e6; }
+.wiki-content h3 { font-size: 1.2rem; }
+.wiki-content > :first-child { margin-top: 0; }
+.wiki-content hr { margin: 1.5rem 0; }
+.wiki-content blockquote.wiki-quote { border-left: 4px solid #0d6efd; background: #f8f9fa; padding: .6rem 1rem; margin: 1rem 0; color: #495057; }
+.wiki-content blockquote.wiki-quote > :last-child { margin-bottom: 0; }
+.wiki-content pre.wiki-code { background: #f6f8fa; border: 1px solid #dee2e6; border-radius: 6px; padding: .8rem 1rem; overflow-x: auto; }
+.wiki-content pre.wiki-code code { color: inherit; background: none; padding: 0; }
+.wiki-content code { background: #f1f3f5; padding: .1rem .35rem; border-radius: 4px; font-size: .9em; color: #b02a5b; }
+.wiki-content li > ul, .wiki-content li > ol { margin-top: .3rem; }
+.wiki-content a.wiki-link-missing { color: #dc3545; }
+.wiki-content table.wiki-table { width: auto; max-width: 100%; }
+.wiki-editor { font-family: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .9rem; }
+.wiki-preview { background: #fff; }
+.wiki-toc summary { cursor: pointer; }

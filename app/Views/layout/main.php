@@ -15,7 +15,7 @@ use App\Core\Auth;
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
     <link rel="manifest" href="/site.webmanifest">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/assets/css/app.css" rel="stylesheet">
+    <link href="<?= \App\Core\View::e(\App\Core\View::asset('/assets/css/app.css')) ?>" rel="stylesheet">
 </head>
 <body class="bg-light">
 <?php if (Auth::check()): ?>
@@ -29,8 +29,9 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link" href="/calendar">Календар</a></li>
                 <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
                 <li class="nav-item"><a class="nav-link" href="/archive">Архів</a></li>
+                <li class="nav-item"><a class="nav-link" href="/wiki">Вікі</a></li>
                 <?php if (Auth::hasRole(['admin'])): ?>
-                <li class="nav-item"><a class="nav-link" href="/admin">Адмін-панель</a></li>
+                <li class="nav-item"><a class="nav-link<?= \App\Core\AdminNav::currentSection() !== null ? ' active' : '' ?>" href="/admin"<?= \App\Core\AdminNav::currentSection() !== null ? ' aria-current="page"' : '' ?>>Адмін-панель</a></li>
                 <?php endif; ?>
             </ul>
             <span class="navbar-text text-light me-3">
@@ -75,5 +76,8 @@ document.addEventListener('change', function (e) {
     }
 });
 </script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/user-select.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/paste-images.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/wiki-editor.js')) ?>" defer></script>
 </body>
 </html>

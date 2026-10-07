@@ -122,6 +122,24 @@ return (function (): array {
             'group_attribute'    => $env('AD_GROUP_ATTR', 'memberOf'),
             'verify_cert'        => filter_var($env('AD_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
         ],
+        // Вкладення до тікетів і задач (App\Services\AttachmentService). Файли зберігаються
+        // у storage/uploads — поза веб-коренем (public/), тож віддаються лише через контролер
+        // з перевіркою прав. Реальний ліміт розміру — менше з цього значення та PHP-налаштувань
+        // upload_max_filesize / post_max_size (див. App\Core\UploadLimits).
+        'attachments' => [
+            'max_bytes'       => max(1, (int) $env('ATTACHMENT_MAX_MB', '10')) * 1048576,
+            'dir'             => __DIR__ . '/../storage/uploads',
+            'max_per_entity'  => 30,  // не більше вкладень на один тікет/задачу
+            'max_per_request' => 10,  // не більше файлів за одне натискання «Прикріпити»
+            // Анонімний портал (/support): файли завантажує будь-хто без входу й без обмеження частоти запитів,
+            // тож ліміти суворіші, а вся можливість вимикається ATTACHMENT_PORTAL_ENABLED=false в .env.
+            'portal_enabled'   => filter_var($env('ATTACHMENT_PORTAL_ENABLED', 'true'), FILTER_VALIDATE_BOOLEAN),
+            'portal_max_files' => 3,
+            'portal_max_bytes' => 5 * 1048576,
+            // Зображення з вхідних листів (email-to-ticket).
+            'email_max_images'       => 10,     // не більше картинок з одного листа
+            'email_min_inline_bytes' => 10240,  // вбудовані (inline) зображення менші за це — зазвичай логотипи/іконки в підписах — не зберігаються
+        ],
         'app' => [
             'name'    => 'ITSM System',
             'version' => '0.2.2',

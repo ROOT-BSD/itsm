@@ -124,8 +124,9 @@ section "4. Перевірка розширень PHP"
 
 # Обов'язкові розширення для роботи застосунку
 REQUIRED_EXT="pdo pdo_mysql mbstring json session"
-# Опційні: openssl/iconv — для email-to-ticket; fileinfo, ldap — для наступних етапів (вкладення, AD-інтеграція)
-OPTIONAL_EXT="fileinfo ldap openssl iconv"
+# Опційні: openssl/iconv — для email-to-ticket; ldap — для AD-інтеграції. fileinfo і GD для вкладень НЕ потрібні:
+# тип файлу визначається за сигнатурою та getimagesize(), які є в ядрі PHP.
+OPTIONAL_EXT="ldap openssl iconv"
 
 if command -v php >/dev/null 2>&1; then
     # Зчитуємо список розширень один раз у змінну.
@@ -151,8 +152,7 @@ if command -v php >/dev/null 2>&1; then
             ok "Розширення ${ext} (опційне)"
         else
             case "$ext" in
-                ldap) warn "Відсутнє розширення ${ext} — потрібне для входу через Active Directory та синхронізації користувачів (Адмін-панель → Active Directory)" ;;
-                fileinfo) warn "Відсутнє розширення ${ext} — знадобиться для завантаження вкладень (Епік 8)" ;;
+                ldap) warn "Відсутнє розширення ${ext} — потрібне для входу через Active Directory та синхронізації користувачів (Адмін-панель → Налаштування → Active Directory)" ;;
                 openssl) warn "Відсутнє розширення ${ext} — email-to-ticket не зможе підключатися до пошти по SSL/STARTTLS (лише без шифрування)" ;;
                 iconv) warn "Відсутнє розширення ${ext} — email-to-ticket працюватиме, але рідкісні кодування листів (не UTF-8) розпізнаватимуться гірше" ;;
                 *) warn "Відсутнє опційне розширення ${ext}" ;;
@@ -344,6 +344,14 @@ elif [ -d "$UPLOAD_DIR" ]; then
     warn "storage/uploads недоступна для запису поточним користувачем (буде виправлено при інсталяції)"
 fi
 
+# Вкладення до тікетів і задач (jpg/png/pdf, до 10 МБ — ATTACHMENT_MAX_MB у .env). PHP за замовчуванням
+# дозволяє лише 2 МБ на файл (upload_max_filesize) — застосунок не може перевищити PHP-ліміт.
+# CLI-php може мати інші налаштування, ніж PHP-FPM/Apache, тому це орієнтир, а не вирок.
+PHP_UPLOAD_MAX="$(php -r 'echo ini_get("upload_max_filesize");' 2>/dev/null)"
+PHP_POST_MAX="$(php -r 'echo ini_get("post_max_size");' 2>/dev/null)"
+info "PHP (CLI): upload_max_filesize=${PHP_UPLOAD_MAX:-?}, post_max_size=${PHP_POST_MAX:-?} — це стеля розміру вкладень"
+info "Щоб приймати вкладення до 10 МБ, збільшіть обидва параметри у php.ini вашого веб-сервера (PHP-FPM/Apache)"
+
 ENV_FILE_CHECK="${SCRIPT_DIR}/.env"
 if [ -f "$ENV_FILE_CHECK" ]; then
     ENV_PERMS="$(stat -c '%a' "$ENV_FILE_CHECK" 2>/dev/null || stat -f '%Lp' "$ENV_FILE_CHECK" 2>/dev/null)"
@@ -475,7 +483,7 @@ APP_URL=http://localhost
 
 # --- Email-to-ticket (необов'язково) ---
 # Підключення до поштової скриньки підтримки (IMAP): листи з неї автоматично стають тікетами.
-# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель -> Пошта -> тікети
+# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель → Налаштування → Пошта → тікети
 # і cron для bin/fetch-mail.php (див. README).
 # Коментарі — лише окремими рядками: файл не підтримує коментарі в кінці рядка зі значенням.
 # MAIL_IMAP_ENCRYPTION: ssl (порт 993), tls (STARTTLS, порт 143) або none.
@@ -491,7 +499,7 @@ APP_URL=http://localhost
 # --- Автовідповідь заявнику (необов'язково, потребує вже налаштованого IMAP вище) ---
 # Без окремих MAIL_SMTP_* успадковує сервер/логін/пароль з MAIL_IMAP_* — типова
 # ситуація, коли отримання й надсилання йдуть через ту саму скриньку. Мінімум
-# додайте адресу відправника нижче, увімкніть галочку в Адмін-панель -> Пошта -> тікети.
+# додайте адресу відправника нижче, увімкніть галочку в Адмін-панель → Налаштування → Пошта → тікети.
 # MAIL_SMTP_ENCRYPTION: ssl (порт 465), tls (STARTTLS, порт 587) або none.
 #MAIL_SMTP_FROM_EMAIL=support@example.org
 #MAIL_SMTP_FROM_NAME=Служба підтримки
@@ -504,7 +512,7 @@ APP_URL=http://localhost
 
 # --- Active Directory (необов'язково) ---
 # Вхід для AD-користувачів і фонова синхронізація (bin/sync-ad-users.php).
-# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель -> Active Directory.
+# Щоб увімкнути: розкоментуйте рядки нижче й заповніть, потім Адмін-панель → Налаштування → Active Directory.
 # AD_ENCRYPTION: ldaps (порт 636), starttls (порт 389) або none.
 # Атрибути нижче вже відповідають реальному Active Directory — перевизначайте лише для іншого LDAP-сервера.
 #AD_HOST=dc01.company.local
@@ -521,10 +529,29 @@ APP_URL=http://localhost
 #AD_GROUP_ATTR=memberOf
 #AD_DEFAULT_ROLE=requester
 #AD_VERIFY_CERT=true
+
+# --- Вкладення до тікетів і задач ---
+# Максимальний розмір одного файлу (МБ). Не може перевищити PHP-ліміти upload_max_filesize/post_max_size.
+#ATTACHMENT_MAX_MB=10
+# Дозволити анонімному порталу /support прикріплювати зображення (до 3 файлів, до 5 МБ). false — вимкнути.
+#ATTACHMENT_PORTAL_ENABLED=true
 ENV
 
     chmod 600 "$ENV_FILE"
     ok "Створено ${ENV_FILE##*/} (права 600)"
+
+    # Гайди користувача й адміністратора (docs/*.md) потрапляють у вікі (/wiki). Потрібне підключення до БД з .env;
+    # якщо .env уже існував раніше, інсталятор записав нові параметри в .env.new — тоді використовується старий .env.
+    if [ -f "${SCRIPT_DIR}/.env" ]; then
+        info "Завантаження документації у вікі (bin/import-wiki-docs.php)..."
+        if php "${SCRIPT_DIR}/bin/import-wiki-docs.php" >/dev/null 2>&1; then
+            ok "Гайди користувача й адміністратора завантажені у вікі"
+        else
+            warn "Не вдалося завантажити документацію у вікі — виконайте пізніше: php bin/import-wiki-docs.php"
+        fi
+    else
+        warn "Файл .env відсутній — документацію у вікі завантажено не було (після налаштування .env: php bin/import-wiki-docs.php)"
+    fi
 fi
 
 # ---------- 12. Налаштування прав доступу ----------
@@ -561,7 +588,7 @@ else
         chmod 750 "${SCRIPT_DIR}/install.sh" 2>/dev/null
         ok "Базові права застосовано (директорії 750, файли 640)"
 
-        # storage/uploads має бути доступна на запис веб-серверу (майбутні вкладення)
+        # storage/uploads має бути доступна на запис веб-серверу (тут зберігаються вкладення до тікетів і задач)
         if [ -d "${SCRIPT_DIR}/storage/uploads" ]; then
             chmod -R 770 "${SCRIPT_DIR}/storage/uploads"
             ok "storage/uploads: права 770 (читання/запис для веб-сервера)"

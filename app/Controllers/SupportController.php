@@ -54,7 +54,24 @@ class SupportController
         $id = Ticket::create($queueId, $name, $email, null, $subject, $description ?: null);
         $ticket = Ticket::find($id);
 
-        header('Location: /support/track/' . $ticket['access_token'] . '?success=' . urlencode('Звернення успішно надіслано! Збережіть це посилання, щоб відстежувати статус.'));
+        // Зображення (PNG/JPG) — лише якщо вмикнено; ліміти суворіші, ніж для співробітників, бо завантажує
+        // будь-хто без входу й без обмеження частоти запитів (див. config attachments.portal_*).
+        $images = ['added' => 0, 'errors' => []];
+        if (\App\Core\Config::get('attachments.portal_enabled', true)) {
+            $images = \App\Services\AttachmentService::attachCreationUploads(
+                'ticket', $id, $_FILES['files'] ?? [], null, 'portal',
+                (int) \App\Core\Config::get('attachments.portal_max_files', 3),
+                (int) \App\Core\Config::get('attachments.portal_max_bytes', 5 * 1048576)
+            );
+        }
+
+        $success = 'Звернення успішно надіслано! Збережіть це посилання, щоб відстежувати статус.'
+            . ($images['added'] > 0 ? ' Прикріплено зображень: ' . $images['added'] . '.' : '');
+        $query = ['success' => $success];
+        if ($images['errors']) {
+            $query['error'] = implode(' ', $images['errors']);
+        }
+        header('Location: /support/track/' . $ticket['access_token'] . '?' . http_build_query($query));
         exit;
     }
 

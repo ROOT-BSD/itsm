@@ -28,9 +28,9 @@ class Task
         $params = ['range_start' => $rangeStart, 'range_end' => $rangeEnd];
 
         if (!$isAdmin) {
-            $sql .= ' AND (p.created_by = :uid1 OR p.responsible_user_id = :uid2)';
-            $params['uid1'] = $userId;
-            $params['uid2'] = $userId;
+            [$accessSql, $accessParams] = Project::accessCondition('p', 'acc', $userId);
+            $sql .= ' AND ' . $accessSql;
+            $params = array_merge($params, $accessParams);
         }
 
         $sql .= ' ORDER BY COALESCE(t.start_date, t.due_date) ASC';
@@ -94,8 +94,9 @@ class Task
         $params = [];
 
         if (!$isAdmin) {
-            $sql .= ' AND (p.created_by = :uid1 OR p.responsible_user_id = :uid2)';
-            $params = ['uid1' => $userId, 'uid2' => $userId];
+            [$accessSql, $accessParams] = Project::accessCondition('p', 'acc', $userId);
+            $sql .= ' AND ' . $accessSql;
+            $params = array_merge($params ?? [], $accessParams);
         }
 
         $sql .= ' ORDER BY p.name ASC, t.due_date IS NULL, t.due_date ASC';
@@ -120,8 +121,9 @@ class Task
         $params = [];
 
         if (!$isAdmin) {
-            $sql .= ' AND (p.created_by = :uid1 OR p.responsible_user_id = :uid2)';
-            $params = ['uid1' => $userId, 'uid2' => $userId];
+            [$accessSql, $accessParams] = Project::accessCondition('p', 'acc', $userId);
+            $sql .= ' AND ' . $accessSql;
+            $params = array_merge($params ?? [], $accessParams);
         }
 
         $sql .= ' ORDER BY p.name ASC, t.updated_at DESC';
@@ -256,8 +258,14 @@ class Task
         // Спершу — аудит зі знімком назви, бо після видалення задачі її вже не буде звідки прочитати.
         Audit::log('task', $id, 'deleted', $actingUserId, ['title' => $title]);
 
+        // Імена файлів вкладень треба зібрати ДО видалення: каскад у БД прибере рядки таблиці
+        // attachments, але не самі файли на диску — без цього вони лишились би без жодного посилання.
+        $attachmentFiles = Attachment::storedNamesForTask($id);
+
         $stmt = Database::connection()->prepare('DELETE FROM tasks WHERE id = :id');
         $stmt->execute(['id' => $id]);
+
+        \App\Services\AttachmentService::deleteFiles($attachmentFiles);
     }
 
     /**
@@ -619,9 +627,9 @@ class Task
             $params['category'] = '%' . $filters['category'] . '%';
         }
         if (!$isAdmin) {
-            $sql .= ' AND (p.created_by = :vis_uid1 OR p.responsible_user_id = :vis_uid2)';
-            $params['vis_uid1'] = $viewerId;
-            $params['vis_uid2'] = $viewerId;
+            [$accessSql, $accessParams] = Project::accessCondition('p', 'vis', $viewerId);
+            $sql .= ' AND ' . $accessSql;
+            $params = array_merge($params, $accessParams);
         }
 
         $sql .= ' ORDER BY tl.log_date ASC, p.name ASC, t.id ASC';
@@ -642,9 +650,9 @@ class Task
         $params = [];
 
         if (!$isAdmin) {
-            $sql .= ' AND (p.created_by = :vis_uid1 OR p.responsible_user_id = :vis_uid2)';
-            $params['vis_uid1'] = $viewerId;
-            $params['vis_uid2'] = $viewerId;
+            [$accessSql, $accessParams] = Project::accessCondition('p', 'vis', $viewerId);
+            $sql .= ' AND ' . $accessSql;
+            $params = array_merge($params, $accessParams);
         }
         $sql .= ' ORDER BY tl.activity_category ASC';
 

@@ -32,13 +32,17 @@ cat > .gitignore << 'EOF'
 /storage/uploads/*
 !/storage/uploads/.gitkeep
 
+# Журнал помилок застосунку (містить адреси сторінок, id користувачів, тексти помилок)
+/storage/logs/*
+!/storage/logs/.gitkeep
+
 # Системні файли
 .DS_Store
 Thumbs.db
 EOF
 
-# Порожня папка uploads інакше не потрапить у git взагалі
-touch storage/uploads/.gitkeep
+# Порожні папки uploads і logs інакше не потраплять у git взагалі
+touch storage/uploads/.gitkeep storage/logs/.gitkeep
 ```
 
 **Важливо:** `.env` міститиме реальний пароль до бази даних — переконайтеся, що він у `.gitignore` **до** першого коміту, інакше пароль назавжди залишиться в історії git навіть після видалення файлу.

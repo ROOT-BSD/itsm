@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
+    <?php require __DIR__ . '/_back.php'; ?>
 </div>
 
 <h3 class="mb-2">Пошта → тікети</h3>

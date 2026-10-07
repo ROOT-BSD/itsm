@@ -2,6 +2,9 @@
 
 require __DIR__ . '/../app/autoload.php';
 
+// Перший рядок після автозавантаження: так у журнал і на сторінку помилки потрапляє будь-який збій нижче (див. App\Core\ErrorHandler).
+\App\Core\ErrorHandler::register();
+
 use App\Core\Auth;
 use App\Core\Csp;
 use App\Core\Router;
@@ -9,6 +12,8 @@ use App\Controllers\AdminController;
 use App\Controllers\AuditController;
 use App\Controllers\EmailController;
 use App\Controllers\AdController;
+use App\Controllers\AttachmentController;
+use App\Controllers\WikiController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
@@ -74,6 +79,8 @@ $router->post('/projects/{id}/relations', fn($p) => $projects->addRelation($p));
 $router->post('/projects/{id}/relations/{relationId}', fn($p) => $projects->updateRelation($p));
 $router->post('/projects/{id}/relations/{relationId}/delete', fn($p) => $projects->deleteRelation($p));
 $router->post('/projects/{id}/responsible', fn($p) => $projects->updateResponsible($p));
+$router->post('/projects/{id}/members', fn($p) => $projects->addMember($p));
+$router->post('/projects/{id}/members/{userId}/delete', fn($p) => $projects->removeMember($p));
 
 // --- Задачі ---
 $tasks = new TaskController();
@@ -105,9 +112,37 @@ $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
 $router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
 $router->post('/tickets/{id}/csat', fn($p) => $tickets->submitCsat($p));
 
+// --- Вкладення до тікетів і задач (jpg, png, pdf) ---
+$attachments = new AttachmentController();
+$router->post('/tickets/{id}/attachments', fn($p) => $attachments->uploadToTicket($p));
+$router->post('/tasks/{id}/attachments', fn($p) => $attachments->uploadToTask($p));
+$router->get('/attachments/{id}', fn($p) => $attachments->download($p));
+$router->post('/attachments/{id}/delete', fn($p) => $attachments->delete($p));
+
+// --- Вікі: сторінки в Markdown з історією версій ---
+// Порядок важливий: «/wiki/new» і «/wiki/preview» мають стояти ПЕРЕД «/wiki/{slug}», інакше їх прийняв би за адресу сторінки.
+$wiki = new WikiController();
+$router->get('/wiki', fn() => $wiki->index());
+$router->get('/wiki/new', fn() => $wiki->create());
+$router->post('/wiki/preview', fn() => $wiki->preview());
+$router->post('/wiki', fn() => $wiki->store());
+$router->get('/wiki/{slug}', fn($p) => $wiki->show($p));
+$router->get('/wiki/{slug}/edit', fn($p) => $wiki->edit($p));
+$router->post('/wiki/{slug}', fn($p) => $wiki->update($p));
+$router->post('/wiki/{slug}/delete', fn($p) => $wiki->delete($p));
+$router->get('/wiki/{slug}/history', fn($p) => $wiki->history($p));
+$router->get('/wiki/{slug}/revisions/{id}', fn($p) => $wiki->revision($p));
+$router->post('/wiki/{slug}/revisions/{id}/restore', fn($p) => $wiki->restore($p));
+
 // --- Адмін-панель (лише роль admin — перевіряється в конструкторі AdminController) ---
 $router->get('/admin', function () {
     (new AdminController())->index();
+});
+$router->get('/admin/manage', function () {
+    (new AdminController())->manage();
+});
+$router->get('/admin/settings', function () {
+    (new AdminController())->settings();
 });
 $router->get('/admin/board', function () {
     (new AdminController())->board();

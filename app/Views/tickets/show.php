@@ -39,7 +39,7 @@
         <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/operator" class="d-flex gap-2 align-items-center mb-2">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Оператор (виконавець тікета):</label>
-            <select name="operator_id" class="form-select w-auto">
+            <select name="operator_id" class="form-select w-auto user-select">
                 <option value="">— не призначено —</option>
                 <?php foreach ($users as $u): ?>
                     <option value="<?= (int)$u['id'] ?>" <?= (int)($ticket['assigned_operator_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
@@ -72,6 +72,12 @@
         </form>
     </div>
 </div>
+
+<?php
+$attachmentOwnerType = 'ticket';
+$attachmentOwnerId = (int) $ticket['id'];
+require __DIR__ . '/../attachments/_panel.php';
+?>
 
 <div class="card">
     <div class="card-header">Листування</div>

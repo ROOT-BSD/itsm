@@ -10,8 +10,9 @@ namespace App\Core;
  * quoted-printable), вкладені multipart (mixed → alternative → related),
  * кодування тіла base64/quoted-printable, довільні charset (utf-8,
  * windows-1251, koi8-u, iso-8859-*), HTML-лише листи, format=flowed,
- * імена вкладень (у т.ч. RFC 2231). Вкладення НЕ декодуються й не
- * зберігаються — повертається лише їх перелік.
+ * імена вкладень (у т.ч. RFC 2231). Вкладення загалом лише перелічуються
+ * (назва, тип); виняток — зображення PNG/JPG: їх вміст декодується й повертається
+ * в ключі 'data', щоб EmailTicketService міг зберегти їх як вкладення тікета.
  *
  * Результат завжди валідний UTF-8. Жоден HTML не зберігається: HTML-лист
  * перетворюється в простий текст, тож у системі немає поверхні для XSS.
@@ -20,11 +21,17 @@ class MimeParser
 {
     private const MAX_DEPTH = 10;
 
+    /** MIME-типи, що можуть бути PNG/JPG; справжній тип потім перевіряється за вмістом (AttachmentService). */
+    private const IMAGE_TYPES = ['image/png', 'image/x-png', 'image/jpeg', 'image/jpg', 'image/pjpeg'];
+
+    /** Більші частини не декодуємо взагалі (захист пам'яті); у EmailTicketService весь лист і так обмежений 10 МБ. */
+    private const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
     /**
      * @return array{
      *   from_email: string, from_name: string, subject: string, message_id: string,
      *   in_reply_to: string[], references: string[], text: string,
-     *   attachments: array<int, array{name: string, type: string}>,
+     *   attachments: array<int, array{name: string, type: string, disposition: string, content_id: string, data?: string}>,
      *   headers: array<string, string[]>
      * }
      */
@@ -285,21 +292,26 @@ class MimeParser
 
             if ($type === 'multipart/alternative') {
                 // Один і той самий зміст в різних форматах: беремо text/plain, інакше перший непорожній (зазвичай HTML).
+                // ТЕКСТ беремо з однієї (кращої) гілки, а ВКЛАДЕННЯ — з усіх: картинки, вставлені в лист
+                // (Gmail, Outlook, Apple Mail), лежать у HTML-гілці (multipart/related), тоді як текст ми
+                // беремо з text/plain. Якби вкладення брались лише з обраної гілки, такі картинки губились би.
                 $best = null;
+                $allAttachments = [];
                 foreach ($children as [$childHeaders, $childBody]) {
                     $childAttachments = [];
                     [$text, $isPlain] = self::walk($childHeaders, $childBody, $childAttachments, $depth + 1);
+                    array_push($allAttachments, ...$childAttachments);
                     if (trim($text) === '') {
                         continue;
                     }
                     if ($best === null || ($isPlain && !$best['plain'])) {
-                        $best = ['text' => $text, 'plain' => $isPlain, 'attachments' => $childAttachments];
+                        $best = ['text' => $text, 'plain' => $isPlain];
                     }
                 }
+                array_push($attachments, ...$allAttachments);
                 if ($best === null) {
                     return ['', false];
                 }
-                array_push($attachments, ...$best['attachments']);
                 return [$best['text'], $best['plain']];
             }
 
@@ -321,10 +333,19 @@ class MimeParser
             && $filename === '';
 
         if (!$isTextBody) {
-            $attachments[] = [
+            $entry = [
                 'name' => $filename !== '' ? $filename : ($type === 'message/rfc822' ? '(вкладений лист)' : "(без назви, {$type})"),
                 'type' => $type,
+                'disposition' => $disposition,
+                'content_id' => trim($headers['content-id'][0] ?? '', " <>\t"),
             ];
+            if (self::isImageCandidate($type, $filename)) {
+                $data = self::decodeTransfer($body, $encoding);
+                if ($data !== '' && strlen($data) <= self::MAX_IMAGE_BYTES) {
+                    $entry['data'] = $data;
+                }
+            }
+            $attachments[] = $entry;
             return ['', false];
         }
 
@@ -338,6 +359,19 @@ class MimeParser
             $text = self::unflow($text);
         }
         return [$text, true];
+    }
+
+    /**
+     * Чи варто декодувати частину як можливе зображення PNG/JPG: за MIME-типом, або (клієнти часто шлють
+     * фото як application/octet-stream) за розширенням у назві. Остаточне рішення — за вмістом, не тут.
+     */
+    private static function isImageCandidate(string $type, string $filename): bool
+    {
+        if (in_array($type, self::IMAGE_TYPES, true)) {
+            return true;
+        }
+        return $type === 'application/octet-stream'
+            && in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['png', 'jpg', 'jpeg'], true);
     }
 
     /** @return string[] тіла (разом із заголовками) частин multipart */

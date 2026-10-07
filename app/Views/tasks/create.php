@@ -41,7 +41,7 @@
     </div>
     <div class="mb-3">
         <label class="form-label">Виконавець</label>
-        <select name="assignee_id" class="form-select">
+        <select name="assignee_id" class="form-select user-select">
             <option value="">— не призначено —</option>
             <?php foreach ($users as $u): ?>
                 <option value="<?= (int)$u['id'] ?>"><?= \App\Core\View::e($u['full_name']) ?> (<?= \App\Core\View::e($u['role_name']) ?>)</option>

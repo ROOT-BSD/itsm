@@ -1,6 +1,6 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
+        <?php require __DIR__ . '/_back.php'; ?>
         <h3 class="mb-0 mt-1">Облік часу — усі проєкти</h3>
     </div>
     <a href="/reports" class="btn btn-primary">📄 Сформувати звіт</a>

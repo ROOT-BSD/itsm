@@ -85,7 +85,7 @@ class Ticket
         return ($value !== false && $value !== null) ? (int) $value : null;
     }
 
-    /** Оновлення автопризначеного оператора для черги (Адмін-панель → Черги тікетів). */
+    /** Оновлення автопризначеного оператора для черги (Адмін-панель → Керування → Черги тікетів). */
     public static function updateQueueDefaultOperator(int $queueId, ?int $operatorId, int $actingUserId): void
     {
         $stmt = Database::connection()->prepare('UPDATE ticket_queues SET default_operator_id = :operator_id WHERE id = :id');

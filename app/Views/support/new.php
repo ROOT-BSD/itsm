@@ -10,7 +10,7 @@
             <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
         <?php endif; ?>
 
-        <form method="post" action="/support" class="card p-4 shadow-sm">
+        <form method="post" action="/support" enctype="multipart/form-data" class="card p-4 shadow-sm">
             <?= \App\Core\Csrf::field() ?>
 
             <!-- Пастка для ботів: звичайна людина цього поля не бачить і не заповнює. -->
@@ -44,6 +44,13 @@
                 <label class="form-label">Опис проблеми / запиту</label>
                 <textarea name="description" class="form-control" rows="4"></textarea>
             </div>
+            <?php if (\App\Core\Config::get('attachments.portal_enabled', true)): ?>
+                <?php
+                $pickerMaxFiles = (int) \App\Core\Config::get('attachments.portal_max_files', 3);
+                $pickerMaxBytes = (int) \App\Core\Config::get('attachments.portal_max_bytes', 5 * 1048576);
+                require __DIR__ . '/../attachments/_picker.php';
+                ?>
+            <?php endif; ?>
             <button type="submit" class="btn btn-primary">Надіслати звернення</button>
         </form>
 

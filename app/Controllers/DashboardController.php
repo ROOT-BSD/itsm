@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Models\Project;
 use App\Core\Database;
 use App\Core\View;
 
@@ -41,20 +42,24 @@ class DashboardController
                     (SELECT COUNT(*) FROM tickets WHERE status NOT IN ('resolved','closed')) AS open_tickets"
             )->fetch();
         } else {
+            // Правило «які проєкти бачить користувач» — єдине, у Project::accessCondition() (автор, відповідальний, учасник).
+            [$topSql, $topParams] = Project::accessCondition('projects', 'dtop', $uid);
+            [$subSql, $subParams] = Project::accessCondition('projects', 'dsub', $uid);
+            [$taskSql, $taskParams] = Project::accessCondition('p', 'dtask', $uid);
             $statsStmt = $db->prepare(
                 "SELECT
                     (SELECT COUNT(*) FROM projects
-                        WHERE status = 'active' AND parent_id IS NULL AND (created_by = :uid1 OR responsible_user_id = :uid2)) AS active_projects,
+                        WHERE status = 'active' AND parent_id IS NULL AND {$topSql}) AS active_projects,
                     (SELECT COUNT(*) FROM projects
-                        WHERE status = 'active' AND parent_id IS NOT NULL AND (created_by = :uid7 OR responsible_user_id = :uid8)) AS active_subprojects,
+                        WHERE status = 'active' AND parent_id IS NOT NULL AND {$subSql}) AS active_subprojects,
                     (SELECT COUNT(*) FROM tasks t
                         JOIN task_statuses ts ON ts.id = t.status_id
                         JOIN projects p ON p.id = t.project_id
-                        WHERE ts.is_closed = 0 AND (p.created_by = :uid3 OR p.responsible_user_id = :uid4)) AS open_tasks,
+                        WHERE ts.is_closed = 0 AND {$taskSql}) AS open_tasks,
                     (SELECT COUNT(*) FROM tickets
                         WHERE status NOT IN ('resolved','closed') AND (requester_user_id = :uid5 OR assigned_operator_id = :uid6)) AS open_tickets"
             );
-            $statsStmt->execute(['uid1' => $uid, 'uid2' => $uid, 'uid3' => $uid, 'uid4' => $uid, 'uid5' => $uid, 'uid6' => $uid, 'uid7' => $uid, 'uid8' => $uid]);
+            $statsStmt->execute(array_merge($topParams, $subParams, $taskParams, ['uid5' => $uid, 'uid6' => $uid]));
             $stats = $statsStmt->fetch();
         }
 

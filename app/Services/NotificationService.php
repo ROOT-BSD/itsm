@@ -150,6 +150,32 @@ class NotificationService
     }
 
     /** Відповідального проєкту змінено — сповіщаємо нового (лише якщо він справді змінився, не при повторному збереженні того самого значення). */
+    /** Користувачу надали доступ до проєкту — лист «Вам надано доступ» (за перемикачем «Сповіщення про проєкти»; без листа самому собі). */
+    public static function projectMemberAdded(int $projectId, int $memberUserId, int $actingUserId): void
+    {
+        if (!self::projectsEnabled() || $memberUserId === $actingUserId) {
+            return;
+        }
+        try {
+            $project = \App\Models\Project::find($projectId);
+            $user = User::findById($memberUserId);
+            $actor = User::findById($actingUserId);
+            if (!$project || !$user || !$user['is_active']) {
+                return;
+            }
+
+            $link = Setting::appUrl() . '/projects/' . $projectId;
+            $by = $actor ? " користувачем {$actor['full_name']}" : '';
+            $subject = "Вам надано доступ до проєкту «{$project['name']}»";
+            $body = "Доброго дня, {$user['full_name']}!\n\n{$subject}{$by}. Ви бачите цей проєкт і його задачі й можете працювати з ними.\n\nПереглянути проєкт:\n{$link}\n\nЦе автоматичний лист.";
+            $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+            if (!$result['ok']) {
+                Audit::log('project', $projectId, 'notification_failed', null, ['to' => $user['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+            }
+        } catch (\Throwable) {
+        }
+    }
+
     public static function projectResponsibleChanged(int $projectId, ?int $responsibleUserId, ?int $previousResponsibleUserId, int $actingUserId): void
     {
         if (!self::projectsEnabled() || !$responsibleUserId || $responsibleUserId === $previousResponsibleUserId || $responsibleUserId === $actingUserId) {

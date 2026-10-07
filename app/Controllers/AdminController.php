@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Core\AdminNav;
 use App\Core\Auth;
 use App\Core\LdapDn;
 use App\Core\View;
@@ -30,9 +31,21 @@ class AdminController
         }
     }
 
+    /** «/admin» лишається робочою адресою (закладки, посилання) — веде в розділ «Керування». */
     public function index(): void
     {
-        View::render('admin/index', []);
+        header('Location: ' . AdminNav::SECTIONS['manage']['url']);
+        exit;
+    }
+
+    public function manage(): void
+    {
+        View::render('admin/hub', ['section' => 'manage']);
+    }
+
+    public function settings(): void
+    {
+        View::render('admin/hub', ['section' => 'settings']);
     }
 
     // ---------- Загальний огляд по всій системі (лише адміністратор) ----------

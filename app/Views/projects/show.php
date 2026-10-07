@@ -63,7 +63,7 @@ $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => '
 <form method="post" action="/projects/<?= (int)$project['id'] ?>/responsible" class="d-flex gap-2 align-items-center mb-3">
     <?= \App\Core\Csrf::field() ?>
     <label class="form-label mb-0">Відповідальний (виконавець проєкту):</label>
-    <select name="responsible_user_id" class="form-select w-auto">
+    <select name="responsible_user_id" class="form-select w-auto user-select">
         <option value="">— не призначено —</option>
         <?php foreach ($users as $u): ?>
             <option value="<?= (int)$u['id'] ?>" <?= (int)($project['responsible_user_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
@@ -77,6 +77,82 @@ $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => '
 <p class="text-muted small">
     Відповідальний за проєкт: <?= \App\Core\View::e($project['responsible_name'] ?? 'не призначено') ?>
 </p>
+<?php endif; ?>
+
+<?php
+// Блок «Доступ до проєкту»: автор і відповідальний мають доступ завжди; решті його надають явно (учасники).
+// Керують складом автор, відповідальний і адміністратор ($canManageMembers); учасник лише бачить, хто ще має доступ.
+$eMember = static fn($v) => \App\Core\View::e($v);
+?>
+<?php if (empty($membersAvailable)): ?>
+    <?php if (!empty($canManageMembers)): ?>
+    <div class="alert alert-warning" id="project-access">
+        <strong>🔑 Надання доступу до проєкту ще не активовано.</strong>
+        На сервері оновлено файли застосунку, але не виконано оновлення бази даних. Адміністратору потрібно запустити
+        <code>sudo bash update.sh</code> (крок «Перевірка таблиці учасників проєктів» створить потрібну таблицю). До того проєкт
+        бачать лише автор, відповідальний та адміністратор — як і раніше.
+    </div>
+    <?php endif; ?>
+<?php else: ?>
+<div class="card mb-3" id="project-access">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span>🔑 Доступ до проєкту<?= !empty($members) ? ' (учасників: ' . count($members) . ')' : '' ?></span>
+        <span class="text-muted small">Автор і відповідальний мають доступ завжди</span>
+    </div>
+    <div class="card-body">
+        <?php if (!empty($success)): ?>
+            <div class="alert alert-success py-2"><?= $eMember($success) ?></div>
+        <?php endif; ?>
+        <?php if (!empty($error)): ?>
+            <div class="alert alert-danger py-2"><?= $eMember($error) ?></div>
+        <?php endif; ?>
+
+        <?php if (empty($members)): ?>
+            <p class="text-muted mb-3">Додаткових учасників ще немає — проєкт бачать лише автор, відповідальний та адміністратор системи.</p>
+        <?php else: ?>
+            <ul class="list-group mb-3">
+                <?php foreach ($members as $m): ?>
+                    <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+                        <div>
+                            <span class="fw-semibold"><?= $eMember($m['full_name']) ?></span>
+                            <?php if (!(int)$m['is_active']): ?><span class="badge bg-secondary">деактивовано</span><?php endif; ?>
+                            <div class="small text-muted">
+                                <?= $eMember($m['email']) ?>
+                                · доступ надано <?= $eMember(date('d.m.Y', strtotime($m['created_at']))) ?><?= !empty($m['added_by_name']) ? ' (' . $eMember($m['added_by_name']) . ')' : '' ?>
+                            </div>
+                        </div>
+                        <?php if ($canManageMembers): ?>
+                            <form method="post" action="/projects/<?= (int)$project['id'] ?>/members/<?= (int)$m['id'] ?>/delete"
+                                  data-confirm="Забрати доступ до проєкту в користувача «<?= $eMember($m['full_name']) ?>»? Він більше не бачитиме цей проєкт і його задачі.">
+                                <?= \App\Core\Csrf::field() ?>
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Забрати доступ</button>
+                            </form>
+                        <?php endif; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+
+        <?php if ($canManageMembers): ?>
+            <form method="post" action="/projects/<?= (int)$project['id'] ?>/members" class="d-flex gap-2 align-items-center flex-wrap">
+                <?= \App\Core\Csrf::field() ?>
+                <label class="form-label mb-0">Надати доступ користувачу:</label>
+                <select name="user_id" class="form-select w-auto user-select">
+                    <option value="">— оберіть користувача —</option>
+                    <?php foreach ($memberCandidates as $u): ?>
+                        <option value="<?= (int)$u['id'] ?>"><?= $eMember($u['full_name']) ?> (<?= $eMember($u['email']) ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">Надати доступ</button>
+            </form>
+            <div class="form-text mt-2">
+                Учасник бачить проєкт і всі його задачі та працює з ними так само, як автор чи відповідальний, але
+                не може керувати доступом. Підпроєкти мають власний перелік учасників.
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <?php endif; ?>
 
 <table class="table table-bordered bg-white">

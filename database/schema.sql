@@ -59,6 +59,23 @@ CREATE TABLE IF NOT EXISTS projects (
     FOREIGN KEY (responsible_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Учасники проєкту: користувачі, яким автор/відповідальний/адміністратор ЯВНО надали доступ до проєкту (крім автора й
+-- відповідального, які мають доступ завжди). Учасник бачить проєкт і всі його задачі й працює з ними так само, як
+-- автор чи відповідальний; керувати складом учасників він не може. Доступ дає лише цей запис — поле projects.visibility
+-- на доступ не впливає. Права НЕ успадковуються підпроєктами: кожен проєкт має власний перелік учасників.
+-- Видалення проєкту чи користувача прибирає й відповідні записи.
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id INT NOT NULL,
+    user_id INT NOT NULL,
+    added_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, user_id),
+    CONSTRAINT fk_project_members_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    CONSTRAINT fk_project_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_project_members_added_by FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_project_members_user (user_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS project_members (
     project_id INT NOT NULL,
     user_id INT NOT NULL,
@@ -149,18 +166,6 @@ CREATE TABLE IF NOT EXISTS comments (
     FOREIGN KEY (author_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS attachments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    task_id INT NULL,
-    uploaded_by INT NOT NULL,
-    file_name VARCHAR(255) NOT NULL,
-    file_path VARCHAR(500) NOT NULL,
-    file_size INT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-    FOREIGN KEY (uploaded_by) REFERENCES users(id)
-) ENGINE=InnoDB;
-
 CREATE TABLE IF NOT EXISTS time_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     task_id INT NOT NULL,
@@ -249,6 +254,70 @@ CREATE TABLE IF NOT EXISTS ticket_comments (
     body TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Вкладення до тікетів і задач (модуль «файлові документи», App\Services\AttachmentService).
+-- Сам файл лежить у storage/uploads/<перші 2 символи>/<stored_name> — поза веб-коренем;
+-- stored_name — випадкові 32 hex-символи, жодної частини імені від користувача (original_name
+-- зберігається лише для показу). Рівно одне з ticket_id/task_id заповнене — це гарантує код
+-- (CHECK тут не використано: MySQL 8 забороняє CHECK на колонках з ON DELETE CASCADE, а проєкт
+-- підтримує і MySQL 8, і MariaDB). Видалення тікета/задачі каскадно прибирає рядки; файли на
+-- диску при цьому прибирає код (Task::delete, Project::delete).
+CREATE TABLE IF NOT EXISTS attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id INT NULL,
+    task_id INT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name CHAR(32) NOT NULL UNIQUE,
+    mime_type VARCHAR(50) NOT NULL,
+    size_bytes INT UNSIGNED NOT NULL,
+    uploaded_by INT NULL,
+    source VARCHAR(10) NOT NULL DEFAULT 'web',  -- звідки файл: web / portal (анонімний портал) / email (вхідний лист)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_attachments_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    CONSTRAINT fk_attachments_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    CONSTRAINT fk_attachments_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_attachments_ticket (ticket_id),
+    INDEX idx_attachments_task (task_id)
+) ENGINE=InnoDB;
+
+-- Вікі: сторінки в Markdown (App\Core\Markdown) з історією версій.
+--   visibility: all — усі, хто увійшов; staff — усі, крім ролі «Заявник»; admin — лише адміністратор.
+--   version збільшується при кожному збереженні; форма редагування передає версію, з якої почала, —
+--   так збереження «поверх» чужих змін (двоє редагують одночасно) виявляється, а не мовчки затирає текст.
+--   source = 'docs' — сторінка імпортована з docs/*.md (bin/import-wiki-docs.php); imported_hash — SHA-1
+--   тексту при імпорті: поки поточний текст його ще збігається, сторінку ніхто не правив, і наступний
+--   імпорт може безпечно оновити її новою версією документації; після ручної правки — вже ні.
+CREATE TABLE IF NOT EXISTS wiki_pages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(80) NOT NULL UNIQUE,
+    title VARCHAR(200) NOT NULL,
+    content MEDIUMTEXT NOT NULL,
+    visibility VARCHAR(10) NOT NULL DEFAULT 'all',
+    sort_order INT NOT NULL DEFAULT 100,
+    version INT NOT NULL DEFAULT 1,
+    source VARCHAR(20) NULL,
+    imported_hash CHAR(40) NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wiki_pages_created FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_wiki_pages_updated FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_wiki_pages_sort (sort_order, title)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS wiki_revisions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    page_id INT NOT NULL,
+    version INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content MEDIUMTEXT NOT NULL,
+    edited_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wiki_revisions_page FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wiki_revisions_user FOREIGN KEY (edited_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_wiki_revisions_page (page_id, version)
 ) ENGINE=InnoDB;
 
 -- Журнал обробки вхідної пошти (email-to-ticket). Одночасно:

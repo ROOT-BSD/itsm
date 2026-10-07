@@ -25,6 +25,9 @@ $subProjectsWord = static function (int $n): string {
         <div class="card h-100">
             <div class="card-body">
                 <h5 class="card-title"><?= \App\Core\View::e($p['name']) ?></h5>
+                <?php if (!empty($p['parent_id'])): ?>
+                    <div class="small text-muted mb-1">Підпроєкт<?= !empty($p['parent_name']) ? ' · ' . \App\Core\View::e($p['parent_name']) : '' ?></div>
+                <?php endif; ?>
                 <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($p['description'] ?? '', 0, 100, '…')) ?></p>
                 <span class="badge bg-<?= $statusColors[$p['status']] ?? 'secondary' ?>"><?= \App\Core\View::e($statusLabels[$p['status']] ?? $p['status']) ?></span>
                 <span class="badge bg-info text-dark"><?= (int)$p['open_tasks_count'] ?> відкритих задач</span>

@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <a href="/admin" class="text-decoration-none">&larr; Адмін-панель</a>
+    <?php require __DIR__ . '/_back.php'; ?>
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -104,7 +104,7 @@ $renderUserTable = function (array $users) {
 <h5 class="mt-4">Active Directory</h5>
 <?php if (empty($adGroups)): ?>
     <div class="alert alert-light border mb-4">
-        AD-облікових записів ще немає — див. <a href="/admin/ad">Адмін-панель → Active Directory</a>, щоб налаштувати підключення й синхронізацію.
+        AD-облікових записів ще немає — див. <a href="/admin/ad">Адмін-панель → Налаштування → Active Directory</a>, щоб налаштувати підключення й синхронізацію.
     </div>
 <?php else: foreach ($adGroups as $group): ?>
     <h6 class="text-muted mt-3"><?= $group['label'] === '' ? '— поза OU (напр., стандартний контейнер Users) —' : \App\Core\View::e($group['label']) ?></h6>

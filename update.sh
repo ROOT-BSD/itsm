@@ -21,8 +21,12 @@
 #   16. Додає колонку автопризначення оператора для черги тікетів, якщо її ще немає
 #   17. Додає users.ad_username, таблицю відповідності груп AD ролям і налаштування синхронізації для Active Directory
 #   18. Додає users.ad_ou для групування AD-користувачів за організаційним підрозділом (OU) на сторінці «Користувачі»
-#   19. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   20. Перевстановлює права доступу на файли для веб-сервера
+#   19. Додає таблицю вкладень до тікетів і задач, створює storage/uploads, показує поточні PHP-ліміти завантаження
+#   20. Додає колонку attachments.source (звідки вкладення: web / портал / лист)
+#   21. Створює таблиці вікі й завантажує в неї гайди користувача та адміністратора з docs/
+#   22. Створює таблицю учасників проєктів (надання доступу до проєкту обраним користувачам)
+#   23. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   24. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -285,7 +289,7 @@ if [ "${LOCKOUT_COL_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_LOCKOUT" >/dev/null 2>&1; then
-        ok "Додано — тепер доступне блокування облікового запису після невдалих спроб входу (Адмін-панель → Безпека входу)"
+        ok "Додано — тепер доступне блокування облікового запису після невдалих спроб входу (Адмін-панель → Налаштування → Безпека входу)"
     else
         fail "Помилка додавання таблиці/колонок блокування входу"
         exit 1
@@ -362,7 +366,7 @@ SLA_UNIQUE_EXISTS=$(echo "
 " | $MYSQL -N 2>/dev/null || echo "0")
 
 if [ "${SLA_UNIQUE_EXISTS:-0}" -eq 0 ]; then
-    info "Унікальність sla_policies.queue_id не знайдено — додаю (потрібна для керування нормативами через Адмін-панель → Черги тікетів)..."
+    info "Унікальність sla_policies.queue_id не знайдено — додаю (потрібна для керування нормативами через Адмін-панель → Керування → Черги тікетів)..."
     info "Якщо на якусь чергу було кілька нормативів — залишиться лише найновіший."
 
     MIGRATION_SLA="${SCRIPT_DIR}/database/migrations/010_add_sla_policies_unique_queue.sql"
@@ -373,7 +377,7 @@ if [ "${SLA_UNIQUE_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_SLA" >/dev/null 2>&1; then
-        ok "Додано — SLA-нормативи тепер редагуються в Адмін-панель → Черги тікетів"
+        ok "Додано — SLA-нормативи тепер редагуються в Адмін-панель → Керування → Черги тікетів"
     else
         fail "Помилка додавання унікальності sla_policies.queue_id"
         exit 1
@@ -401,7 +405,7 @@ if [ "${EMAIL_TABLE_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_EMAIL" >/dev/null 2>&1; then
-        ok "Додано — сторінка Адмін-панель → Пошта → тікети готова до налаштування"
+        ok "Додано — сторінка Адмін-панель → Налаштування → Пошта → тікети готова до налаштування"
         info "Далі: пропишіть MAIL_IMAP_* у .env і додайте bin/fetch-mail.php в cron (див. ту сторінку в адмін-панелі)."
     else
         fail "Помилка додавання таблиці email_ingest_log"
@@ -429,7 +433,7 @@ if [ "${AUTOREPLY_SETTING_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_AUTOREPLY" >/dev/null 2>&1; then
-        ok "Додано — автовідповідь можна ввімкнути в Адмін-панель → Пошта → тікети (після налаштування SMTP)"
+        ok "Додано — автовідповідь можна ввімкнути в Адмін-панель → Налаштування → Пошта → тікети (після налаштування SMTP)"
     else
         fail "Помилка додавання налаштування email_autoreply_enabled"
         exit 1
@@ -457,7 +461,7 @@ if [ "${REMINDERS_TABLE_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_NOTIFICATIONS" >/dev/null 2>&1; then
-        ok "Додано — email-сповіщення можна ввімкнути в Адмін-панель → Пошта → тікети (після налаштування SMTP)"
+        ok "Додано — email-сповіщення можна ввімкнути в Адмін-панель → Налаштування → Пошта → тікети (після налаштування SMTP)"
     else
         fail "Помилка додавання таблиці task_due_reminders"
         exit 1
@@ -485,7 +489,7 @@ if [ "${GRANULAR_SETTING_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_GRANULAR" >/dev/null 2>&1; then
-        ok "Додано — тікети/проєкти/задачі/нагадування тепер вмикаються окремо в Адмін-панель → Пошта → тікети"
+        ok "Додано — тікети/проєкти/задачі/нагадування тепер вмикаються окремо в Адмін-панель → Налаштування → Пошта → тікети"
     else
         fail "Помилка додавання гранульованих налаштувань email-сповіщень"
         exit 1
@@ -513,7 +517,7 @@ if [ "${QUEUE_OPERATOR_COLUMN_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_QUEUE_OPERATOR" >/dev/null 2>&1; then
-        ok "Додано — автопризначення оператора налаштовується в Адмін-панель → Черги тікетів"
+        ok "Додано — автопризначення оператора налаштовується в Адмін-панель → Керування → Черги тікетів"
     else
         fail "Помилка додавання колонки ticket_queues.default_operator_id"
         exit 1
@@ -541,7 +545,7 @@ if [ "${AD_COLUMN_EXISTS:-0}" -eq 0 ]; then
     fi
 
     if $MYSQL < "$MIGRATION_AD" >/dev/null 2>&1; then
-        ok "Додано — Active Directory налаштовується в Адмін-панель → Active Directory (після AD_* у .env)"
+        ok "Додано — Active Directory налаштовується в Адмін-панель → Налаштування → Active Directory (після AD_* у .env)"
     else
         fail "Помилка додавання колонок/таблиць для Active Directory"
         exit 1
@@ -578,8 +582,151 @@ else
     ok "Колонка users.ad_ou вже є — нічого робити не треба"
 fi
 
-# ---------- 19. Очищення застарілого кешу PDF-шрифтів ----------
-section "19. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 19. Вкладення до тікетів і задач ----------
+section "19. Перевірка таблиці вкладень і директорії для файлів"
+
+# Перевіряємо саме НОВУ структуру (стовпець stored_name): у старих схемах уже була порожня
+# заготовка attachments з іншими стовпцями — перевірка лише «таблиця існує» її б пропустила.
+ATTACHMENTS_TABLE_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'attachments' AND COLUMN_NAME = 'stored_name';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${ATTACHMENTS_TABLE_EXISTS:-0}" -eq 0 ]; then
+    info "Таблицю вкладень нової структури не знайдено — створюю (стару порожню заготовку, якщо є, міграція замінить)..."
+
+    MIGRATION_ATTACHMENTS="${SCRIPT_DIR}/database/migrations/018_add_attachments.sql"
+    if [ ! -f "$MIGRATION_ATTACHMENTS" ]; then
+        fail "Файл ${MIGRATION_ATTACHMENTS} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_ATTACHMENTS" >/dev/null 2>&1; then
+        ok "Таблицю attachments створено — на сторінках тікета й задачі з'явився блок «Вкладення»"
+    else
+        fail "Помилка створення таблиці attachments"
+        exit 1
+    fi
+else
+    ok "Таблиця attachments вже є — нічого робити не треба"
+fi
+
+# Файли вкладень лежать у storage/uploads (поза веб-коренем) — директорія має існувати.
+mkdir -p "${SCRIPT_DIR}/storage/uploads" && ok "Директорія storage/uploads на місці"
+
+# Журнал необроблених помилок застосунку (App\Core\ErrorHandler): у нього потрапляє причина кожної «помилки 500».
+mkdir -p "${SCRIPT_DIR}/storage/logs" && ok "Директорія storage/logs на місці (журнал помилок застосунку)"
+
+# Підказка: PHP за замовчуванням дозволяє файли лише до 2 МБ на файл (upload_max_filesize).
+# CLI-php може мати інші налаштування, ніж PHP-FPM/Apache — показуємо як орієнтир, не як вирок.
+PHP_UPLOAD_MAX="$(php -r 'echo ini_get("upload_max_filesize");' 2>/dev/null)"
+PHP_POST_MAX="$(php -r 'echo ini_get("post_max_size");' 2>/dev/null)"
+info "PHP (CLI) зараз: upload_max_filesize=${PHP_UPLOAD_MAX:-?}, post_max_size=${PHP_POST_MAX:-?}"
+info "Застосунок дозволяє вкладення до 10 МБ (змінюється: ATTACHMENT_MAX_MB у .env), але не більше за ці PHP-ліміти."
+info "Щоб приймати файли більші за ліміт PHP, збільшіть upload_max_filesize і post_max_size у php.ini вашого веб-сервера (PHP-FPM/Apache) і перезапустіть його."
+
+# ---------- 20. Джерело вкладення (web / портал / лист) ----------
+section "20. Перевірка колонки джерела вкладення"
+
+ATTACHMENT_SOURCE_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'attachments' AND COLUMN_NAME = 'source';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${ATTACHMENT_SOURCE_EXISTS:-0}" -eq 0 ]; then
+    info "Колонку attachments.source не знайдено — додаю..."
+
+    MIGRATION_ATT_SOURCE="${SCRIPT_DIR}/database/migrations/019_add_attachment_source.sql"
+    if [ ! -f "$MIGRATION_ATT_SOURCE" ]; then
+        fail "Файл ${MIGRATION_ATT_SOURCE} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_ATT_SOURCE" >/dev/null 2>&1; then
+        ok "Додано — на сторінці тікета видно, чи файл з порталу, з листа чи доданий вручну"
+    else
+        fail "Помилка додавання колонки attachments.source"
+        exit 1
+    fi
+else
+    ok "Колонка attachments.source вже є — нічого робити не треба"
+fi
+
+# ---------- 21. Вікі ----------
+section "21. Перевірка таблиць вікі й завантаження документації"
+
+WIKI_TABLE_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wiki_pages';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${WIKI_TABLE_EXISTS:-0}" -eq 0 ]; then
+    info "Таблиці вікі не знайдено — створюю..."
+
+    MIGRATION_WIKI="${SCRIPT_DIR}/database/migrations/020_add_wiki.sql"
+    if [ ! -f "$MIGRATION_WIKI" ]; then
+        fail "Файл ${MIGRATION_WIKI} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_WIKI" >/dev/null 2>&1; then
+        ok "Таблиці вікі створено — у меню з'явився розділ «Вікі»"
+    else
+        fail "Помилка створення таблиць вікі"
+        exit 1
+    fi
+else
+    ok "Таблиці вікі вже є — нічого створювати не треба"
+fi
+
+# Гайди користувача й адміністратора (docs/*.md) → вікі. Імпорт безпечний для повторів: нові сторінки створює,
+# невідредаговані — оновлює до свіжої версії документації, а ті, що правили у вікі вручну, НЕ чіпає.
+if command -v php >/dev/null 2>&1; then
+    WIKI_IMPORT_OUT="$(php "${SCRIPT_DIR}/bin/import-wiki-docs.php" 2>&1)"
+    WIKI_IMPORT_CODE=$?
+    echo "$WIKI_IMPORT_OUT" | sed 's/^\[[^]]*\] \[itsm-wiki-import\] /  [INFO] /'
+    if [ "$WIKI_IMPORT_CODE" -eq 0 ]; then
+        ok "Документацію у вікі актуалізовано"
+    else
+        warn "Імпорт документації у вікі завершився з помилкою — повторіть: php bin/import-wiki-docs.php"
+    fi
+else
+    warn "php не знайдено в PATH — документацію у вікі не завантажено (php bin/import-wiki-docs.php)"
+fi
+
+# ---------- 22. Учасники проєктів ----------
+section "22. Перевірка таблиці учасників проєктів"
+
+PROJECT_MEMBERS_EXISTS=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_members';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${PROJECT_MEMBERS_EXISTS:-0}" -eq 0 ]; then
+    info "Таблицю project_members не знайдено — створюю..."
+
+    MIGRATION_MEMBERS="${SCRIPT_DIR}/database/migrations/021_add_project_members.sql"
+    if [ ! -f "$MIGRATION_MEMBERS" ]; then
+        fail "Файл ${MIGRATION_MEMBERS} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_MEMBERS" >/dev/null 2>&1; then
+        ok "Таблицю створено — на сторінці проєкту з'явився блок «Доступ до проєкту» (надання доступу обраним користувачам)"
+    else
+        fail "Помилка створення таблиці project_members"
+        exit 1
+    fi
+else
+    ok "Таблиця project_members вже є — нічого робити не треба"
+fi
+
+# ---------- 23. Очищення застарілого кешу PDF-шрифтів ----------
+section "23. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -595,8 +742,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 20. Права доступу ----------
-section "20. Права доступу до файлів"
+# ---------- 24. Права доступу ----------
+section "24. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"
@@ -619,7 +766,16 @@ else
         find "$SCRIPT_DIR" -type d -exec chmod 750 {} \; 2>/dev/null
         find "$SCRIPT_DIR" -type f -exec chmod 640 {} \; 2>/dev/null
         chmod 750 "${SCRIPT_DIR}/install.sh" "${SCRIPT_DIR}/update.sh" 2>/dev/null
-        [ -d "${SCRIPT_DIR}/storage/uploads" ] && chmod -R 770 "${SCRIPT_DIR}/storage/uploads"
+        # storage/logs: веб-сервер дописує в журнал помилок застосунку
+if [ -d "${SCRIPT_DIR}/storage/logs" ]; then
+    chmod -R u+rwX,g+rwX "${SCRIPT_DIR}/storage/logs" 2>/dev/null && ok "storage/logs: доступна для запису веб-серверу"
+fi
+
+# storage/uploads: каталоги 770, ЗАВАНТАЖЕНІ ФАЙЛИ 660 — вкладення не повинні отримувати біт виконання
+        if [ -d "${SCRIPT_DIR}/storage/uploads" ]; then
+            find "${SCRIPT_DIR}/storage/uploads" -type d -exec chmod 770 {} \; 2>/dev/null
+            find "${SCRIPT_DIR}/storage/uploads" -type f -exec chmod 660 {} \; 2>/dev/null
+        fi
         [ -d "$TFPDF_CACHE_DIR" ] && chmod -R 770 "$TFPDF_CACHE_DIR"
         chmod 600 "${SCRIPT_DIR}/.env"
         ok "Права доступу оновлено (власник: ${WEB_USER}:${WEB_GROUP})"
@@ -637,7 +793,13 @@ cat <<FINAL
   ${BOLD}3.${NC} На сторінці проєкту є поле «Відповідальний».
   ${BOLD}4.${NC} На сторінці задачі є поле «Виконавець».
 
-  Якщо сторінка не відкривається — див. розділ «Усунення несправностей» у README.md.
+  Якщо сторінка не відкривається (помилка 500):
+  ${BOLD}•${NC} Увійдіть адміністратором: сторінка помилки покаже ПРИЧИНУ й код інциденту; запис із деталями —
+    у storage/logs/app-РРРР-ММ-ДД.log (шукайте цей код).
+  ${BOLD}•${NC} Після копіювання нових файлів перезавантажте PHP-FPM — він міг лишити в пам'яті (opcache) СТАРУ
+    версію коду, і вона не збігається з новою: sudo systemctl reload php-fpm
+    (на Debian/Ubuntu ім'я з версією, наприклад php8.3-fpm; для Apache з mod_php — sudo systemctl reload apache2).
+  ${BOLD}•${NC} Інші поширені причини — у розділі «Усунення несправностей» у README.md.
 
 FINAL
 

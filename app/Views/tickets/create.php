@@ -8,7 +8,7 @@
     <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
 <?php endif; ?>
 
-<form method="post" action="/tickets" class="card p-4 shadow-sm form-card-md">
+<form method="post" action="/tickets" enctype="multipart/form-data" class="card p-4 shadow-sm form-card-md">
     <?= \App\Core\Csrf::field() ?>
     <div class="mb-3">
         <label class="form-label">Черга</label>
@@ -35,5 +35,10 @@
         <label class="form-label">Опис проблеми / запиту</label>
         <textarea name="description" class="form-control" rows="4"></textarea>
     </div>
+    <?php
+    $pickerMaxFiles = (int) \App\Core\Config::get('attachments.max_per_request', 10);
+    $pickerMaxBytes = (int) \App\Core\Config::get('attachments.max_bytes', 10485760);
+    require __DIR__ . '/../attachments/_picker.php';
+    ?>
     <button type="submit" class="btn btn-primary">Надіслати звернення</button>
 </form>

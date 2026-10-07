@@ -7,6 +7,7 @@ use App\Core\Database;
 use App\Core\ImapClient;
 use App\Core\ImapException;
 use App\Core\MimeParser;
+use App\Models\Attachment;
 use App\Models\Audit;
 use App\Models\Setting;
 use App\Models\Ticket;
@@ -207,17 +208,32 @@ class EmailTicketService
             return ['action' => 'skipped', 'ticket_id' => null, 'note' => $skipReason];
         }
 
+        // Зображення PNG/JPG відокремлюємо від решти вкладень ДО створення тікета: у примітці «не збережено»
+        // мають лишитись лише справді не збережені файли, а підробки/завеликі не повинні потрапити на диск.
+        [$images, $m['attachments'], $skippedTiny] = self::partitionImages($m['attachments']);
+
         $pdo = Database::connection();
         $pdo->beginTransaction();
+        $storedFiles = []; // файли на диску, записані цим листом — щоб прибрати їх, якщо транзакцію відкотить
         try {
             $ticket = self::findTicketForReply($m);
             if ($ticket !== null) {
                 self::addReplyComment($ticket, $m);
-                $outcome = ['action' => 'comment_added', 'ticket_id' => (int) $ticket['id'], 'note' => 'Коментар до тікета #' . $ticket['id']];
+                $ticketId = (int) $ticket['id'];
+                $outcome = ['action' => 'comment_added', 'ticket_id' => $ticketId, 'note' => 'Коментар до тікета #' . $ticketId];
             } else {
                 $ticketId = self::createTicket($m);
                 $outcome = ['action' => 'ticket_created', 'ticket_id' => $ticketId, 'note' => 'Створено тікет #' . $ticketId];
             }
+
+            $savedImages = self::storeImages($ticketId, $images, $storedFiles);
+            if ($savedImages > 0) {
+                $outcome['note'] .= '; збережено зображень: ' . $savedImages;
+            }
+            if ($skippedTiny > 0) {
+                $outcome['note'] .= '; пропущено дрібних вбудованих зображень (логотипи в підписах): ' . $skippedTiny;
+            }
+
             self::log($messageId, $m['from_email'], $m['subject'], $outcome['action'], $outcome['ticket_id'], $outcome['note']);
             $pdo->commit();
 
@@ -234,8 +250,98 @@ class EmailTicketService
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
+            // Рядки вкладень відкотились разом із транзакцією, а файли на диску — ні: прибираємо їх явно.
+            AttachmentService::deleteFiles($storedFiles);
             throw $e;
         }
+    }
+
+    /**
+     * Відділяє зображення від решти вкладень листа. Повертає [зображення для збереження, решта вкладень, кількість
+     * пропущених дрібних вбудованих зображень].
+     *
+     * Зображення зберігається, лише якщо вміст ДІЙСНО PNG/JPG (за сигнатурою й розбором, а не за назвою чи MIME від
+     * відправника). Вбудовані (inline) зображення менші за email_min_inline_bytes — це переважно логотипи й іконки
+     * в підписах, які інакше засмічували б кожен тікет і кожну відповідь, — пропускаються. Звичайні вкладення
+     * зберігаються незалежно від розміру. Однакові зображення (за хешем) зберігаються один раз.
+     *
+     * @param array<int, array<string, mixed>> $attachments
+     * @return array{0: array<int, array{name: string, mime: string, bytes: string}>, 1: array<int, array<string, mixed>>, 2: int}
+     */
+    private static function partitionImages(array $attachments): array
+    {
+        $maxImages = (int) Config::get('attachments.email_max_images', 10);
+        $minInline = (int) Config::get('attachments.email_min_inline_bytes', 10240);
+        $images = [];
+        $rest = [];
+        $seen = [];
+        $skippedTiny = 0;
+
+        foreach ($attachments as $a) {
+            if (!isset($a['data'])) {
+                $rest[] = $a; // не кандидат у зображення (PDF, документ…) або завелике — лише в примітку
+                continue;
+            }
+            $bytes = $a['data'];
+            unset($a['data']); // звільняємо пам'ять: далі потрібні тільки метадані
+
+            $hash = sha1($bytes);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+            $name = ($a['name'] === '' || str_starts_with($a['name'], '(')) ? 'image-' . (count($images) + 1) : $a['name'];
+            $check = AttachmentService::inspectBytes($name, $bytes, ['mimes' => AttachmentService::IMAGE_MIMES]);
+            if (!$check['ok']) {
+                $rest[] = $a; // назвалося зображенням, але ним не є (або завелике) — не зберігаємо
+                continue;
+            }
+            $isInline = ($a['content_id'] ?? '') !== '' || ($a['disposition'] ?? '') === 'inline';
+            if ($isInline && $check['size'] < $minInline) {
+                $seen[$hash] = true;
+                $skippedTiny++;
+                continue;
+            }
+            if (count($images) >= $maxImages) {
+                $rest[] = $a;
+                continue;
+            }
+            $seen[$hash] = true;
+            $images[] = ['name' => $check['name'], 'mime' => $check['mime'], 'bytes' => $bytes];
+        }
+
+        return [$images, $rest, $skippedTiny];
+    }
+
+    /**
+     * Записує перевірені зображення листа як вкладення тікета (рядок у БД — у транзакції ingest()).
+     * Збій запису одного файлу не скасовує решту й тим більше сам тікет — лише фіксується в журналі аудиту.
+     *
+     * @param array<int, array{name: string, mime: string, bytes: string}> $images
+     * @param string[] $storedFiles заповнюється іменами записаних файлів (для прибирання при відкаті)
+     */
+    private static function storeImages(int $ticketId, array $images, array &$storedFiles): int
+    {
+        $saved = 0;
+        $room = (int) Config::get('attachments.max_per_entity', 30) - Attachment::countForOwner('ticket', $ticketId);
+
+        foreach ($images as $img) {
+            if ($room <= 0) {
+                Audit::log('ticket', $ticketId, 'attachment_from_email_failed', null, ['file' => $img['name'], 'error' => 'досягнуто ліміт вкладень на тікет']);
+                continue;
+            }
+            $written = AttachmentService::writeBytes($img['bytes']);
+            if (!$written['ok']) {
+                Audit::log('ticket', $ticketId, 'attachment_from_email_failed', null, ['file' => $img['name'], 'error' => mb_substr($written['error'], 0, 150)]);
+                continue;
+            }
+            $storedFiles[] = $written['stored_name'];
+            $size = strlen($img['bytes']);
+            Attachment::create('ticket', $ticketId, $img['name'], $written['stored_name'], $img['mime'], $size, null, 'email');
+            Audit::log('ticket', $ticketId, 'attachment_from_email', null, ['file' => $img['name'], 'size_kb' => (int) ceil($size / 1024)]);
+            $saved++;
+            $room--;
+        }
+        return $saved;
     }
 
     /** Автовідповідь заявнику з посиланням для відстеження — лише при СТВОРЕННІ тікета, не на кожен коментар у гілці. */
@@ -410,7 +516,7 @@ class EmailTicketService
     {
         $queues = Ticket::queues();
         if (!$queues) {
-            throw new \RuntimeException('У системі немає жодної черги тікетів — створіть чергу (Адмін-панель → Черги тікетів).');
+            throw new \RuntimeException('У системі немає жодної черги тікетів — створіть чергу (Адмін-панель → Керування → Черги тікетів).');
         }
         $wanted = (int) Setting::get('email_ticket_queue_id', '0');
         foreach ($queues as $q) {
@@ -431,7 +537,7 @@ class EmailTicketService
         return $cut . "\n\n[… текст листа скорочено]";
     }
 
-    /** Вкладення не зберігаються (модуля файлів ще немає) — чесно про це повідомляємо в тексті. */
+    /** Вкладення, які НЕ збережено (не зображення PNG/JPG, завеликі чи не пройшли перевірку), — чесно називаємо їх у тексті. */
     private static function attachmentsNote(array $attachments): string
     {
         if (!$attachments) {

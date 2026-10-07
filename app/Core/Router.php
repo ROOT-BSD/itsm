@@ -21,6 +21,28 @@ class Router
         $path = parse_url($uri, PHP_URL_PATH) ?: '/';
         $path = rtrim($path, '/') ?: '/';
 
+        // Запит завеликий для post_max_size: PHP мовчки викидає все тіло ($_POST і $_FILES порожні),
+        // і CSRF-перевірка нижче видала б оманливе «Сесія застаріла». Тому розпізнаємо це окремо й
+        // для завантаження вкладень повертаємо користувача на його сторінку з поясненням.
+        if ($method === 'POST' && UploadLimits::postBodyTruncated()) {
+            $message = 'Файли завеликі: сумарний розмір запиту перевищує ліміт сервера ('
+                . UploadLimits::human(UploadLimits::postMax()) . ', параметр PHP post_max_size). '
+                . 'Прикріпіть менше файлів за раз або менші за розміром.';
+            if (preg_match('#^/(tickets|tasks)/(\d+)/attachments$#', $path, $m)) {
+                header('Location: /' . $m[1] . '/' . $m[2] . '?error=' . urlencode($message));
+                return;
+            }
+            // Форми СТВОРЕННЯ тікета (із зображеннями): усе тіло запиту, разом із текстом, втрачено — повертаємо на форму.
+            if ($path === '/tickets' || $path === '/support') {
+                header('Location: ' . ($path === '/tickets' ? '/tickets/create' : '/support') . '?error='
+                    . urlencode($message . ' Введені поля не збережено — заповніть форму ще раз.'));
+                return;
+            }
+            http_response_code(413);
+            echo $message;
+            return;
+        }
+
         // Централізована CSRF-перевірка для КОЖНОГО POST-запиту — так її
         // неможливо випадково забути додати в новий маршрут чи контролер.
         if ($method === 'POST' && !Csrf::verify($_POST['csrf_token'] ?? null)) {

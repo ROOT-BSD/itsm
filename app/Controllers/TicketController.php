@@ -93,7 +93,21 @@ class TicketController
         $me = User::findById(Auth::id());
 
         $id = Ticket::create($queueId, $me['full_name'], $me['email'], Auth::id(), $subject, $description ?: null, $projectId);
-        header('Location: /tickets/' . $id);
+
+        // Зображення з форми (вибрані файли або вставлений скриншот). Тікет уже створено: частина файлів
+        // може бути відхилена, і це не скасовує тікет — користувач побачить, що саме не прикріпилось.
+        $images = \App\Services\AttachmentService::attachCreationUploads(
+            'ticket', $id, $_FILES['files'] ?? [], Auth::id(), 'web',
+            (int) \App\Core\Config::get('attachments.max_per_request', 10)
+        );
+        $query = [];
+        if ($images['added'] > 0) {
+            $query['success'] = 'Звернення створено. Прикріплено зображень: ' . $images['added'] . '.';
+        }
+        if ($images['errors']) {
+            $query['error'] = implode(' ', $images['errors']);
+        }
+        header('Location: /tickets/' . $id . ($query ? '?' . http_build_query($query) : ''));
         exit;
     }
 
@@ -120,6 +134,7 @@ class TicketController
             'sla' => Ticket::slaStatus($ticket, Ticket::slaPoliciesByQueue()),
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
+            'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
         ]);
     }
 
