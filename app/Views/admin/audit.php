@@ -11,6 +11,9 @@ $entityTypeLabels = [
     'task' => 'Задача',
     'ticket' => 'Тікет',
     'wiki_page' => 'Сторінка вікі',
+    'library_document' => 'Документ бібліотеки',
+    'forum_topic' => 'Тема форуму',
+    'forum_board' => 'Розділ форуму',
     'milestone' => 'Етап',
     'task_relation' => "Зв'язок задач",
     'ticket_queue' => 'Черга тікетів',
@@ -26,6 +29,7 @@ $changeKeyLabels = [
     'assignee_id' => 'Виконавець',
     'responsible_user_id' => 'Відповідальний',
     'member_user_id' => 'Учасник проєкту',
+    'via' => 'Через',
     'operator_id' => 'Оператор',
     'default_operator_id' => 'Оператор за замовчуванням',
     'assigned_operator_id' => 'Призначений оператор',
@@ -36,6 +40,17 @@ $changeKeyLabels = [
     'due_date' => 'Термін виконання',
     'name' => 'Назва',
     'title' => 'Назва',
+    'visibility' => 'Хто бачить',
+    'category_id' => 'Розділ',
+    'versions' => 'Версій',
+    'board' => 'Розділ',
+    'post' => 'Повідомлення №',
+    'replies' => 'Відповідей',
+    'parent' => 'Батьківська сторінка №',
+    'attachments' => 'Вкладень',
+    'from_board' => 'З розділу',
+    'to_board' => 'До розділу',
+    'description_changed' => 'Опис змінено',
     'email' => 'Email',
     'first_response_minutes' => 'Перша відповідь (хв)',
     'resolution_minutes' => 'Вирішення (хв)',
@@ -51,6 +66,7 @@ $changeKeyLabels = [
     'email_notify_tickets_enabled' => 'Сповіщення про тікети',
     'email_notify_projects_enabled' => 'Сповіщення про проєкти',
     'email_notify_tasks_enabled' => 'Сповіщення про задачі',
+    'email_notify_forum_enabled' => 'Сповіщення про форум',
     'email_notify_reminders_enabled' => 'Нагадування про термін',
     'app_url' => 'Домен застосунку',
     'error' => 'Помилка',
@@ -116,7 +132,7 @@ $shortenName = function (string $text): string {
 <p class="text-muted small">Знайдено записів: <?= (int)$total ?></p>
 
 <?php
-$entityLinks = ['task' => '/tasks/', 'project' => '/projects/', 'ticket' => '/tickets/'];
+$entityLinks = ['task' => '/tasks/', 'project' => '/projects/', 'ticket' => '/tickets/', 'library_document' => '/library/', 'forum_topic' => '/forum/topics/', 'forum_board' => '/forum/boards/'];
 ?>
 
 <?php if (empty($entries)): ?>

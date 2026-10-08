@@ -13,6 +13,9 @@ use App\Services\NotificationService;
  */
 class Ticket
 {
+    /** Допустимі статуси тікета (єдиний перелік для веб-форми, REST API й вебхуків). */
+    public const STATUSES = ['new', 'in_progress', 'waiting_customer', 'resolved', 'closed'];
+
     public static function queues(): array
     {
         return Database::connection()->query('SELECT * FROM ticket_queues ORDER BY id')->fetchAll();
@@ -395,6 +398,7 @@ class Ticket
             'author_id' => $authorId,
             'body' => $body,
         ]);
+        $commentId = (int) Database::connection()->lastInsertId();
 
         // Перша відповідь оператора — фіксуємо час для майбутньої SLA-звітності
         if ($authorType === 'operator') {
@@ -404,6 +408,7 @@ class Ticket
         }
 
         NotificationService::ticketCommentAdded($ticketId, $authorType, $authorId);
+        \App\Services\WebhookService::emitTicketComment($ticketId, $commentId, $authorId);
     }
 
     public static function comments(int $ticketId): array

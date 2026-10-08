@@ -535,6 +535,14 @@ APP_URL=http://localhost
 #ATTACHMENT_MAX_MB=10
 # Дозволити анонімному порталу /support прикріплювати зображення (до 3 файлів, до 5 МБ). false — вимкнути.
 #ATTACHMENT_PORTAL_ENABLED=true
+# Вебхуки на внутрішні адреси (10.x, 192.168.x, 127.x). false — заборонити (захист від SSRF); link-local (169.254.x) заборонено завжди.
+#WEBHOOK_ALLOW_PRIVATE=true
+# Обмеження частоти запитів до порталу /support (за IP). Вимкнути: PORTAL_RATE_LIMIT=false.
+# За зворотним проксі/балансувальником вкажіть його адресу (через кому, IP або CIDR), інакше ліміт спільний для всіх:
+#PORTAL_RATE_LIMIT=true
+#TRUSTED_PROXIES=10.0.0.5
+# Бібліотека документів («Документи»): максимальний розмір одного файлу, МБ (не більше PHP-лімітів upload_max_filesize/post_max_size).
+#LIBRARY_MAX_MB=25
 ENV
 
     chmod 600 "$ENV_FILE"

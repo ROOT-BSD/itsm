@@ -131,7 +131,7 @@ return (function (): array {
             'dir'             => __DIR__ . '/../storage/uploads',
             'max_per_entity'  => 30,  // не більше вкладень на один тікет/задачу
             'max_per_request' => 10,  // не більше файлів за одне натискання «Прикріпити»
-            // Анонімний портал (/support): файли завантажує будь-хто без входу й без обмеження частоти запитів,
+            // Анонімний портал (/support): файли завантажує будь-хто без входу (частоту запитів обмежує rate_limits нижче),
             // тож ліміти суворіші, а вся можливість вимикається ATTACHMENT_PORTAL_ENABLED=false в .env.
             'portal_enabled'   => filter_var($env('ATTACHMENT_PORTAL_ENABLED', 'true'), FILTER_VALIDATE_BOOLEAN),
             'portal_max_files' => 3,
@@ -139,6 +139,39 @@ return (function (): array {
             // Зображення з вхідних листів (email-to-ticket).
             'email_max_images'       => 10,     // не більше картинок з одного листа
             'email_min_inline_bytes' => 10240,  // вбудовані (inline) зображення менші за це — зазвичай логотипи/іконки в підписах — не зберігаються
+        ],
+        // Бібліотека документів (розділ «Документи», App\Services\LibraryService): файли, не прив'язані до тікета чи задачі.
+        // Реальний ліміт розміру — менше з цього значення та PHP-налаштувань upload_max_filesize / post_max_size.
+        'library' => [
+            'max_bytes'    => max(1, (int) $env('LIBRARY_MAX_MB', '25')) * 1048576,
+            'max_versions' => 50,   // не більше версій одного документа (захист сховища від безкінечних завантажень)
+            'per_page'     => 30,
+        ],
+        // Обмеження частоти запитів до публічного порталу /support (App\Core\RateLimiter), окремо для кожної IP-адреси.
+        // Кожне правило — [скільки запитів, за скільки секунд]; дозволено, лише коли вкладаємось в усі правила дії.
+        //   submit   — подання звернення (разом із завантаженням файлів);
+        //   comment  — коментарі заявника на сторінці відстеження;
+        //   rate     — оцінка якості (CSAT);
+        //   badtoken — відкриття неіснуючого посилання відстеження (перебір токенів);
+        //   forum_post — нові теми й відповіді на форумі (рахуються за користувачем, не за IP).
+        // За балансувальником/зворотним проксі вкажіть його адресу в TRUSTED_PROXIES (через кому, IP або CIDR), інакше всі
+        // відвідувачі матимуть адресу проксі й ділитимуть один ліміт. Вимкнути: PORTAL_RATE_LIMIT=false.
+        'rate_limits' => [
+            'enabled'         => filter_var($env('PORTAL_RATE_LIMIT', 'true'), FILTER_VALIDATE_BOOLEAN),
+            'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) $env('TRUSTED_PROXIES', ''))))),
+            'portal' => [
+                'submit'   => [[10, 600], [30, 86400]],
+                'comment'  => [[20, 600]],
+                'rate'     => [[10, 600]],
+                'badtoken' => [[30, 600]],
+                'forum_post' => [[10, 300], [100, 86400]],
+            ],
+        ],
+        // Вебхуки (див. App\Services\WebhookService). allow_private=false забороняє надсилати на внутрішні адреси
+        // (10/8, 172.16/12, 192.168/16, 127/8) — захист від SSRF, якщо адмін-панель можуть налаштовувати не лише довірені люди.
+        // Адреси link-local (169.254.0.0/16, у т.ч. метадані хмари) заборонені завжди.
+        'webhooks' => [
+            'allow_private' => filter_var($env('WEBHOOK_ALLOW_PRIVATE', 'true'), FILTER_VALIDATE_BOOLEAN),
         ],
         'app' => [
             'name'    => 'ITSM System',

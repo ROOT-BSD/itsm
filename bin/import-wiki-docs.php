@@ -1,5 +1,6 @@
 <?php
-// Імпорт гайдів з docs/*.md у вікі: «Керівництво користувача» (бачать усі) і «Керівництво адміністратора» (лише admin).
+// Імпорт гайдів з docs/*.md у вікі: гайд користувача (бачать усі), гайд адміністратора (лише admin) і гайд з інтеграції REST API
+// та вебхуків (персонал: усі, крім заявників).
 //
 // Запуск (install.sh і update.sh роблять це самі; вручну — за потреби):
 //
@@ -33,6 +34,7 @@ $say = static fn(string $msg) => print('[' . date('Y-m-d H:i:s') . '] [itsm-wiki
 $sources = [
     ['file' => 'docs/USER_GUIDE.md', 'slug' => 'user-guide', 'visibility' => 'all', 'sort' => 10],
     ['file' => 'docs/ADMIN_GUIDE.md', 'slug' => 'admin-guide', 'visibility' => 'admin', 'sort' => 20],
+    ['file' => 'docs/API_GUIDE.md', 'slug' => 'api-guide', 'visibility' => 'staff', 'sort' => 30],
 ];
 
 $failed = false;

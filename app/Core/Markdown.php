@@ -12,7 +12,7 @@ namespace App\Core;
  * [[slug]] / [[slug|текст]], жорсткі переноси (два пробіли чи \ в кінці рядка), екранування (\*).
  *
  * Чого свідомо НЕМАЄ: сирого HTML (будь-яка розмітка в тексті екранується й показується буквально),
- * зображень (![](…) показується як текст), setext-заголовків (підкреслення ===/---).
+ * зовнішніх зображень (![](https://…) показується як текст; ![](file:ID) — лише вкладення цієї сторінки), setext-заголовків (підкреслення ===/---).
  *
  * Безпека — головна вимога, бо результат виводиться на сторінку без подальшого екранування:
  *  - увесь текст проходить htmlspecialchars; HTML утворюють лише самі конструкції цього класу;
@@ -36,6 +36,22 @@ class Markdown
     private array $headings = [];
     /** @var array<string, true> існуючі slug-и сторінок вікі (для [[посилань]]) */
     private array $existingSlugs;
+
+    /** @var array<int, array{name: string, mime: string, image: bool}> вкладення поточної сторінки вікі: id => опис */
+    private array $attachments = [];
+
+    /**
+     * Вкладення, на які може посилатися текст: ![опис](file:ID) показує картинку, [текст](file:ID) дає посилання
+     * на файл. Посилання на id, якого немає в цьому списку (чужий, видалений), стає звичайним текстом, тож
+     * через розмітку не можна дістатися до файлів інших сторінок.
+     *
+     * @param array<int, array{name: string, mime: string, image: bool}> $attachments
+     */
+    public function setAttachments(array $attachments): self
+    {
+        $this->attachments = $attachments;
+        return $this;
+    }
 
     /** @param string[] $existingSlugs */
     public function __construct(array $existingSlugs = [])
@@ -473,13 +489,34 @@ class Markdown
                 : '<a href="/wiki/' . $slug . '" class="wiki-link-missing" title="Такої сторінки ще немає">' . $label . '</a>');
         }, $text) ?? $text;
 
-        // 4. Зображення поки не підтримуються — показуємо опис текстом
-        $text = preg_replace_callback('/!\[([^\]\n]*)\]\([^)\n]*\)/u', fn(array $m): string => $this->token('<span class="text-muted">[зображення: ' . $this->esc($m[1]) . ']</span>'), $text) ?? $text;
+        // 4. Зображення: лише вкладення цієї сторінки — ![опис](file:ID). Зовнішні адреси не завантажуємо
+        //    (приватність читачів і CSP), тому вони показуються текстом.
+        $text = preg_replace_callback('/!\[([^\]\n]*)\]\(\s*([^)\s]*)(?:\s+"[^"\n]*")?\s*\)/u', function (array $m): string {
+            $alt = $this->esc($m[1]);
+            if (preg_match('/^file:([1-9][0-9]{0,9})$/', $m[2], $f)) {
+                $file = $this->attachments[(int) $f[1]] ?? null;
+                if ($file === null) {
+                    return $this->token('<span class="text-muted">[зображення недоступне: ' . $alt . ']</span>');
+                }
+                $url = '/wiki/files/' . (int) $f[1];
+                if ($file['image']) {
+                    return $this->token('<a href="' . $url . '" target="_blank" rel="noopener noreferrer" class="wiki-image-link">'
+                        . '<img src="' . $url . '" alt="' . ($alt !== '' ? $alt : $this->esc($file['name'])) . '" class="wiki-image" loading="lazy"></a>');
+                }
+                return $this->token($this->linkHtml($url, $alt !== '' ? $alt : $this->esc($file['name'])));
+            }
+            return $this->token('<span class="text-muted">[зображення: ' . $alt . ']</span>');
+        }, $text) ?? $text;
 
         // 5. Посилання [текст](url "заголовок")
         if ($allowLinks) {
             $text = preg_replace_callback('/\[((?:[^\[\]\n]|\n)+?)\]\(\s*([^)\s]*)(?:\s+"([^"\n]*)")?\s*\)/u', function (array $m): string {
                 $inner = $this->inline($m[1], false);
+                if (preg_match('/^file:([1-9][0-9]{0,9})$/', $m[2], $f)) {
+                    return $this->token(isset($this->attachments[(int) $f[1]])
+                        ? $this->linkHtml('/wiki/files/' . (int) $f[1], $inner, $m[3] ?? null)
+                        : '<span class="text-muted" title="Файл недоступний">' . $inner . '</span>');
+                }
                 $url = self::safeUrl($m[2]);
                 return $this->token($url === null ? $inner : $this->linkHtml($url, $inner, $m[3] ?? null));
             }, $text) ?? $text;

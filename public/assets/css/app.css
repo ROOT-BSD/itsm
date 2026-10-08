@@ -253,3 +253,4 @@
 .wiki-editor { font-family: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .9rem; }
 .wiki-preview { background: #fff; }
 .wiki-toc summary { cursor: pointer; }
+.wiki-content img.wiki-image { max-width: 100%; height: auto; border: 1px solid #dee2e6; border-radius: 4px; margin: .25rem 0; }

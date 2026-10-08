@@ -38,9 +38,9 @@ class UploadLimits
     }
 
     /** Реальний максимум розміру ОДНОГО файлу: менше з ліміту застосунку та двох PHP-лімітів. */
-    public static function effectiveFileMax(): int
+    public static function effectiveFileMax(?int $appMax = null): int
     {
-        return min((int) Config::get('attachments.max_bytes', 10485760), self::uploadMax(), self::postMax());
+        return min($appMax ?? (int) Config::get('attachments.max_bytes', 10485760), self::uploadMax(), self::postMax());
     }
 
     /** Чи PHP відкинув тіло POST-запиту через перевищення post_max_size. */

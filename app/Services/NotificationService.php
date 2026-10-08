@@ -37,6 +37,11 @@ class NotificationService
         return Setting::get('email_notify_tasks_enabled', '0') === '1' && MailerService::isConfigured();
     }
 
+    private static function forumEnabled(): bool
+    {
+        return Setting::get('email_notify_forum_enabled', '0') === '1' && MailerService::isConfigured();
+    }
+
     private static function remindersEnabled(): bool
     {
         return Setting::get('email_notify_reminders_enabled', '0') === '1' && MailerService::isConfigured();
@@ -135,6 +140,63 @@ class NotificationService
         $result = MailerService::send($email, $name, $subject, $body);
         if (!$result['ok']) {
             Audit::log('ticket', (int) $ticket['id'], 'notification_failed', null, ['to' => $email, 'error' => mb_substr($result['message'], 0, 200)]);
+        }
+    }
+
+    // ---------- Форум ----------
+
+    /** Скільки адресатів сповіщаємо про одну відповідь: SMTP-надсилання синхронне, довга розсилка гальмувала б запит автора. */
+    private const FORUM_MAX_RECIPIENTS = 20;
+
+    /**
+     * Нова відповідь у темі форуму — сповіщаємо автора теми й усіх, хто в ній писав, крім того, хто відповів. Лист отримує
+     * лише той, хто за своєю роллю бачить розділ теми (тема могла бути перенесена в закритий розділ), тож текст відповіді
+     * не витікає тим, кому розділ недоступний.
+     */
+    public static function forumReplyAdded(int $topicId, int $postId, int $authorId): void
+    {
+        if (!self::forumEnabled()) {
+            return;
+        }
+        try {
+            $topic = \App\Models\Forum::findTopic($topicId);
+            $post = \App\Models\Forum::findPost($postId);
+            $author = User::findById($authorId);
+            if (!$topic || !$post) {
+                return;
+            }
+
+            $link = Setting::appUrl() . '/forum/posts/' . $postId;
+            $by = $author ? $author['full_name'] : 'Хтось';
+            $excerpt = \App\Core\Markdown::plainText((string) $post['body']);
+            $excerpt = trim(preg_replace('/\s+/u', ' ', $excerpt) ?? '');
+            if (mb_strlen($excerpt) > 300) {
+                $excerpt = rtrim(mb_substr($excerpt, 0, 300)) . '…';
+            }
+            $subject = "Нова відповідь у темі форуму «{$topic['title']}»";
+
+            $sent = 0;
+            foreach (\App\Models\Forum::participants($topicId, $authorId) as $user) {
+                if (!in_array($topic['board_visibility'], \App\Models\Forum::allowedVisibilities($user['role_code']), true)) {
+                    continue;
+                }
+                if ($sent >= self::FORUM_MAX_RECIPIENTS) {
+                    break;
+                }
+                $body = "Доброго дня, {$user['full_name']}!\n\n{$by} відповів(ла) у темі «{$topic['title']}» (розділ «{$topic['board_name']}»):\n\n{$excerpt}\n\nПерейти до відповіді:\n{$link}\n\nЦе автоматичний лист. Ви отримуєте його, бо створили цю тему або писали в ній.";
+                $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+                $sent++;
+                if (!$result['ok']) {
+                    Audit::log('forum_topic', $topicId, 'notification_failed', null, ['to' => $user['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+                    // Несправний SMTP-сервер не оживе за наступні секунди, а кожна спроба — це таймаут: не змушуємо автора
+                    // відповіді чекати їх усіх підряд. Решта адресатів просто не отримає цього листа.
+                    if (!str_contains($result['message'], 'Некоректна адреса')) {
+                        break;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // навмисно мовчки — відповідь уже збережено, лист не надіслався
         }
     }
 

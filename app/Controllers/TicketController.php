@@ -11,12 +11,12 @@ use App\Models\User;
 class TicketController
 {
     /** Допустимі значення статусу тікета (ENUM у БД). */
-    private const STATUSES = ['new', 'in_progress', 'waiting_customer', 'resolved', 'closed'];
+    private const STATUSES = \App\Models\Ticket::STATUSES;
 
     /** Оператори служби підтримки й керівники ІТ-підрозділу додатково бачать непризначені тікети — щоб було що брати в роботу. */
     private function canSeeUnassigned(): bool
     {
-        return Auth::hasRole(['it_manager', 'support_operator']);
+        return \App\Core\Access::canSeeUnassignedTickets(Auth::role());
     }
 
     public function index(): void
@@ -145,7 +145,7 @@ class TicketController
         // Призначати виконавця тікета можуть лише персонал ІТ-підрозділу,
         // а не будь-який заявник — інакше рядовий користувач міг би
         // призначити (або зняти) оператора на чужому зверненні.
-        if (!Auth::hasRole(['admin', 'it_manager', 'support_operator'])) {
+        if (!\App\Core\Access::canAssignTicketOperator(Auth::role())) {
             http_response_code(403);
             echo 'Призначати оператора тікета можуть лише керівник ІТ-підрозділу, адміністратор системи або оператор служби підтримки.';
             return;
@@ -203,7 +203,7 @@ class TicketController
         $body = trim($_POST['body'] ?? '');
         if ($body !== '') {
             // Оператор чи заявник — визначаємо за роллю поточного користувача.
-            $authorType = Auth::hasRole(['admin', 'support_operator']) ? 'operator' : 'requester';
+            $authorType = \App\Core\Access::ticketCommentAuthorType(Auth::role());
             Ticket::addComment((int) $params['id'], $authorType, Auth::id(), $body);
         }
         header('Location: /tickets/' . $params['id']);

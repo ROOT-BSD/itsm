@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Core\RateLimiter;
 use App\Core\View;
 use App\Models\Ticket;
 
@@ -23,6 +24,9 @@ class SupportController
 
     public function store(): void
     {
+        // Першим, до будь-якої обробки (у т.ч. файлів): бот, що шле форму без угаву, не має навантажувати ні БД, ні диск.
+        $this->throttle(RateLimiter::attempt('submit'));
+
         // Honeypot: звичайний відвідувач це поле ніколи не бачить (приховане
         // CSS) і не заповнює його; бот, що сліпо заповнює всі поля форми, —
         // заповнить. Мовчки вдаємо успіх, не створюючи тікет і не підказуючи
@@ -55,7 +59,7 @@ class SupportController
         $ticket = Ticket::find($id);
 
         // Зображення (PNG/JPG) — лише якщо вмикнено; ліміти суворіші, ніж для співробітників, бо завантажує
-        // будь-хто без входу й без обмеження частоти запитів (див. config attachments.portal_*).
+        // будь-хто без входу (частота запитів обмежена за IP — див. config rate_limits, ліміти файлів — attachments.portal_*).
         $images = ['added' => 0, 'errors' => []];
         if (\App\Core\Config::get('attachments.portal_enabled', true)) {
             $images = \App\Services\AttachmentService::attachCreationUploads(
@@ -77,10 +81,10 @@ class SupportController
 
     public function track(array $params): void
     {
+        $this->throttle(RateLimiter::peek('badtoken'));
         $ticket = Ticket::findByToken($params['token'] ?? '');
         if (!$ticket) {
-            http_response_code(404);
-            View::render('support/not_found', []);
+            $this->tokenNotFound();
             return;
         }
 
@@ -95,6 +99,7 @@ class SupportController
 
     public function addComment(array $params): void
     {
+        $this->throttle(RateLimiter::attempt('comment'));
         $ticket = $this->findByTokenOrFail($params['token'] ?? '');
 
         $body = trim($_POST['body'] ?? '');
@@ -107,6 +112,7 @@ class SupportController
 
     public function rateCsat(array $params): void
     {
+        $this->throttle(RateLimiter::attempt('rate'));
         $ticket = $this->findByTokenOrFail($params['token'] ?? '');
 
         $score = (int) ($_POST['csat_score'] ?? 0);
@@ -130,13 +136,36 @@ class SupportController
 
     private function findByTokenOrFail(string $token): array
     {
+        $this->throttle(RateLimiter::peek('badtoken'));
         $ticket = Ticket::findByToken($token);
         if (!$ticket) {
-            http_response_code(404);
-            View::render('support/not_found', []);
+            $this->tokenNotFound();
             exit;
         }
         return $ticket;
+    }
+
+    /** Неіснуюче посилання: рахуємо промах (захист від перебору токенів) і показуємо звичайну 404. */
+    private function tokenNotFound(): void
+    {
+        RateLimiter::attempt('badtoken');
+        http_response_code(404);
+        View::render('support/not_found', []);
+    }
+
+    /**
+     * Якщо ліміт вичерпано ($retryAfter — секунди до відновлення), відповідає 429 з Retry-After і зупиняє запит.
+     * null = запит дозволено.
+     */
+    private function throttle(?int $retryAfter): void
+    {
+        if ($retryAfter === null) {
+            return;
+        }
+        http_response_code(429);
+        header('Retry-After: ' . $retryAfter);
+        View::render('support/rate_limited', ['minutes' => max(1, (int) ceil($retryAfter / 60))]);
+        exit;
     }
 
     private function redirectFormError(string $message): void

@@ -21,8 +21,9 @@
         <div class="list-group list-group-flush">
             <?php foreach ($sidebarPages as $p): ?>
                 <a href="/wiki/<?= \App\Core\View::e($p['slug']) ?>"
-                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center<?= ($currentSlug ?? null) === $p['slug'] ? ' active' : '' ?>">
-                    <span><?= \App\Core\View::e($p['title']) ?></span>
+                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center<?= ($currentSlug ?? null) === $p['slug'] ? ' active' : '' ?>"
+                   <?php if (!empty($p['depth'])): ?>style="padding-left: <?= 1 + min((int) $p['depth'], 5) * 1.1 ?>rem"<?php endif; ?>>
+                    <span><?php if (!empty($p['depth'])): ?><span class="text-muted" aria-hidden="true">↳ </span><?php endif; ?><?= \App\Core\View::e($p['title']) ?></span>
                     <?php if ($p['visibility'] !== 'all'): ?>
                         <span class="badge bg-secondary" title="<?= \App\Core\View::e(\App\Models\WikiPage::VISIBILITIES[$p['visibility']] ?? '') ?>"><?= $p['visibility'] === 'admin' ? 'адмін' : 'персонал' ?></span>
                     <?php endif; ?>

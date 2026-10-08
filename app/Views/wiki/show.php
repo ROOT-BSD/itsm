@@ -9,11 +9,23 @@
             <div class="alert alert-success"><?= $e($success) ?></div>
         <?php endif; ?>
 
+        <?php if (!empty($breadcrumbs)): ?>
+            <nav aria-label="Розташування сторінки" class="mb-2 small">
+                <a href="/wiki">Вікі</a>
+                <?php foreach ($breadcrumbs as $b): ?>
+                    <span class="text-muted">/</span> <a href="/wiki/<?= $e($b['slug']) ?>"><?= $e($b['title']) ?></a>
+                <?php endforeach; ?>
+            </nav>
+        <?php endif; ?>
+
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
             <h2 class="mb-0"><?= $e($page['title']) ?></h2>
             <div class="d-flex gap-2">
                 <a href="/wiki/<?= $e($page['slug']) ?>/history" class="btn btn-sm btn-outline-secondary">Історія</a>
                 <?php if ($canEdit): ?>
+                    <?php if (\App\Models\WikiPage::hierarchyReady()): ?>
+                        <a href="/wiki/new?parent=<?= $e($page['slug']) ?>" class="btn btn-sm btn-outline-primary">+ Підсторінка</a>
+                    <?php endif; ?>
                     <a href="/wiki/<?= $e($page['slug']) ?>/edit" class="btn btn-sm btn-primary">Редагувати</a>
                 <?php endif; ?>
                 <?php if (\App\Models\WikiPage::canDelete($role, $page)): ?>
@@ -49,5 +61,30 @@
                 <?= $html /* HTML від App\Core\Markdown: увесь текст екранований, посилання проходять білий список */ ?>
             </div>
         </div>
+
+        <?php if (!empty($children)): ?>
+            <div class="card mt-3">
+                <div class="card-header fw-semibold">Підсторінки (<?= count($children) ?>)</div>
+                <ul class="list-group list-group-flush">
+                    <?php foreach ($children as $c): ?>
+                        <li class="list-group-item"><a href="/wiki/<?= $e($c['slug']) ?>"><?= $e($c['title']) ?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($attachments)): ?>
+            <div class="card mt-3">
+                <div class="card-header fw-semibold">Вкладення (<?= count($attachments) ?>)</div>
+                <ul class="list-group list-group-flush">
+                    <?php foreach ($attachments as $a): ?>
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                            <a href="/wiki/files/<?= (int) $a['id'] ?>"<?= \App\Models\WikiAttachment::isImage($a['mime_type']) ? ' target="_blank" rel="noopener noreferrer"' : '' ?>><?= $e($a['original_name']) ?></a>
+                            <span class="text-muted small text-nowrap"><?= $e(\App\Core\UploadLimits::human((int) $a['size_bytes'])) ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
     </div>
 </div>

@@ -38,7 +38,10 @@
                 <tbody>
                 <?php foreach ($sidebarPages as $p): ?>
                     <tr>
-                        <td><a href="/wiki/<?= \App\Core\View::e($p['slug']) ?>"><?= \App\Core\View::e($p['title']) ?></a></td>
+                        <td<?php if (!empty($p['depth'])): ?> style="padding-left: <?= 0.5 + min((int) $p['depth'], 5) * 1.5 ?>rem"<?php endif; ?>>
+                            <?php if (!empty($p['depth'])): ?><span class="text-muted" aria-hidden="true">↳</span> <?php endif; ?>
+                            <a href="/wiki/<?= \App\Core\View::e($p['slug']) ?>"><?= \App\Core\View::e($p['title']) ?></a>
+                        </td>
                         <td class="text-nowrap"><?= \App\Core\View::e(date('d.m.Y H:i', strtotime($p['updated_at']))) ?></td>
                         <td><?= \App\Core\View::e($p['updated_by_name'] ?? '—') ?></td>
                     </tr>

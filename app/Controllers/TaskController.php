@@ -13,7 +13,7 @@ class TaskController
 {
     /** Допустимі значення пріоритету (ENUM у БД) — валідуємо тут, щоб замість
      *  незрозумілої помилки БД користувач бачив зрозуміле повідомлення. */
-    private const PRIORITIES = ['low', 'normal', 'high', 'critical'];
+    private const PRIORITIES = \App\Models\Task::PRIORITIES;
 
     /** Глобальний список відкритих задач з видимих користувачу проєктів (посилання з дашборду). */
     public function indexOpen(): void

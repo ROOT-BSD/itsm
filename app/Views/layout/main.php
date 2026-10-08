@@ -30,6 +30,8 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
                 <li class="nav-item"><a class="nav-link" href="/archive">Архів</a></li>
                 <li class="nav-item"><a class="nav-link" href="/wiki">Вікі</a></li>
+                <li class="nav-item"><a class="nav-link" href="/library">Документи</a></li>
+                <li class="nav-item"><a class="nav-link" href="/forum">Форум</a></li>
                 <?php if (Auth::hasRole(['admin'])): ?>
                 <li class="nav-item"><a class="nav-link<?= \App\Core\AdminNav::currentSection() !== null ? ' active' : '' ?>" href="/admin"<?= \App\Core\AdminNav::currentSection() !== null ? ' aria-current="page"' : '' ?>>Адмін-панель</a></li>
                 <?php endif; ?>

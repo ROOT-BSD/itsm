@@ -142,6 +142,17 @@ final class ErrorHandler
             @ob_end_clean();
         }
 
+        // REST API: клієнт — програма, а не людина, тож замість HTML-сторінки віддаємо JSON у форматі решти помилок API.
+        // Технічних подробиць тут немає навіть для адміністратора (запит API не має сесії): причину шукають за кодом у журналі.
+        $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        if ($path === '/api' || str_starts_with($path, '/api/')) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            echo json_encode(['error' => ['code' => 'server_error', 'message' => "Внутрішня помилка сервера. Код інциденту: {$id} (адміністратору: див. storage/logs)."]], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
         $h = static fn(string $s): string => htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $details = '';
         if (self::viewerIsAdmin()) {

@@ -149,13 +149,18 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                         <input class="form-check-input" type="checkbox" name="notify_tasks_enabled" id="notify_tasks_enabled" value="1" <?= $notifyTasksEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
                         <label class="form-check-label" for="notify_tasks_enabled">Сповіщення про задачі — створення з виконавцем, зміна призначення</label>
                     </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notify_forum_enabled" id="notify_forum_enabled" value="1" <?= $notifyForumEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_forum_enabled">Сповіщення про форум — нова відповідь у темі, де ви автор або учасник</label>
+                        <div class="form-text">Лист отримують автор теми та ті, хто в ній писав (не більше 20 адресатів на відповідь), якщо бачать розділ.</div>
+                    </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="notify_reminders_enabled" id="notify_reminders_enabled" value="1" <?= $notifyRemindersEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
                         <label class="form-check-label" for="notify_reminders_enabled">Нагадування про термін задачі — за 2 дні, за 1 день, у день настання</label>
                         <div class="form-text">Потребує окремого запису в cron (див. нижче) — самої галочки недостатньо.</div>
                     </div>
                     <?php if (!$smtpConfigured): ?>
-                        <div class="form-text text-warning mb-3">Усі чотири сповіщення вище вимкнені, доки не налаштовано надсилання пошти (SMTP) ліворуч.</div>
+                        <div class="form-text text-warning mb-3">Усі сповіщення вище вимкнені, доки не налаштовано надсилання пошти (SMTP) ліворуч.</div>
                     <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label">Черга для тікетів з пошти</label>

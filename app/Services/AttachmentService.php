@@ -86,8 +86,8 @@ class AttachmentService
 
     private const WRITE_ERROR = 'не вдалося зберегти файл на сервері — перевірте, що директорія storage/uploads доступна для запису веб-серверу';
 
-    /** Випадкове ім'я для файлу у сховищі та повний шлях до нього (створює піддиректорію). Лише для нового файлу. */
-    private static function newStoragePath(?string &$storedName): ?string
+    /** Випадкове ім'я для файлу у сховищі та повний шлях до нього (створює піддиректорію). Лише для нового файлу. Спільне для вкладень і бібліотеки документів. */
+    public static function newStoragePath(?string &$storedName): ?string
     {
         $storedName = bin2hex(random_bytes(16));
         $dir = self::storageDir() . '/' . substr($storedName, 0, 2);

@@ -7,6 +7,9 @@ use App\Services\NotificationService;
 
 class Task
 {
+    /** Допустимі пріоритети задачі (єдиний перелік для веб-форми, REST API й вебхуків). */
+    public const PRIORITIES = ['low', 'normal', 'high', 'critical'];
+
     /**
      * Задачі, чий діапазон [start_date; due_date] перетинається із заданим
      * періодом (для календаря) — на відміну від простого "due_date BETWEEN",
@@ -395,6 +398,7 @@ class Task
             'INSERT INTO comments (task_id, author_id, body) VALUES (:task_id, :author_id, :body)'
         );
         $stmt->execute(['task_id' => $taskId, 'author_id' => $authorId, 'body' => $body]);
+        \App\Services\WebhookService::emitTaskComment($taskId, (int) Database::connection()->lastInsertId(), $authorId);
     }
 
     public static function comments(int $taskId): array

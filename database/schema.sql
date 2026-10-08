@@ -76,6 +76,74 @@ CREATE TABLE IF NOT EXISTS project_members (
     INDEX idx_project_members_user (user_id)
 ) ENGINE=InnoDB;
 
+-- REST API: персональні токени доступу. Токен показується ОДИН раз при створенні; у БД лежить лише його SHA-256 (token_hash),
+-- тож витік БД не дає працюючих токенів. Токен діє від імені свого власника: ті самі ролі й правила видимості, що й у вебі.
+-- scope: read — лише читання; write — ще й створення/зміна. revoked_at — відкликаний; expires_at — необов'язковий термін дії.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    token_prefix VARCHAR(16) NOT NULL,
+    scope VARCHAR(10) NOT NULL DEFAULT 'read',
+    expires_at DATETIME NULL,
+    last_used_at DATETIME NULL,
+    last_used_ip VARCHAR(45) NULL,
+    revoked_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_api_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_api_tokens_user (user_id)
+) ENGINE=InnoDB;
+
+-- Лічильник запитів API по хвилинах (вікно 60 с) для обмеження частоти на токен.
+CREATE TABLE IF NOT EXISTS api_rate_limits (
+    token_id INT NOT NULL,
+    window_start INT UNSIGNED NOT NULL,
+    hits INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (token_id, window_start),
+    CONSTRAINT fk_api_rate_limits_token FOREIGN KEY (token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Вебхуки: адреси, на які система надсилає події (POST, JSON, підпис HMAC-SHA256 за secret).
+-- events: '*' (усі) або перелік подій через кому. consecutive_failures — поспіль невдалих доставок; після ліміту
+-- ендпоінт автоматично вимикається (disabled_reason пояснює чому).
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    url VARCHAR(500) NOT NULL,
+    secret VARCHAR(64) NOT NULL,
+    events TEXT NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    verify_tls TINYINT(1) NOT NULL DEFAULT 1,
+    consecutive_failures INT NOT NULL DEFAULT 0,
+    disabled_reason VARCHAR(255) NULL,
+    created_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_webhook_endpoints_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Черга й журнал доставок вебхуків. Подія спершу ЗАПИСУЄТЬСЯ сюди (в одній транзакції зі зміною, що її спричинила, —
+-- відкат зміни скасовує й подію), а надсилається окремо: одразу після відповіді користувачу та скриптом bin/deliver-webhooks.php
+-- (повтори з наростаючою паузою). status: pending / success / failed (вичерпано спроби).
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    endpoint_id INT NOT NULL,
+    event VARCHAR(60) NOT NULL,
+    event_id CHAR(36) NOT NULL,
+    payload MEDIUMTEXT NOT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'pending',
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME NULL,
+    last_status_code SMALLINT NULL,
+    last_error VARCHAR(500) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at DATETIME NULL,
+    CONSTRAINT fk_webhook_deliveries_endpoint FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+    INDEX idx_webhook_deliveries_due (status, next_attempt_at),
+    INDEX idx_webhook_deliveries_endpoint (endpoint_id, id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS project_members (
     project_id INT NOT NULL,
     user_id INT NOT NULL,
@@ -291,6 +359,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE TABLE IF NOT EXISTS wiki_pages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     slug VARCHAR(80) NOT NULL UNIQUE,
+    parent_id INT NULL,
     title VARCHAR(200) NOT NULL,
     content MEDIUMTEXT NOT NULL,
     visibility VARCHAR(10) NOT NULL DEFAULT 'all',
@@ -304,6 +373,8 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_wiki_pages_created FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_wiki_pages_updated FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_wiki_pages_parent FOREIGN KEY (parent_id) REFERENCES wiki_pages(id) ON DELETE SET NULL,
+    INDEX idx_wiki_pages_parent (parent_id),
     INDEX idx_wiki_pages_sort (sort_order, title)
 ) ENGINE=InnoDB;
 
@@ -352,4 +423,125 @@ CREATE TABLE IF NOT EXISTS task_due_reminders (
     sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_task_reminder (task_id, reminder_type),
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Лічильники обмеження частоти запитів до публічного порталу /support.
+-- bucket: «portal.<дія>.<довжина вікна в секундах>»; subject: IP-адреса клієнта (IPv6 — підмережа /64);
+-- window_start: початок вікна (unix-час); hits: кількість запитів у вікні. Старі вікна очищаються автоматично.
+CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket VARCHAR(40) NOT NULL,
+    subject VARCHAR(45) NOT NULL,
+    window_start INT UNSIGNED NOT NULL,
+    hits INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (bucket, subject, window_start),
+    INDEX idx_rate_limits_window (window_start)
+) ENGINE=InnoDB;
+
+-- Бібліотека документів (розділ «Документи»).
+-- Розділи (плоский перелік). Видалення розділу не видаляє документи: вони переходять до «Без розділу».
+CREATE TABLE IF NOT EXISTS library_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    sort_order INT NOT NULL DEFAULT 100
+) ENGINE=InnoDB;
+
+-- Документ — «обкладинка» (назва, опис, розділ, хто бачить); самі файли лежать у library_versions.
+-- visibility: all / staff / admin — ті самі значення й правила, що й у вікі.
+CREATE TABLE IF NOT EXISTS library_documents (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT NULL,
+    visibility VARCHAR(10) NOT NULL DEFAULT 'all',
+    created_by INT NULL,
+    updated_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_library_documents_category FOREIGN KEY (category_id) REFERENCES library_categories(id) ON DELETE SET NULL,
+    CONSTRAINT fk_library_documents_created FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_library_documents_updated FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_library_documents_category (category_id),
+    INDEX idx_library_documents_title (title)
+) ENGINE=InnoDB;
+
+-- Версії файлу документа. Поточна — з найбільшим version_no; старі зберігаються й доступні за прямим посиланням.
+-- stored_name — випадкове ім'я у storage/uploads (те саме сховище, що й у вкладень тікетів/задач).
+CREATE TABLE IF NOT EXISTS library_versions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    document_id INT NOT NULL,
+    version_no INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name CHAR(32) NOT NULL UNIQUE,
+    mime_type VARCHAR(100) NOT NULL,
+    size_bytes INT UNSIGNED NOT NULL,
+    comment VARCHAR(255) NULL,
+    uploaded_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_library_versions_document FOREIGN KEY (document_id) REFERENCES library_documents(id) ON DELETE CASCADE,
+    CONSTRAINT fk_library_versions_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_library_versions_doc_no (document_id, version_no)
+) ENGINE=InnoDB;
+
+-- Форум: розділи, теми, повідомлення.
+-- Розділи форуму. visibility: all / staff / admin — ті самі значення й правила, що у вікі та бібліотеки документів.
+-- is_locked: розділ закритий для нових тем (тема від модератора можлива; наявні теми читаються).
+CREATE TABLE IF NOT EXISTS forum_boards (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description VARCHAR(500) NULL,
+    visibility VARCHAR(10) NOT NULL DEFAULT 'all',
+    sort_order INT NOT NULL DEFAULT 100,
+    is_locked TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- Теми. reply_count / last_post_at / last_post_by — похідні величини (перераховуються з повідомлень після кожної зміни),
+-- збережені, щоб список тем не рахував повідомлення на кожен рядок. is_pinned — закріплена вгорі; is_locked — нові відповіді закриті.
+CREATE TABLE IF NOT EXISTS forum_topics (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    board_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    author_id INT NULL,
+    is_pinned TINYINT(1) NOT NULL DEFAULT 0,
+    is_locked TINYINT(1) NOT NULL DEFAULT 0,
+    reply_count INT UNSIGNED NOT NULL DEFAULT 0,
+    last_post_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_post_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_forum_topics_board FOREIGN KEY (board_id) REFERENCES forum_boards(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_topics_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_forum_topics_last_by FOREIGN KEY (last_post_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_forum_topics_board (board_id, is_pinned, last_post_at)
+) ENGINE=InnoDB;
+
+-- Повідомлення. Перше повідомлення теми (найменший id) — її початковий текст. Текст — Markdown (безпечна підмножина).
+CREATE TABLE IF NOT EXISTS forum_posts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    topic_id INT NOT NULL,
+    author_id INT NULL,
+    body MEDIUMTEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    edited_at DATETIME NULL,
+    edited_by INT NULL,
+    CONSTRAINT fk_forum_posts_topic FOREIGN KEY (topic_id) REFERENCES forum_topics(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_posts_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_forum_posts_edited FOREIGN KEY (edited_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_forum_posts_topic (topic_id, id)
+) ENGINE=InnoDB;
+
+-- Вкладення сторінки. Файли лежать у storage/uploads (поза веб-коренем) під випадковими іменами, як і решта файлів;
+-- віддаються через /wiki/files/{id} з перевіркою видимості САМОЇ сторінки. Видалення сторінки видаляє записи
+-- (каскадом), а файли з диска прибирає код.
+CREATE TABLE IF NOT EXISTS wiki_attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    page_id INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name CHAR(32) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    size_bytes INT NOT NULL,
+    uploaded_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_wiki_attachments_page FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wiki_attachments_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_wiki_attachments_page (page_id)
 ) ENGINE=InnoDB;

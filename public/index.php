@@ -14,6 +14,8 @@ use App\Controllers\EmailController;
 use App\Controllers\AdController;
 use App\Controllers\AttachmentController;
 use App\Controllers\WikiController;
+use App\Controllers\LibraryController;
+use App\Controllers\ForumController;
 use App\Controllers\AuthController;
 use App\Controllers\CalendarController;
 use App\Controllers\ReportController;
@@ -24,9 +26,21 @@ use App\Controllers\SupportController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectController;
 use App\Controllers\TaskController;
+use App\Controllers\ApiAdminController;
+use App\Controllers\WebhookAdminController;
+use App\Controllers\Api\LookupsApiController;
+use App\Controllers\Api\MeApiController;
+use App\Controllers\Api\ProjectsApiController;
+use App\Controllers\Api\TasksApiController;
+use App\Controllers\Api\TicketsApiController;
 
-Auth::start();
-Csp::sendHeaders();
+// REST API (/api/…) не має сесій і cookie: автентифікація лише токеном у заголовку. Без session_start() запит API не створює
+// сесію, не видає Set-Cookie й не може «успадкувати» вхід користувача з браузера; CSP-заголовки потрібні лише HTML-сторінкам.
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+if ($requestPath !== '/api' && !str_starts_with($requestPath, '/api/')) {
+    Auth::start();
+    Csp::sendHeaders();
+}
 
 $router = new Router();
 
@@ -61,6 +75,8 @@ $router->get('/reports/pdf', [$reports, 'generatePdf']);
 $profile = new ProfileController();
 $router->get('/profile', [$profile, 'index']);
 $router->post('/profile/password', [$profile, 'updatePassword']);
+$router->post('/profile/api-tokens', [$profile, 'createApiToken']);
+$router->post('/profile/api-tokens/{id}/revoke', fn($p) => $profile->revokeApiToken($p));
 
 // --- Проєкти ---
 $projects = new ProjectController();
@@ -126,13 +142,55 @@ $router->get('/wiki', fn() => $wiki->index());
 $router->get('/wiki/new', fn() => $wiki->create());
 $router->post('/wiki/preview', fn() => $wiki->preview());
 $router->post('/wiki', fn() => $wiki->store());
+$router->get('/wiki/files/{id}', fn($p) => $wiki->file($p));
 $router->get('/wiki/{slug}', fn($p) => $wiki->show($p));
 $router->get('/wiki/{slug}/edit', fn($p) => $wiki->edit($p));
 $router->post('/wiki/{slug}', fn($p) => $wiki->update($p));
 $router->post('/wiki/{slug}/delete', fn($p) => $wiki->delete($p));
+$router->post('/wiki/{slug}/attachments', fn($p) => $wiki->uploadAttachment($p));
+$router->post('/wiki/{slug}/attachments/{id}/delete', fn($p) => $wiki->deleteAttachment($p));
 $router->get('/wiki/{slug}/history', fn($p) => $wiki->history($p));
 $router->get('/wiki/{slug}/revisions/{id}', fn($p) => $wiki->revision($p));
 $router->post('/wiki/{slug}/revisions/{id}/restore', fn($p) => $wiki->restore($p));
+
+// Бібліотека документів. Статичні адреси («new», «categories», «versions») — ПЕРЕД «/library/{id}».
+$library = new LibraryController();
+$router->get('/library', fn() => $library->index());
+$router->get('/library/new', fn() => $library->create());
+$router->post('/library', fn() => $library->store());
+$router->post('/library/categories', fn() => $library->createCategory());
+$router->post('/library/categories/{id}', fn($p) => $library->updateCategory($p));
+$router->post('/library/categories/{id}/delete', fn($p) => $library->deleteCategory($p));
+$router->get('/library/versions/{id}/download', fn($p) => $library->downloadVersion($p));
+$router->post('/library/versions/{id}/delete', fn($p) => $library->deleteVersion($p));
+$router->get('/library/{id}', fn($p) => $library->show($p));
+$router->get('/library/{id}/edit', fn($p) => $library->edit($p));
+$router->post('/library/{id}', fn($p) => $library->update($p));
+$router->post('/library/{id}/versions', fn($p) => $library->addVersion($p));
+$router->post('/library/{id}/delete', fn($p) => $library->delete($p));
+$router->get('/library/{id}/download', fn($p) => $library->download($p));
+
+// Форум. Статичні адреси («boards/new», «search») — ПЕРЕД адресами з {id}.
+$forum = new ForumController();
+$router->get('/forum', fn() => $forum->index());
+$router->get('/forum/search', fn() => $forum->search());
+$router->get('/forum/boards/new', fn() => $forum->newBoard());
+$router->post('/forum/boards', fn() => $forum->storeBoard());
+$router->get('/forum/boards/{id}', fn($p) => $forum->board($p));
+$router->get('/forum/boards/{id}/edit', fn($p) => $forum->editBoard($p));
+$router->post('/forum/boards/{id}', fn($p) => $forum->updateBoard($p));
+$router->post('/forum/boards/{id}/delete', fn($p) => $forum->deleteBoard($p));
+$router->get('/forum/boards/{id}/topics/new', fn($p) => $forum->newTopic($p));
+$router->post('/forum/boards/{id}/topics', fn($p) => $forum->storeTopic($p));
+$router->get('/forum/topics/{id}', fn($p) => $forum->topic($p));
+$router->post('/forum/topics/{id}/reply', fn($p) => $forum->reply($p));
+$router->post('/forum/topics/{id}/pin', fn($p) => $forum->pin($p));
+$router->post('/forum/topics/{id}/lock', fn($p) => $forum->lock($p));
+$router->post('/forum/topics/{id}/move', fn($p) => $forum->move($p));
+$router->get('/forum/posts/{id}', fn($p) => $forum->post($p));
+$router->get('/forum/posts/{id}/edit', fn($p) => $forum->editPost($p));
+$router->post('/forum/posts/{id}', fn($p) => $forum->updatePost($p));
+$router->post('/forum/posts/{id}/delete', fn($p) => $forum->deletePost($p));
 
 // --- Адмін-панель (лише роль admin — перевіряється в конструкторі AdminController) ---
 $router->get('/admin', function () {
@@ -261,5 +319,49 @@ $router->post('/admin/email/app-url', function () {
 $router->post('/admin/email/fetch', function () {
     (new EmailController())->fetchNow();
 });
+
+// --- Адмін-сторінка REST API ---
+$router->get('/admin/api', fn() => (new ApiAdminController())->index());
+$router->post('/admin/api/settings', fn() => (new ApiAdminController())->saveSettings());
+$router->post('/admin/api/tokens', fn() => (new ApiAdminController())->createToken());
+$router->post('/admin/api/tokens/{id}/revoke', fn($p) => (new ApiAdminController())->revokeToken($p));
+
+// --- Адмін-сторінки вебхуків (маршрут «new» стоїть перед «{id}»: точний збіг перевіряється першим) ---
+$router->get('/admin/webhooks', fn() => (new WebhookAdminController())->index());
+$router->get('/admin/webhooks/new', fn() => (new WebhookAdminController())->create());
+$router->post('/admin/webhooks', fn() => (new WebhookAdminController())->store());
+$router->get('/admin/webhooks/{id}', fn($p) => (new WebhookAdminController())->show($p));
+$router->post('/admin/webhooks/{id}', fn($p) => (new WebhookAdminController())->update($p));
+$router->post('/admin/webhooks/{id}/toggle', fn($p) => (new WebhookAdminController())->toggle($p));
+$router->post('/admin/webhooks/{id}/rotate-secret', fn($p) => (new WebhookAdminController())->rotateSecret($p));
+$router->post('/admin/webhooks/{id}/test', fn($p) => (new WebhookAdminController())->test($p));
+$router->post('/admin/webhooks/{id}/delete', fn($p) => (new WebhookAdminController())->delete($p));
+$router->get('/admin/webhooks/{id}/deliveries', fn($p) => (new WebhookAdminController())->deliveries($p));
+$router->post('/admin/webhooks/deliveries/{id}/retry', fn($p) => (new WebhookAdminController())->retry($p));
+
+// --- REST API v1 ---
+// Контролер API автентифікує запит у конструкторі, тому створюється лише всередині обробника конкретного маршруту.
+$router->get('/api/v1/me', fn() => (new MeApiController())->show());
+$router->get('/api/v1/ticket-queues', fn() => (new LookupsApiController())->queues());
+$router->get('/api/v1/task-statuses', fn() => (new LookupsApiController())->taskStatuses());
+$router->get('/api/v1/task-types', fn() => (new LookupsApiController())->taskTypes());
+$router->get('/api/v1/users', fn() => (new LookupsApiController())->users());
+
+$router->get('/api/v1/projects', fn() => (new ProjectsApiController())->index());
+$router->get('/api/v1/projects/{id}', fn($p) => (new ProjectsApiController())->show($p));
+$router->get('/api/v1/projects/{id}/tasks', fn($p) => (new ProjectsApiController())->tasks($p));
+$router->get('/api/v1/projects/{id}/members', fn($p) => (new ProjectsApiController())->members($p));
+$router->post('/api/v1/projects/{id}/tasks', fn($p) => (new TasksApiController())->store($p));
+
+$router->get('/api/v1/tasks', fn() => (new TasksApiController())->index());
+$router->get('/api/v1/tasks/{id}', fn($p) => (new TasksApiController())->show($p));
+$router->patch('/api/v1/tasks/{id}', fn($p) => (new TasksApiController())->update($p));
+$router->post('/api/v1/tasks/{id}/comments', fn($p) => (new TasksApiController())->addComment($p));
+
+$router->get('/api/v1/tickets', fn() => (new TicketsApiController())->index());
+$router->post('/api/v1/tickets', fn() => (new TicketsApiController())->store());
+$router->get('/api/v1/tickets/{id}', fn($p) => (new TicketsApiController())->show($p));
+$router->patch('/api/v1/tickets/{id}', fn($p) => (new TicketsApiController())->update($p));
+$router->post('/api/v1/tickets/{id}/comments', fn($p) => (new TicketsApiController())->addComment($p));
 
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

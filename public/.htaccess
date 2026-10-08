@@ -1,5 +1,9 @@
 RewriteEngine On
 
+# Apache з PHP-FPM/CGI за замовчуванням НЕ передає заголовок Authorization у PHP — без цього рядка REST API
+# (Authorization: Bearer <токен>) завжди відповідав би «потрібен токен». Nginx передає заголовок сам.
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Якщо запитаний файл/директорія реально існує (напр. картинки, якщо з'являться) —
 # віддаємо як є, інакше все спрямовуємо на front controller.
 RewriteCond %{REQUEST_FILENAME} !-f

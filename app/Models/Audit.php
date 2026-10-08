@@ -6,8 +6,25 @@ use App\Core\Database;
 
 class Audit
 {
+    /** Канал, яким виконано запит (наприклад, 'api'); додається до кожного запису цього запиту. Для вебу — null. */
+    private static ?string $via = null;
+
+    public static function setVia(?string $via): void
+    {
+        self::$via = $via;
+    }
+
+    /** Канал поточного запиту ('api' чи null для вебу) — його використовують і вебхуки, щоб події-коментарі теж мали позначку. */
+    public static function via(): ?string
+    {
+        return self::$via;
+    }
+
     public static function log(string $entityType, int $entityId, string $action, ?int $userId, ?array $changes = null): void
     {
+        if (self::$via !== null) {
+            $changes = ($changes ?? []) + ['via' => self::$via];
+        }
         $stmt = Database::connection()->prepare(
             'INSERT INTO audit_log (entity_type, entity_id, action, user_id, changes)
              VALUES (:entity_type, :entity_id, :action, :user_id, :changes)'
@@ -19,6 +36,14 @@ class Audit
             'user_id' => $userId,
             'changes' => $changes ? json_encode($changes, JSON_UNESCAPED_UNICODE) : null,
         ]);
+
+        // Журнал аудиту — єдина точка, через яку проходять усі зміни (веб, портал, пошта, API), тож саме тут ловимо події
+        // для вебхуків: жоден шлях не доводиться правити окремо. Збій вебхуків не має впливати на основну дію.
+        try {
+            \App\Services\WebhookService::fromAudit($entityType, $entityId, $action, $userId, $changes);
+        } catch (\Throwable $e) {
+            error_log('[itsm] webhook hook failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -76,6 +101,9 @@ class Audit
             'milestone' => ['milestones', 'title'],
             'ticket_queue' => ['ticket_queues', 'name'],
             'user' => ['users', 'full_name'],
+            'library_document' => ['library_documents', 'title'],
+            'forum_topic' => ['forum_topics', 'title'],
+            'forum_board' => ['forum_boards', 'name'],
         ];
 
         $idsByType = [];
@@ -110,6 +138,7 @@ class Audit
             'member_user_id' => ['users', 'full_name'],
             'milestone_id' => ['milestones', 'title'],
             'related_task_id' => ['tasks', 'title'],
+            'category_id' => ['library_categories', 'name'],
         ];
 
         $idsByField = [];
@@ -140,7 +169,9 @@ class Audit
     private static function lookupNames(string $table, string $column, array $ids): array
     {
         $ids = array_values(array_unique(array_filter($ids)));
-        if (empty($ids)) {
+        // Таблиці, що з'явились у новіших версіях (бібліотека документів), можуть ще не існувати, якщо міграцію не застосовано:
+        // сторінка журналу тоді просто показує номери замість назв, а не падає.
+        if (empty($ids) || !Database::tableExists($table)) {
             return [];
         }
 

@@ -25,8 +25,13 @@
 #   20. Додає колонку attachments.source (звідки вкладення: web / портал / лист)
 #   21. Створює таблиці вікі й завантажує в неї гайди користувача та адміністратора з docs/
 #   22. Створює таблицю учасників проєктів (надання доступу до проєкту обраним користувачам)
-#   23. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   24. Перевстановлює права доступу на файли для веб-сервера
+#   23. Створює таблиці REST API і вебхуків (API за замовчуванням вимкнене)
+#   24. Створює таблицю лічильників обмеження частоти запитів до порталу /support
+#   25. Створює таблиці бібліотеки документів (розділ «Документи»)
+#   26. Створює таблиці форуму (розділ «Форум»)
+#   27. Вікі: додає батьківську сторінку (ієрархія) і таблицю вкладень (міграція 026)
+#   28. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   29. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -725,8 +730,155 @@ else
     ok "Таблиця project_members вже є — нічого робити не треба"
 fi
 
-# ---------- 23. Очищення застарілого кешу PDF-шрифтів ----------
-section "23. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 23. REST API і вебхуки ----------
+section "23. Перевірка таблиць REST API і вебхуків"
+
+API_TABLES=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME IN ('api_tokens', 'api_rate_limits', 'webhook_endpoints', 'webhook_deliveries');
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${API_TABLES:-0}" -lt 4 ]; then
+    info "Таблиці REST API і вебхуків не знайдено (або знайдено не всі) — створюю..."
+
+    MIGRATION_API="${SCRIPT_DIR}/database/migrations/022_add_api_and_webhooks.sql"
+    if [ ! -f "$MIGRATION_API" ]; then
+        fail "Файл ${MIGRATION_API} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_API" >/dev/null 2>&1; then
+        ok "Таблиці створено — REST API (за замовчуванням ВИМКНЕНО) і вебхуки з'явились у Адмін-панель → Налаштування"
+    else
+        fail "Помилка створення таблиць REST API і вебхуків"
+        exit 1
+    fi
+else
+    ok "Таблиці REST API і вебхуків вже є — нічого створювати не треба"
+fi
+
+# ---------- 24. Обмеження частоти запитів до порталу ----------
+section "24. Перевірка таблиці обмеження частоти запитів"
+
+RL_TABLE=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rate_limits';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${RL_TABLE:-0}" -lt 1 ]; then
+    info "Таблицю rate_limits не знайдено — створюю..."
+
+    MIGRATION_RL="${SCRIPT_DIR}/database/migrations/023_add_rate_limits.sql"
+    if [ ! -f "$MIGRATION_RL" ]; then
+        fail "Файл ${MIGRATION_RL} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_RL" >/dev/null 2>&1; then
+        ok "Таблицю створено — портал /support тепер захищений від флуду (10 звернень за 10 хв і 30 за добу з однієї IP)"
+        info "Якщо сайт стоїть за зворотним проксі/балансувальником — вкажіть його адресу в .env: TRUSTED_PROXIES=10.0.0.5"
+    else
+        fail "Помилка створення таблиці rate_limits"
+        exit 1
+    fi
+else
+    ok "Таблиця rate_limits вже є — нічого створювати не треба"
+fi
+
+# ---------- 25. Бібліотека документів ----------
+section "25. Перевірка таблиць бібліотеки документів"
+
+LIB_TABLES=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME IN ('library_categories', 'library_documents', 'library_versions');
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${LIB_TABLES:-0}" -lt 3 ]; then
+    info "Таблиці бібліотеки документів не знайдено (або знайдено не всі) — створюю..."
+
+    MIGRATION_LIB="${SCRIPT_DIR}/database/migrations/024_add_document_library.sql"
+    if [ ! -f "$MIGRATION_LIB" ]; then
+        fail "Файл ${MIGRATION_LIB} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_LIB" >/dev/null 2>&1; then
+        ok "Таблиці створено — у верхньому меню з'явився розділ «Документи»"
+        info "Розмір файлу за замовчуванням — до 25 МБ (LIBRARY_MAX_MB в .env), але не більше PHP-лімітів upload_max_filesize і post_max_size."
+    else
+        fail "Помилка створення таблиць бібліотеки документів"
+        exit 1
+    fi
+else
+    ok "Таблиці бібліотеки документів вже є — нічого створювати не треба"
+fi
+
+# ---------- 26. Форум ----------
+section "26. Перевірка таблиць форуму"
+
+FORUM_TABLES=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME IN ('forum_boards', 'forum_topics', 'forum_posts');
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${FORUM_TABLES:-0}" -lt 3 ]; then
+    info "Таблиці форуму не знайдено (або знайдено не всі) — створюю..."
+
+    MIGRATION_FORUM="${SCRIPT_DIR}/database/migrations/025_add_forum.sql"
+    if [ ! -f "$MIGRATION_FORUM" ]; then
+        fail "Файл ${MIGRATION_FORUM} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_FORUM" >/dev/null 2>&1; then
+        ok "Таблиці створено — у верхньому меню з'явився «Форум» (спершу адміністратор створює в ньому розділи)"
+    else
+        fail "Помилка створення таблиць форуму"
+        exit 1
+    fi
+else
+    ok "Таблиці форуму вже є — нічого створювати не треба"
+fi
+
+# ---------- 27. Вікі: ієрархія сторінок і вкладення ----------
+section "27. Перевірка ієрархії сторінок і вкладень вікі"
+
+WIKI_V2=$(echo "
+    SELECT (SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wiki_pages' AND COLUMN_NAME = 'parent_id')
+         + (SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wiki_attachments');
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${WIKI_V2:-0}" -lt 2 ]; then
+    info "Ієрархії сторінок або вкладень вікі ще немає — додаю..."
+
+    MIGRATION_WIKI2="${SCRIPT_DIR}/database/migrations/026_add_wiki_hierarchy_and_attachments.sql"
+    if [ ! -f "$MIGRATION_WIKI2" ]; then
+        fail "Файл ${MIGRATION_WIKI2} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_WIKI2" >/dev/null 2>&1; then
+        ok "Готово — у вікі можна вкладати сторінки одна в одну та додавати зображення й файли"
+    else
+        fail "Помилка міграції вікі (ієрархія й вкладення)"
+        exit 1
+    fi
+else
+    ok "Ієрархія сторінок і вкладення вікі вже є — нічого створювати не треба"
+fi
+
+# ---------- 28. Очищення застарілого кешу PDF-шрифтів ----------
+section "28. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -742,8 +894,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 24. Права доступу ----------
-section "24. Права доступу до файлів"
+# ---------- 29. Права доступу ----------
+section "29. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"
@@ -792,6 +944,10 @@ cat <<FINAL
   ${BOLD}2.${NC} З'явився пункт меню «Тікети».
   ${BOLD}3.${NC} На сторінці проєкту є поле «Відповідальний».
   ${BOLD}4.${NC} На сторінці задачі є поле «Виконавець».
+
+  Вебхуки (якщо ними користуєтесь): додайте в cron щохвилини — він відправляє події, що не встигли піти одразу,
+  і виконує повтори невдалих доставок (з Apache mod_php без нього вебхуки не працюватимуть):
+    * * * * *  www-data  php ${SCRIPT_DIR}/bin/deliver-webhooks.php >> /var/log/itsm-webhooks.log 2>&1
 
   Якщо сторінка не відкривається (помилка 500):
   ${BOLD}•${NC} Увійдіть адміністратором: сторінка помилки покаже ПРИЧИНУ й код інциденту; запис із деталями —

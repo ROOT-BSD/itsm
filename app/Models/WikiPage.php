@@ -12,8 +12,10 @@ class WikiPage
 {
     public const VISIBILITIES = ['all' => 'Усі, хто увійшов', 'staff' => 'Персонал (без заявників)', 'admin' => 'Лише адміністратор'];
     public const MAX_CONTENT_CHARS = 300000;
+    /** Максимальна глибина вкладеності (кореневі сторінки — рівень 1). */
+    public const MAX_DEPTH = 6;
     /** Адреси, що збігаються з маршрутами вікі, — для сторінок заборонені. */
-    private const RESERVED_SLUGS = ['new', 'preview', 'search', 'edit', 'history', 'revisions', 'delete'];
+    private const RESERVED_SLUGS = ['new', 'preview', 'search', 'edit', 'history', 'revisions', 'delete', 'files', 'attachments'];
 
     // ------------------------------------------------------------------ права
 
@@ -61,13 +63,21 @@ class WikiPage
         return $stmt->fetch() ?: null;
     }
 
+    public static function findById(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare('SELECT * FROM wiki_pages WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
     /** Список сторінок, видимих ролі (без вмісту — він може бути великим). @return array<int, array<string, mixed>> */
     public static function listVisible(?string $role): array
     {
         $allowed = self::allowedVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
+        $parent = self::hierarchyReady() ? 'p.parent_id' : 'NULL AS parent_id';
         $stmt = Database::connection()->prepare(
-            "SELECT p.id, p.slug, p.title, p.visibility, p.sort_order, p.version, p.source, p.updated_at, u.full_name AS updated_by_name
+            "SELECT p.id, p.slug, p.title, p.visibility, p.sort_order, p.version, p.source, p.updated_at, $parent, u.full_name AS updated_by_name
              FROM wiki_pages p LEFT JOIN users u ON u.id = p.updated_by
              WHERE p.visibility IN ($in)
              ORDER BY p.sort_order ASC, p.title ASC"
@@ -103,6 +113,164 @@ class WikiPage
     public static function allSlugs(): array
     {
         return Database::connection()->query('SELECT slug FROM wiki_pages')->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    // ------------------------------------------------------------------ ієрархія
+
+    /** Чи застосовано міграцію 026 (колонка parent_id). Без неї вікі працює плоским списком. */
+    public static function hierarchyReady(): bool
+    {
+        return Database::columnExists('wiki_pages', 'parent_id');
+    }
+
+    /** Чи застосовано міграцію 026 (таблиця вкладень). */
+    public static function attachmentsReady(): bool
+    {
+        return Database::tableExists('wiki_attachments');
+    }
+
+    /**
+     * Розкладає список сторінок у дерево й повертає його ПЛОСКИМ списком у порядку обходу в глибину, кожна
+     * сторінка отримує 'depth' (0 — верхній рівень). Сторінка, батька якої немає в переданому списку (його не
+     * видно цій ролі), показується на верхньому рівні: так не розкриваємо назви прихованих сторінок і не
+     * губимо видимі. Цикли (не мають виникати) не зациклюють обхід.
+     *
+     * @param array<int, array<string, mixed>> $pages із listVisible()
+     * @return array<int, array<string, mixed>>
+     */
+    public static function tree(array $pages): array
+    {
+        $ids = [];
+        foreach ($pages as $p) {
+            $ids[(int) $p['id']] = true;
+        }
+        $children = [];
+        foreach ($pages as $p) {
+            $parent = $p['parent_id'] !== null && isset($ids[(int) $p['parent_id']]) && (int) $p['parent_id'] !== (int) $p['id'] ? (int) $p['parent_id'] : 0;
+            $children[$parent][] = $p;
+        }
+        $out = [];
+        $seen = [];
+        $walk = static function (int $parent, int $depth) use (&$walk, &$children, &$out, &$seen): void {
+            foreach ($children[$parent] ?? [] as $p) {
+                $id = (int) $p['id'];
+                if (isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+                $p['depth'] = $depth;
+                $p['has_children'] = !empty($children[$id]);
+                $out[] = $p;
+                $walk($id, $depth + 1);
+            }
+        };
+        $walk(0, 0);
+        // Сторінки з циклу (недосяжні від кореня) — наприкінці, на верхньому рівні.
+        foreach ($pages as $p) {
+            if (!isset($seen[(int) $p['id']])) {
+                $p['depth'] = 0;
+                $p['has_children'] = false;
+                $out[] = $p;
+            }
+        }
+        return $out;
+    }
+
+    /** Предки сторінки від кореня до батька, лише ті, що є у списку видимих ($visible із listVisible()). */
+    public static function ancestors(array $page, array $visible): array
+    {
+        $byId = [];
+        foreach ($visible as $p) {
+            $byId[(int) $p['id']] = $p;
+        }
+        $chain = [];
+        $guard = 0;
+        $current = $page['parent_id'] ?? null;
+        while ($current !== null && isset($byId[(int) $current]) && $guard++ < 20) {
+            $parent = $byId[(int) $current];
+            array_unshift($chain, $parent);
+            $current = $parent['parent_id'];
+        }
+        return $chain;
+    }
+
+    /** Прямі підсторінки (з видимих), у порядку sort_order, назва. */
+    public static function childrenOf(int $pageId, array $visible): array
+    {
+        return array_values(array_filter($visible, static fn(array $p): bool => $p['parent_id'] !== null && (int) $p['parent_id'] === $pageId));
+    }
+
+    /** id усіх нащадків сторінки (будь-якої глибини), включно з невидимими цій ролі. @return int[] */
+    public static function descendantIds(int $pageId): array
+    {
+        if (!self::hierarchyReady()) {
+            return [];
+        }
+        $found = [];
+        $frontier = [$pageId];
+        for ($level = 0; $level < 50 && $frontier; $level++) {
+            $in = implode(',', array_fill(0, count($frontier), '?'));
+            $stmt = Database::connection()->prepare("SELECT id FROM wiki_pages WHERE parent_id IN ($in)");
+            $stmt->execute($frontier);
+            $frontier = [];
+            foreach ($stmt->fetchAll(\PDO::FETCH_COLUMN) as $id) {
+                $id = (int) $id;
+                if ($id !== $pageId && !isset($found[$id])) {
+                    $found[$id] = true;
+                    $frontier[] = $id;
+                }
+            }
+        }
+        return array_keys($found);
+    }
+
+    /** Скільки рівнів над сторінкою (0 — вона сама корінь). */
+    private static function depthOf(int $pageId): int
+    {
+        $depth = 0;
+        $current = $pageId;
+        while ($depth < 50) {
+            $stmt = Database::connection()->prepare('SELECT parent_id FROM wiki_pages WHERE id = :id');
+            $stmt->execute(['id' => $current]);
+            $parent = $stmt->fetchColumn();
+            if ($parent === false || $parent === null) {
+                break;
+            }
+            $current = (int) $parent;
+            $depth++;
+        }
+        return $depth;
+    }
+
+    /**
+     * Чому не можна зробити $parentId батьком сторінки $pageId ($pageId = null — для нової сторінки);
+     * null — можна. Правила: батько існує; не сама сторінка і не її нащадок (інакше утвориться цикл);
+     * глибина не перевищує MAX_DEPTH.
+     */
+    public static function parentProblem(?int $pageId, int $parentId): ?string
+    {
+        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM wiki_pages WHERE id = :id');
+        $stmt->execute(['id' => $parentId]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            return 'Обрана батьківська сторінка не існує.';
+        }
+        if ($pageId !== null && ($parentId === $pageId || in_array($parentId, self::descendantIds($pageId), true))) {
+            return 'Сторінку не можна зробити підсторінкою самої себе чи її власної підсторінки.';
+        }
+        if (self::depthOf($parentId) + 2 > self::MAX_DEPTH) {
+            return 'Забагато рівнів вкладеності (максимум ' . self::MAX_DEPTH . ').';
+        }
+        return null;
+    }
+
+    /** Встановлює батька (null — верхній рівень). Валідацію робить parentProblem(). Нова версія в історії не створюється. */
+    public static function setParent(int $id, ?int $parentId): void
+    {
+        if (!self::hierarchyReady()) {
+            return;
+        }
+        Database::connection()->prepare('UPDATE wiki_pages SET parent_id = :parent WHERE id = :id')
+            ->execute(['parent' => $parentId, 'id' => $id]);
     }
 
     // ------------------------------------------------------------------ slug
@@ -236,9 +404,29 @@ class WikiPage
         }
     }
 
+    /** Видаляє сторінку; її підсторінки піднімаються на рівень вище (до батька видаленої), а не зникають. */
     public static function delete(int $id): void
     {
-        Database::connection()->prepare('DELETE FROM wiki_pages WHERE id = :id')->execute(['id' => $id]);
+        $pdo = Database::connection();
+        $own = !$pdo->inTransaction();
+        if ($own) {
+            $pdo->beginTransaction();
+        }
+        try {
+            if (self::hierarchyReady()) {
+                $pdo->prepare('UPDATE wiki_pages SET parent_id = (SELECT pp FROM (SELECT parent_id AS pp FROM wiki_pages WHERE id = :id) t) WHERE parent_id = :id2')
+                    ->execute(['id' => $id, 'id2' => $id]);
+            }
+            $pdo->prepare('DELETE FROM wiki_pages WHERE id = :id')->execute(['id' => $id]);
+            if ($own) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($own && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     // ------------------------------------------------------------------ історія
