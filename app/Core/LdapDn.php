@@ -57,6 +57,44 @@ class LdapDn
         return implode(' › ', array_reverse($names));
     }
 
+    /**
+     * Підрозділ, введений людиною (форма користувача), -> шлях у форматі ouPath ("OU=IT,OU=Kyiv").
+     * Приймає і готовий шлях ("OU=IT,OU=Kyiv"), і читабельний запис від кореня до листа ("Kyiv › IT",
+     * роздільники › > / або \\ не потрібні в назвах). Порожній рядок -> '' (без підрозділу).
+     * Недопустиме (порожня ланка, керуючі символи, задовга назва) -> null.
+     */
+    public static function fromInput(string $input): ?string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            return '';
+        }
+        if (mb_strlen($input) > 500 || preg_match('/[\x00-\x1f\x7f]/', $input)) {
+            return null;
+        }
+
+        if (preg_match('/^ou=/i', $input)) {
+            $parts = array_map('trim', preg_split(self::SEPARATOR, $input) ?: []);
+            foreach ($parts as $part) {
+                if (!preg_match('/^ou=\S.*$/iu', $part)) {
+                    return null;
+                }
+            }
+            return implode(',', $parts);
+        }
+
+        // Читабельний запис: від кореня до листа; у шлях — від листа до кореня.
+        $names = array_map('trim', preg_split('/\s*[›>\/\\\\]\s*/u', $input) ?: []);
+        $ous = [];
+        foreach (array_reverse($names) as $name) {
+            if ($name === '' || str_contains($name, '=')) {
+                return null;
+            }
+            $ous[] = 'OU=' . str_replace(',', '\\,', $name);
+        }
+        return implode(',', $ous);
+    }
+
     private static function unescape(string $value): string
     {
         // \2C -> "," (hex-пара за RFC 4514), потім \, -> "," (екранований спецсимвол)

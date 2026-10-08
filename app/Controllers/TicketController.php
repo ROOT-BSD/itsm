@@ -24,6 +24,11 @@ class TicketController
         Auth::requireLogin();
 
         $tickets = Ticket::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned());
+        // Фільтр за чергою (з сторінки «Мій підрозділ → Черги тікетів»); видимість тікетів він не розширює.
+        if (!empty($_GET['queue'])) {
+            $queueId = (int) $_GET['queue'];
+            $tickets = array_values(array_filter($tickets, fn(array $t): bool => (int) $t['queue_id'] === $queueId));
+        }
         $policies = Ticket::slaPoliciesByQueue();
 
         foreach ($tickets as &$ticket) {

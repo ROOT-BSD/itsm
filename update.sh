@@ -30,8 +30,12 @@
 #   25. Створює таблиці бібліотеки документів (розділ «Документи»)
 #   26. Створює таблиці форуму (розділ «Форум»)
 #   27. Вікі: додає батьківську сторінку (ієрархія) і таблицю вкладень (міграція 026)
-#   28. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   29. Перевстановлює права доступу на файли для веб-сервера
+#   28. Додає прапорці ручного перевизначення ролі/деактивації AD-користувачів (міграція 027)
+#   29. Додає стабільний ідентифікатор AD-користувача objectGUID (міграція 028)
+#   30. Додає роль «Адміністратор Підрозділу» (міграція 029)
+#   31. Додає підрозділ (unit_ou) для локальних користувачів (міграція 030)
+#   32. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   33. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -877,8 +881,117 @@ else
     ok "Ієрархія сторінок і вкладення вікі вже є — нічого створювати не треба"
 fi
 
-# ---------- 28. Очищення застарілого кешу PDF-шрифтів ----------
-section "28. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 28. AD: ручне перевизначення ролі та деактивації ----------
+section "28. Перевірка прапорців ручного перевизначення для AD-користувачів"
+
+AD_OVR=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('ad_role_locked', 'ad_blocked');
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${AD_OVR:-0}" -lt 2 ]; then
+    info "Прапорців ручного перевизначення ще немає — додаю..."
+
+    MIGRATION_ADOVR="${SCRIPT_DIR}/database/migrations/027_add_ad_manual_overrides.sql"
+    if [ ! -f "$MIGRATION_ADOVR" ]; then
+        fail "Файл ${MIGRATION_ADOVR} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_ADOVR" >/dev/null 2>&1; then
+        ok "Готово — роль і деактивацію AD-користувача можна закріпити вручну"
+    else
+        fail "Помилка міграції 027 (ручне перевизначення для AD)"
+        exit 1
+    fi
+else
+    ok "Прапорці ручного перевизначення вже є — нічого створювати не треба"
+fi
+
+# ---------- 29. AD: objectGUID ----------
+section "29. Перевірка колонки objectGUID для AD-користувачів"
+
+AD_GUID=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'ad_guid';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${AD_GUID:-0}" -lt 1 ]; then
+    info "Колонки objectGUID ще немає — додаю..."
+
+    MIGRATION_ADGUID="${SCRIPT_DIR}/database/migrations/028_add_ad_guid.sql"
+    if [ ! -f "$MIGRATION_ADGUID" ]; then
+        fail "Файл ${MIGRATION_ADGUID} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_ADGUID" >/dev/null 2>&1; then
+        ok "Готово — GUID наявних AD-користувачів збережеться під час наступної синхронізації"
+    else
+        fail "Помилка міграції 028 (objectGUID)"
+        exit 1
+    fi
+else
+    ok "Колонка objectGUID вже є — нічого створювати не треба"
+fi
+
+# ---------- 30. Роль «Адміністратор Підрозділу» ----------
+section "30. Перевірка ролі «Адміністратор Підрозділу»"
+
+UNIT_ROLE=$(echo "SELECT COUNT(*) FROM roles WHERE code = 'unit_admin';" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${UNIT_ROLE:-0}" -lt 1 ]; then
+    info "Ролі «Адміністратор Підрозділу» ще немає — додаю..."
+
+    MIGRATION_UNIT="${SCRIPT_DIR}/database/migrations/029_add_unit_admin_role.sql"
+    if [ ! -f "$MIGRATION_UNIT" ]; then
+        fail "Файл ${MIGRATION_UNIT} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_UNIT" >/dev/null 2>&1; then
+        ok "Готово — роль можна призначати користувачам AD (Користувачі) або зіставляти з групою AD"
+    else
+        fail "Помилка міграції 029 (роль «Адміністратор Підрозділу»)"
+        exit 1
+    fi
+else
+    ok "Роль «Адміністратор Підрозділу» вже є — нічого створювати не треба"
+fi
+
+# ---------- 31. Підрозділ локальних користувачів ----------
+section "31. Перевірка колонки підрозділу для локальних користувачів"
+
+UNIT_COL=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'unit_ou';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${UNIT_COL:-0}" -lt 1 ]; then
+    info "Колонки підрозділу для локальних користувачів ще немає — додаю..."
+
+    MIGRATION_UNITCOL="${SCRIPT_DIR}/database/migrations/030_add_local_user_unit.sql"
+    if [ ! -f "$MIGRATION_UNITCOL" ]; then
+        fail "Файл ${MIGRATION_UNITCOL} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_UNITCOL" >/dev/null 2>&1; then
+        ok "Готово — локальному користувачеві можна задати підрозділ (Користувачі → Редагувати)"
+    else
+        fail "Помилка міграції 030 (підрозділ локальних користувачів)"
+        exit 1
+    fi
+else
+    ok "Колонка підрозділу локальних користувачів вже є — нічого створювати не треба"
+fi
+
+# ---------- 32. Очищення застарілого кешу PDF-шрифтів ----------
+section "32. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -894,8 +1007,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 29. Права доступу ----------
-section "29. Права доступу до файлів"
+# ---------- 33. Права доступу ----------
+section "33. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

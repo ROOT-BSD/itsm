@@ -1,6 +1,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="mb-0">Проєкти</h3>
-    <?php if (\App\Core\Auth::hasRole(['admin', 'it_manager'])): ?>
+    <?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
         <a href="/projects/create" class="btn btn-primary">+ Новий проєкт</a>
     <?php endif; ?>
 </div>

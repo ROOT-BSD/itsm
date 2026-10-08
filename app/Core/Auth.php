@@ -66,7 +66,14 @@ class Auth
 
         // Успішний вхід — лічильник невдалих спроб скидається.
         User::resetFailedLogins($user['id']);
+        self::openSession($user);
 
+        return true;
+    }
+
+    /** Записує користувача в сесію (спільне для входу за паролем і SSO). */
+    private static function openSession(array $user): void
+    {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['user_role'] = $user['role_code'];
         $_SESSION['user_name'] = $user['full_name'];
@@ -76,8 +83,77 @@ class Auth
         // НЕ скидаємо тут — форма логіну вже надіслала токен старої сесії,
         // і його заміна одразу після цього не додає захисту, лише ускладнила б код.
         session_regenerate_id(true);
+    }
+
+    /**
+     * Безпарольний вхід: веб-сервер уже автентифікував користувача за Kerberos і передав принципал
+     * (REMOTE_USER). Приймає лише AD-користувачів — локальні акаунти (зокрема адміністратор) через SSO
+     * не входять ніколи. Деталізовану причину відмови повертає lastError().
+     *
+     * @param string $principal «login@REALM», «REALM\login» або просто «login»
+     */
+    public static function attemptSso(string $principal): bool
+    {
+        self::$lastError = null;
+        $ad = Config::get('ad', []);
+
+        if (empty($ad['sso_enabled'])) {
+            self::$lastError = 'Вхід через Windows (SSO) не ввімкнено.';
+            return false;
+        }
+
+        $parsed = self::parsePrincipal($principal);
+        if ($parsed === null) {
+            self::$lastError = 'Сервер не передав ідентифікацію Windows-користувача. Перевірте налаштування SSO на веб-сервері або увійдіть паролем.';
+            return false;
+        }
+        [$login, $realm] = $parsed;
+
+        $expected = (string) ($ad['sso_realm'] ?? '');
+        if ($expected !== '' && ($realm === null || strtoupper($realm) !== $expected)) {
+            self::$lastError = 'Обліковий запис не з очікуваного домену. Увійдіть паролем.';
+            return false;
+        }
+
+        $user = User::findAdByUsername($login);
+        // Спільне повідомлення для «немає такого / неактивний / заблокований» — як і для пароля,
+        // щоб форма не підказувала, які AD-логіни існують.
+        if (!$user || !$user['is_active']
+            || (!empty($user['locked_until']) && strtotime($user['locked_until']) > time())) {
+            self::$lastError = 'Для вашого облікового запису Windows немає доступу до системи. Зверніться до адміністратора.';
+            return false;
+        }
+
+        User::resetFailedLogins((int) $user['id']);
+        self::openSession($user);
+        Audit::log('user', (int) $user['id'], 'ad_sso_login', (int) $user['id'], ['principal' => $login . ($realm !== null ? '@' . strtoupper($realm) : '')]);
 
         return true;
+    }
+
+    /** «login@REALM» / «REALM\login» / «login» -> [login, realm|null]; null, якщо порожньо чи небезпечні символи. */
+    public static function parsePrincipal(string $principal): ?array
+    {
+        $principal = trim($principal);
+        if ($principal === '' || strlen($principal) > 256 || preg_match('/[\x00-\x1f\x7f]/', $principal)) {
+            return null;
+        }
+        $realm = null;
+        if (str_contains($principal, '@')) {
+            $at = strrpos($principal, '@');
+            $login = substr($principal, 0, $at);
+            $realm = substr($principal, $at + 1);
+        } elseif (str_contains($principal, '\\')) {
+            $bs = strpos($principal, '\\');
+            $realm = substr($principal, 0, $bs);
+            $login = substr($principal, $bs + 1);
+        } else {
+            $login = $principal;
+        }
+        if ($login === '' || ($realm !== null && $realm === '')) {
+            return null;
+        }
+        return [$login, $realm];
     }
 
     /** Деталізоване повідомлення про причину останньої невдалої спроби Auth::attempt() — для сторінки логіну. */

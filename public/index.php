@@ -48,6 +48,7 @@ $router = new Router();
 $auth = new AuthController();
 $router->get('/login', [$auth, 'showLogin']);
 $router->post('/login', [$auth, 'login']);
+$router->get('/sso/login', [$auth, 'sso']);
 $router->get('/logout', [$auth, 'logout']);
 
 // --- Портал самообслуговування (публічно, без входу в систему) ---
@@ -261,6 +262,40 @@ $router->post('/admin/security', function () {
 });
 $router->post('/admin/users/{id}/unlock', function ($p) {
     (new AdminController())->unlockUser($p);
+});
+// --- Адміністратор підрозділу (власний AD OU) ---
+$router->get('/unit', function () {
+    (new \App\Controllers\UnitController())->index();
+});
+$router->get('/unit/board', function () {
+    (new \App\Controllers\UnitController())->board();
+});
+$router->get('/unit/gantt', function () {
+    (new \App\Controllers\UnitController())->gantt();
+});
+$router->get('/unit/time', function () {
+    (new \App\Controllers\UnitController())->time();
+});
+$router->get('/unit/queues', function () {
+    (new \App\Controllers\UnitController())->queues();
+});
+$router->get('/unit/csat', function () {
+    (new \App\Controllers\UnitController())->csat();
+});
+$router->get('/unit/audit', function () {
+    (new \App\Controllers\UnitController())->audit();
+});
+$router->post('/unit/users/{id}/role', function ($p) {
+    (new \App\Controllers\UnitController())->setRole($p);
+});
+$router->post('/unit/users/{id}/active', function ($p) {
+    (new \App\Controllers\UnitController())->toggleActive($p);
+});
+$router->post('/unit/users/{id}/password', function ($p) {
+    (new \App\Controllers\UnitController())->setPassword($p);
+});
+$router->post('/unit/users/{id}/unlock', function ($p) {
+    (new \App\Controllers\UnitController())->unlock($p);
 });
 $router->get('/admin/queues', function () {
     (new AdminController())->queues();

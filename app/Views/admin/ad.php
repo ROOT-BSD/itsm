@@ -34,6 +34,7 @@
                         <tr><th>Шифрування</th><td><?= \App\Core\View::e(['ldaps' => 'LDAPS', 'starttls' => 'STARTTLS', 'none' => 'без шифрування'][$ad['encryption']] ?? $ad['encryption']) ?></td></tr>
                         <tr><th>Базовий DN</th><td><?= \App\Core\View::e($ad['base_dn']) ?></td></tr>
                         <tr><th>Службовий акаунт</th><td><?= \App\Core\View::e($ad['bind_dn']) ?></td></tr>
+                        <tr><th>Безпарольний вхід (SSO)</th><td><?= !empty($ad['sso_enabled']) ? 'увімкнено' . (($ad['sso_realm'] ?? '') !== '' ? ' (realm ' . \App\Core\View::e($ad['sso_realm']) . ')' : ' <span class="text-warning">(realm не задано)</span>') : '<span class="text-muted">вимкнено</span> — <code>AD_SSO_ENABLED</code>, розділ 23 посібника' ?></td></tr>
                         <tr><th>Перевірка сертифіката</th><td><?= $ad['verify_cert'] ? 'так' : '<span class="text-warning">вимкнена</span>' ?></td></tr>
                     </table>
                     <form method="post" action="/admin/ad/test">
@@ -66,10 +67,21 @@
                         <label class="form-label small mb-1">Пароль</label>
                         <input type="password" name="ad_bind_password" class="form-control form-control-sm" placeholder="<?= $form['has_password'] ? 'уже задано — залиште порожнім, щоб не змінювати' : '' ?>" autocomplete="new-password">
                     </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="ad_encrypted" id="ad_encrypted" value="1" <?= $form['encrypted'] ? 'checked' : '' ?>>
-                        <label class="form-check-label" for="ad_encrypted">Шифрування (STARTTLS, порт 389)</label>
-                        <div class="form-text">Потрібен LDAPS або нестандартний порт — налаштуйте <code>AD_ENCRYPTION</code>/<code>AD_PORT</code> у .env вручну, ця галочка розрахована на типовий STARTTLS.</div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-sm-8">
+                            <label class="form-label small mb-1" for="ad_encryption">Шифрування</label>
+                            <select name="ad_encryption" id="ad_encryption" class="form-select form-select-sm">
+                                <option value="ldaps" <?= $form['encryption'] === 'ldaps' ? 'selected' : '' ?>>LDAPS (типовий порт 636)</option>
+                                <option value="starttls" <?= $form['encryption'] === 'starttls' ? 'selected' : '' ?>>STARTTLS (типовий порт 389)</option>
+                                <option value="none" <?= $form['encryption'] === 'none' ? 'selected' : '' ?>>Без шифрування (порт 389)</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1" for="ad_port">Порт</label>
+                            <input type="number" name="ad_port" id="ad_port" class="form-control form-control-sm" min="1" max="65535"
+                                   placeholder="типовий" value="<?= \App\Core\View::e($form['port']) ?>">
+                        </div>
+                        <div class="form-text">Порожній порт — типовий для вибраного режиму (636 для LDAPS, інакше 389). Без шифрування пароль іде мережею відкритим текстом — лише для довіреної внутрішньої мережі.</div>
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="ad_verify_cert" id="ad_verify_cert" value="1" <?= $form['verify_cert'] ? 'checked' : '' ?>>

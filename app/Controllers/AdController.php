@@ -40,6 +40,8 @@ class AdController
                 'bind_dn' => $ad['bind_dn'] ?? '',
                 'sync_filter' => $ad['sync_filter'] ?? '',
                 'verify_cert' => !empty($ad['verify_cert']),
+                'sso_enabled' => !empty($ad['sso_enabled']),
+                'sso_realm' => $ad['sso_realm'] ?? '',
             ],
             // Для форми нижче — напряму з файлу, а не з Config::get() вище: той кешує значення
             // в межах процесу (PHP-FPM worker живе довше за один запит), тож одразу після
@@ -50,7 +52,8 @@ class AdController
                 'bind_dn' => EnvFile::get('AD_BIND_DN') ?? '',
                 'base_dn' => EnvFile::get('AD_BASE_DN') ?? '',
                 'has_password' => (EnvFile::get('AD_BIND_PASSWORD') ?? '') !== '',
-                'encrypted' => (EnvFile::get('AD_ENCRYPTION') ?? 'none') !== 'none',
+                'encryption' => self::normalizeEncryption(EnvFile::get('AD_ENCRYPTION') ?? 'none'),
+                'port' => (string) (EnvFile::get('AD_PORT') ?? ''),
                 'verify_cert' => (EnvFile::get('AD_VERIFY_CERT') ?? 'true') !== 'false',
             ],
             'syncEnabled' => Setting::get('ad_sync_enabled', '0') === '1',
@@ -72,18 +75,31 @@ class AdController
         $bindDn = trim((string) ($_POST['ad_bind_dn'] ?? ''));
         $baseDn = self::normalizeBaseDn(trim((string) ($_POST['ad_base_dn'] ?? '')));
         $password = (string) ($_POST['ad_bind_password'] ?? ''); // не trim() — пароль може легітимно починатись/закінчуватись пробілом
-        $encrypted = !empty($_POST['ad_encrypted']);
+        $encryption = self::normalizeEncryption((string) ($_POST['ad_encryption'] ?? 'none'));
+        $portRaw = trim((string) ($_POST['ad_port'] ?? ''));
         $verifyCert = !empty($_POST['ad_verify_cert']);
 
         if ($host === '' || $bindDn === '' || $baseDn === '') {
             $this->redirect('error', "Заповніть сервер, службовий обліковий запис і базовий DN — без них підключення неможливе.");
         }
 
+        // Порт: порожнє поле = типовий для режиму (636 для LDAPS, інакше 389).
+        $defaultPort = $encryption === 'ldaps' ? 636 : 389;
+        if ($portRaw === '') {
+            $port = $defaultPort;
+        } elseif (!ctype_digit($portRaw) || (int) $portRaw < 1 || (int) $portRaw > 65535) {
+            $this->redirect('error', 'Порт має бути числом від 1 до 65535 (або залиште порожнім — тоді ' . $defaultPort . ').');
+            return;
+        } else {
+            $port = (int) $portRaw;
+        }
+
         $values = [
             'AD_HOST' => $host,
             'AD_BIND_DN' => $bindDn,
             'AD_BASE_DN' => $baseDn,
-            'AD_ENCRYPTION' => $encrypted ? 'starttls' : 'none',
+            'AD_PORT' => (string) $port,
+            'AD_ENCRYPTION' => $encryption,
             'AD_VERIFY_CERT' => $verifyCert ? 'true' : 'false',
         ];
         // Порожнє поле пароля = "не змінювати" (щоб не затерти вже задане значення щоразу,
@@ -98,8 +114,15 @@ class AdController
             $this->redirect('error', $e->getMessage());
         }
 
-        Audit::log('app_settings', 0, 'ad_connection_saved', Auth::id(), ['ad_host' => $host, 'ad_encrypted' => $encrypted ? 'так' : 'ні']);
+        Audit::log('app_settings', 0, 'ad_connection_saved', Auth::id(), ['ad_host' => $host, 'ad_encrypted' => $encryption, 'ad_port' => $port]);
         $this->redirect('success', 'Параметри збережено в .env і одразу діють — перезапускати PHP-FPM/Apache не потрібно.');
+    }
+
+    /** Допустимі режими шифрування; будь-що інше — «none». */
+    private static function normalizeEncryption(string $value): string
+    {
+        $value = strtolower(trim($value));
+        return in_array($value, ['none', 'starttls', 'ldaps'], true) ? $value : 'none';
     }
 
     public function save(): void

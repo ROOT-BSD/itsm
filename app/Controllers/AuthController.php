@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Config;
 use App\Core\View;
 
 class AuthController
@@ -13,7 +14,35 @@ class AuthController
             header('Location: /');
             exit;
         }
-        View::render('auth/login', ['error' => $_GET['error'] ?? null]);
+        $error = $_GET['error'] ?? null;
+        if ($error === null && ($_GET['sso'] ?? '') === 'failed') {
+            // Веб-сервер перенаправляє сюди, якщо браузер не пройшов Kerberos-автентифікацію (ErrorDocument 401).
+            $error = 'Автоматичний вхід через Windows не вдався (браузер не передав квиток Kerberos). Увійдіть паролем.';
+        }
+        View::render('auth/login', [
+            'error' => $error,
+            'ssoEnabled' => !empty(Config::get('ad.sso_enabled')),
+        ]);
+    }
+
+    /**
+     * Безпарольний вхід. Адреса /sso/login має бути захищена Kerberos-модулем веб-сервера, який і
+     * виставляє REMOTE_USER. Беремо лише змінні сервера — ніколи не заголовки запиту (їх підробляє клієнт).
+     */
+    public function sso(): void
+    {
+        if (Auth::check()) {
+            header('Location: /');
+            exit;
+        }
+        $principal = (string) ($_SERVER['REMOTE_USER'] ?? $_SERVER['REDIRECT_REMOTE_USER'] ?? '');
+
+        if (Auth::attemptSso($principal)) {
+            header('Location: /');
+            exit;
+        }
+        header('Location: /login?error=' . urlencode(Auth::lastError() ?? 'Вхід через Windows не вдався'));
+        exit;
     }
 
     public function login(): void

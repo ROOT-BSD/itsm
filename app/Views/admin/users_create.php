@@ -23,6 +23,18 @@
         <input type="password" name="password" class="form-control" minlength="8" required>
         <div class="form-text">Мінімум 8 символів. Обліковий запис створюється як локальний.</div>
     </div>
+    <?php if (!empty($unitReady)): ?>
+    <div class="mb-3">
+        <label class="form-label">Підрозділ <span class="text-muted small">(необов'язково)</span></label>
+        <input type="text" name="unit_ou" class="form-control" list="unitOus" placeholder="Київ › ІТ" value="">
+        <datalist id="unitOus">
+            <?php foreach ($knownOus as $ouPath): ?>
+                <option value="<?= \App\Core\View::e(\App\Core\LdapDn::ouLabel($ouPath)) ?>"></option>
+            <?php endforeach; ?>
+        </datalist>
+        <div class="form-text">Від найбільшого підрозділу до найменшого через «›»: <code>Київ › ІТ</code>. Той самий запис, що й у AD, ставить локального користувача в один підрозділ з AD-користувачами. Потрібен для ролі «Адміністратор Підрозділу» та щоб його бачив адміністратор підрозділу.</div>
+    </div>
+    <?php endif; ?>
     <div class="mb-3">
         <label class="form-label">Роль</label>
         <select name="role_id" class="form-select" required>

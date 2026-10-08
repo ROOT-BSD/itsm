@@ -92,7 +92,7 @@ $statusColors = ['planned' => 'secondary', 'in_progress' => 'primary', 'complete
     </div>
 <?php endif; ?>
 
-<?php if (\App\Core\Auth::hasRole(['admin', 'it_manager'])): ?>
+<?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
 <div class="card">
     <div class="card-header">Додати новий етап</div>
     <div class="card-body">

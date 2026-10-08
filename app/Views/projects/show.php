@@ -59,7 +59,7 @@ $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => '
 </div>
 <?php endif; ?>
 
-<?php if (\App\Core\Auth::hasRole(['admin', 'it_manager'])): ?>
+<?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
 <form method="post" action="/projects/<?= (int)$project['id'] ?>/responsible" class="d-flex gap-2 align-items-center mb-3">
     <?= \App\Core\Csrf::field() ?>
     <label class="form-label mb-0">Відповідальний (виконавець проєкту):</label>

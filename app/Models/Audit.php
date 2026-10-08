@@ -195,6 +195,17 @@ class Audit
         $conditions = [];
         $params = [];
 
+        // Журнал підрозділу: дії людей підрозділу + події над їхніми обліковими записами (зміна ролі, блокування тощо).
+        if (!empty($filters['unit_admin_id'])) {
+            $c1 = \App\Core\Unit::userCondition('a.user_id', 'auu', (int) $filters['unit_admin_id']);
+            $c2 = \App\Core\Unit::userCondition('a.entity_id', 'aue', (int) $filters['unit_admin_id']);
+            if ($c1 === null || $c2 === null) {
+                $conditions[] = '1 = 0';
+            } else {
+                $conditions[] = "({$c1[0]} OR (a.entity_type = 'user' AND {$c2[0]}))";
+                $params += $c1[1] + $c2[1];
+            }
+        }
         if (!empty($filters['entity_type'])) {
             $conditions[] = 'a.entity_type = :entity_type';
             $params['entity_type'] = $filters['entity_type'];

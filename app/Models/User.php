@@ -125,7 +125,7 @@ class User
     }
 
     /** Створення користувача з AD-синхронізації (bin/sync-ad-users.php) — без пароля, вхід лише через bind до AD. */
-    public static function createFromAd(string $fullName, string $email, string $adUsername, int $roleId, string $adOu = ''): int
+    public static function createFromAd(string $fullName, string $email, string $adUsername, int $roleId, string $adOu = '', ?string $adGuid = null): int
     {
         $stmt = Database::connection()->prepare(
             'INSERT INTO users (full_name, email, password_hash, auth_source, ad_username, ad_ou, role_id, is_active)
@@ -138,15 +138,90 @@ class User
             'ad_ou' => $adOu !== '' ? $adOu : null,
             'role_id' => $roleId,
         ]);
-        return (int) Database::connection()->lastInsertId();
+        $newId = (int) Database::connection()->lastInsertId();
+        if ($adGuid !== null) {
+            self::setAdIdentity($newId, $adGuid);
+        }
+        return $newId;
     }
 
-    /** Оновлення вже синхронізованого AD-користувача — ім'я, роль (за групами), username і OU (якщо користувача перенесли в AD) могли змінитись. Активується повторно, якщо раніше був деактивований через зникнення з AD. */
-    public static function updateFromAd(int $userId, string $fullName, string $adUsername, int $roleId, string $adOu = ''): void
+    /** Чи є в БД колонка ad_guid (міграція 028). Без неї синхронізація зіставляє користувачів лише за email. */
+    public static function guidReady(): bool
+    {
+        return Database::columnExists('users', 'ad_guid');
+    }
+
+    /**
+     * AD-користувач за логіном AD (регістр не важливий) — для SSO. Якщо логін збігається з кількома
+     * обліковими записами (неунікальне значення), повертає null: краще відмовити, ніж увійти не під тим.
+     */
+    public static function findAdByUsername(string $username): ?array
     {
         $stmt = Database::connection()->prepare(
-            'UPDATE users SET full_name = :full_name, ad_username = :ad_username, ad_ou = :ad_ou, role_id = :role_id, is_active = 1 WHERE id = :id'
+            "SELECT u.*, r.code AS role_code, r.name AS role_name
+               FROM users u JOIN roles r ON r.id = u.role_id
+              WHERE u.auth_source = 'ad' AND LOWER(u.ad_username) = LOWER(:u) LIMIT 2"
         );
+        $stmt->execute(['u' => $username]);
+        $rows = $stmt->fetchAll();
+        return count($rows) === 1 ? $rows[0] : null;
+    }
+
+    /** Знаходить AD-користувача за objectGUID (канонічний рядок). */
+    public static function findByAdGuid(string $guid): ?array
+    {
+        if (!self::guidReady()) {
+            return null;
+        }
+        $stmt = Database::connection()->prepare("SELECT * FROM users WHERE ad_guid = :g AND auth_source = 'ad' LIMIT 1");
+        $stmt->execute(['g' => $guid]);
+        return $stmt->fetch() ?: null;
+    }
+
+    /** Запам'ятовує objectGUID AD-користувача (і, якщо передано, його новий email — AD змінив пошту). */
+    public static function setAdIdentity(int $userId, ?string $guid, ?string $email = null): void
+    {
+        if (!self::guidReady()) {
+            return;
+        }
+        $sets = [];
+        $params = ['id' => $userId];
+        if ($guid !== null) {
+            $sets[] = 'ad_guid = :g';
+            $params['g'] = $guid;
+        }
+        if ($email !== null) {
+            $sets[] = 'email = :e';
+            $params['e'] = $email;
+        }
+        if (!$sets) {
+            return;
+        }
+        $stmt = Database::connection()->prepare("UPDATE users SET " . implode(', ', $sets) . " WHERE id = :id AND auth_source = 'ad'");
+        $stmt->execute($params);
+    }
+
+    /** Чи є в БД колонки ручного перевизначення (міграція 027). Без них синхронізація працює як раніше. */
+    public static function overridesReady(): bool
+    {
+        return Database::columnExists('users', 'ad_role_locked') && Database::columnExists('users', 'ad_blocked');
+    }
+
+    /**
+     * Оновлення вже синхронізованого AD-користувача — ім'я, роль (за групами), username і OU могли змінитись.
+     * Ручні перевизначення (міграція 027) враховано: закріплену роль не чіпаємо, а вручну деактивованого
+     * не вмикаємо знову. Інакше активується повторно, якщо раніше був деактивований через зникнення з AD.
+     */
+    public static function updateFromAd(int $userId, string $fullName, string $adUsername, int $roleId, string $adOu = ''): void
+    {
+        $sql = 'UPDATE users SET full_name = :full_name, ad_username = :ad_username, ad_ou = :ad_ou, role_id = :role_id, is_active = 1 WHERE id = :id';
+        if (self::overridesReady()) {
+            $sql = 'UPDATE users SET full_name = :full_name, ad_username = :ad_username, ad_ou = :ad_ou,
+                           role_id = IF(ad_role_locked = 1, role_id, :role_id),
+                           is_active = IF(ad_blocked = 1, is_active, 1)
+                     WHERE id = :id';
+        }
+        $stmt = Database::connection()->prepare($sql);
         $stmt->execute([
             'full_name' => $fullName,
             'ad_username' => $adUsername,
@@ -154,6 +229,26 @@ class User
             'role_id' => $roleId,
             'id' => $userId,
         ]);
+    }
+
+    /** Закріплює (або знімає закріплення) ролі AD-користувача. Нічого не робить без міграції 027. */
+    public static function setAdRoleLocked(int $userId, bool $locked): void
+    {
+        if (!self::overridesReady()) {
+            return;
+        }
+        $stmt = Database::connection()->prepare("UPDATE users SET ad_role_locked = :v WHERE id = :id AND auth_source = 'ad'");
+        $stmt->execute(['v' => $locked ? 1 : 0, 'id' => $userId]);
+    }
+
+    /** Ставить/знімає ручне блокування AD-користувача від повторної активації синхронізацією. */
+    public static function setAdBlocked(int $userId, bool $blocked): void
+    {
+        if (!self::overridesReady()) {
+            return;
+        }
+        $stmt = Database::connection()->prepare("UPDATE users SET ad_blocked = :v WHERE id = :id AND auth_source = 'ad'");
+        $stmt->execute(['v' => $blocked ? 1 : 0, 'id' => $userId]);
     }
 
     /** Усі користувачі з auth_source='ad' — для визначення, кого синхронізація більше не бачить у каталозі (деактивація). */
@@ -173,6 +268,24 @@ class User
             'role_id' => $roleId,
             'id' => $userId,
         ]);
+    }
+
+    /** Задає підрозділ ЛОКАЛЬНОГО користувача (шлях у форматі ouPath; '' = без підрозділу). Нічого не робить без міграції 030. */
+    public static function setUnitOu(int $userId, string $ouPath): void
+    {
+        if (!\App\Core\Unit::localReady()) {
+            return;
+        }
+        $stmt = Database::connection()->prepare("UPDATE users SET unit_ou = :ou WHERE id = :id AND auth_source = 'local'");
+        $stmt->execute(['ou' => $ouPath !== '' ? $ouPath : null, 'id' => $userId]);
+        \App\Core\Unit::reset();
+    }
+
+    /** Змінює лише роль (для адміністратора підрозділу — ім'я та email AD-користувача він не редагує). */
+    public static function setRole(int $userId, int $roleId): void
+    {
+        $stmt = Database::connection()->prepare('UPDATE users SET role_id = :role WHERE id = :id');
+        $stmt->execute(['role' => $roleId, 'id' => $userId]);
     }
 
     public static function emailExists(string $email, ?int $excludeUserId = null): bool

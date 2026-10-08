@@ -25,14 +25,27 @@ $renderUserTable = function (array $users) {
         <tbody>
         <?php foreach ($users as $u): ?>
             <tr>
-                <td><?= \App\Core\View::e($u['full_name']) ?></td>
+                <td>
+                    <?= \App\Core\View::e($u['full_name']) ?>
+                    <?php if ($u['auth_source'] === 'local' && !empty($u['unit_ou'])): ?>
+                        <br><span class="text-muted small">Підрозділ: <?= \App\Core\View::e(\App\Core\LdapDn::ouLabel((string)$u['unit_ou'])) ?></span>
+                    <?php endif; ?>
+                </td>
                 <td><?= \App\Core\View::e($u['email']) ?></td>
-                <td><?= \App\Core\View::e($u['role_name']) ?></td>
+                <td>
+                    <?= \App\Core\View::e($u['role_name']) ?>
+                    <?php if (!empty($u['ad_role_locked'])): ?>
+                        <br><span class="badge bg-warning text-dark mt-1" title="Роль задано вручну — синхронізація з AD її не змінює">Роль закріплено</span>
+                    <?php endif; ?>
+                </td>
                 <td>
                     <?php if ((int)$u['is_active'] === 1): ?>
                         <span class="badge bg-success">Активний</span>
                     <?php else: ?>
                         <span class="badge bg-secondary">Деактивовано</span>
+                        <?php if (!empty($u['ad_blocked'])): ?>
+                            <br><span class="badge bg-warning text-dark mt-1" title="Вимкнено вручну — синхронізація з AD не вмикає користувача знову">Вимкнено вручну</span>
+                        <?php endif; ?>
                     <?php endif; ?>
                     <?php if (!empty($u['locked_until']) && strtotime($u['locked_until']) > time()): ?>
                         <br><span class="badge bg-danger mt-1">Заблоковано до <?= \App\Core\View::e(date('H:i d.m', strtotime($u['locked_until']))) ?></span>

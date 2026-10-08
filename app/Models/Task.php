@@ -369,9 +369,41 @@ class Task
      * загального огляду адміністратора (Канбан/Гант по всій системі).
      * Перевірка ролі 'admin' виконується в контролері, не тут.
      */
-    public static function allWithProject(): array
+    /**
+     * Обмеження «лише проєкти, що стосуються підрозділу» для загальних списків (канбан, Гант, облік часу).
+     * Без $unitAdminId — без обмежень. $col — стовпець id проєкту в запиті.
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private static function projectScope(?int $unitAdminId, string $col, string $prefix = 'sc'): array
     {
-        return Database::connection()->query(
+        if ($unitAdminId === null) {
+            return ['', []];
+        }
+        [$sql, $params] = Project::accessCondition('ps', $prefix, $unitAdminId);
+        return [" AND {$col} IN (SELECT ps.id FROM projects ps WHERE {$sql})", $params];
+    }
+
+    /** Те саме для запитів лише по time_logs (без приєднаних задач): обмеження через задачу запису. */
+    private static function timeScope(?int $unitAdminId): array
+    {
+        [$w, $p] = self::projectScope($unitAdminId, 'tx.project_id');
+        if ($w === '') {
+            return ['', []];
+        }
+        return [' AND tl.task_id IN (SELECT tx.id FROM tasks tx WHERE 1 = 1' . $w . ')', $p];
+    }
+
+    private static function runScoped(string $sql, array $params): array
+    {
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public static function allWithProject(?int $unitAdminId = null): array
+    {
+        [$w, $wp] = self::projectScope($unitAdminId, 't.project_id');
+        return self::runScoped(
             "SELECT t.*, ts.name AS status_name, ts.code AS status_code, ts.is_closed, tt.name AS type_name,
                     au.full_name AS author_name, asg.full_name AS assignee_name, p.name AS project_name
              FROM tasks t
@@ -380,16 +412,21 @@ class Task
              JOIN users au ON au.id = t.author_id
              JOIN projects p ON p.id = t.project_id
              LEFT JOIN users asg ON asg.id = t.assignee_id
-             ORDER BY p.name ASC, t.created_at DESC"
-        )->fetchAll();
+             WHERE 1 = 1{$w}
+             ORDER BY p.name ASC, t.created_at DESC",
+            $wp
+        );
     }
 
     /** Усі зв'язки залежності в системі (для загальної діаграми Ганта адміністратора). */
-    public static function allRelations(): array
+    public static function allRelations(?int $unitAdminId = null): array
     {
-        return Database::connection()
-            ->query('SELECT task_id, related_task_id, relation_type FROM task_relations')
-            ->fetchAll();
+        [$w, $wp] = self::projectScope($unitAdminId, 't.project_id');
+        return self::runScoped(
+            "SELECT tr.task_id, tr.related_task_id, tr.relation_type FROM task_relations tr
+             JOIN tasks t ON t.id = tr.task_id WHERE 1 = 1{$w}",
+            $wp
+        );
     }
 
     public static function addComment(int $taskId, int $authorId, string $body): void
@@ -491,42 +528,51 @@ class Task
      * оскільки доступ до цієї сторінки й так обмежений роллю 'admin'
      * (перевіряється в AdminController, не тут).
      */
-    public static function timeLogsAll(): array
+    public static function timeLogsAll(?int $unitAdminId = null): array
     {
-        return Database::connection()->query(
+        [$w, $wp] = self::projectScope($unitAdminId, 't.project_id');
+        return self::runScoped(
             "SELECT tl.*, u.full_name AS user_name, t.id AS task_id, t.title AS task_title,
                     p.id AS project_id, p.name AS project_name
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             ORDER BY tl.log_date DESC, tl.id DESC"
-        )->fetchAll();
+             WHERE 1 = 1{$w}
+             ORDER BY tl.log_date DESC, tl.id DESC",
+            $wp
+        );
     }
 
     /** Сумарні години по кожному користувачу по всій системі (для /admin/time). */
-    public static function hoursByUserAll(): array
+    public static function hoursByUserAll(?int $unitAdminId = null): array
     {
-        return Database::connection()->query(
+        [$w, $wp] = self::timeScope($unitAdminId);
+        return self::runScoped(
             "SELECT u.full_name AS user_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
+             WHERE 1 = 1{$w}
              GROUP BY tl.user_id, u.full_name
-             ORDER BY total_hours DESC"
-        )->fetchAll();
+             ORDER BY total_hours DESC",
+            $wp
+        );
     }
 
     /** Сумарні години по кожному проєкту по всій системі (для /admin/time). */
     /** Підпроєкт рахується як частина основного (кореневого) проєкту — окремим рядком не показується. */
-    public static function hoursByProjectAll(): array
+    public static function hoursByProjectAll(?int $unitAdminId = null): array
     {
-        $raw = Database::connection()->query(
+        [$w, $wp] = self::projectScope($unitAdminId, 't.project_id');
+        $raw = self::runScoped(
             "SELECT p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             GROUP BY p.id, p.name"
-        )->fetchAll();
+             WHERE 1 = 1{$w}
+             GROUP BY p.id, p.name",
+            $wp
+        );
 
         return self::rollUpToRootProjects($raw);
     }
@@ -579,16 +625,19 @@ class Task
     }
 
     /** Те саме, але по всій системі одразу (для /admin/time). */
-    public static function hoursByPeriodAll(string $period): array
+    public static function hoursByPeriodAll(string $period, ?int $unitAdminId = null): array
     {
         [$selectExpr, $groupExpr] = self::periodSql($period);
+        [$w, $wp] = self::timeScope($unitAdminId);
 
-        return Database::connection()->query(
+        return self::runScoped(
             "SELECT {$selectExpr} AS period_label, SUM(tl.hours) AS total_hours
              FROM time_logs tl
+             WHERE 1 = 1{$w}
              GROUP BY {$groupExpr}
-             ORDER BY MIN(tl.log_date) DESC"
-        )->fetchAll();
+             ORDER BY MIN(tl.log_date) DESC",
+            $wp
+        );
     }
 
     /**
@@ -704,33 +753,39 @@ class Task
     }
 
     /** Те саме, але по всій системі (для /admin/time). */
-    public static function hoursByPeriodAndUserAll(string $period): array
+    public static function hoursByPeriodAndUserAll(string $period, ?int $unitAdminId = null): array
     {
         [$selectExpr, $groupExpr] = self::periodSql($period);
+        [$w, $wp] = self::timeScope($unitAdminId);
 
-        return Database::connection()->query(
+        return self::runScoped(
             "SELECT {$selectExpr} AS period_label, u.full_name AS user_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
+             WHERE 1 = 1{$w}
              GROUP BY {$groupExpr}, tl.user_id, u.full_name
-             ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
-        )->fetchAll();
+             ORDER BY MIN(tl.log_date) DESC, total_hours DESC",
+            $wp
+        );
     }
 
     /** Розбивка годин по періоду ТА проєкту одночасно, по всій системі (для /admin/time). */
     /** Те саме, що вище, але підпроєкт так само згорнутий у свій основний (кореневий) проєкт у межах кожного періоду. */
-    public static function hoursByPeriodAndProjectAll(string $period): array
+    public static function hoursByPeriodAndProjectAll(string $period, ?int $unitAdminId = null): array
     {
         [$selectExpr, $groupExpr] = self::periodSql($period);
+        [$w, $wp] = self::projectScope($unitAdminId, 't.project_id');
 
-        $raw = Database::connection()->query(
+        $raw = self::runScoped(
             "SELECT {$selectExpr} AS period_label, MIN(tl.log_date) AS min_date,
                     p.id AS project_id, p.name AS project_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             GROUP BY {$groupExpr}, p.id, p.name"
-        )->fetchAll();
+             WHERE 1 = 1{$w}
+             GROUP BY {$groupExpr}, p.id, p.name",
+            $wp
+        );
 
         $rootMap = Project::rootProjectMap();
 

@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <?php require __DIR__ . '/_back.php'; ?>
+    <?php if (!empty($unitMode)) { require __DIR__ . '/../unit/_nav.php'; } else { require __DIR__ . '/_back.php'; } ?>
 </div>
 
 <h3 class="mb-4">Журнал аудиту</h3>
@@ -56,8 +56,14 @@ $changeKeyLabels = [
     'resolution_minutes' => 'Вирішення (хв)',
     'email_ticket_enabled' => 'Обробка пошти',
     'ad_sync_enabled' => 'Синхронізація з AD',
+    'ad_role_locked' => 'Роль AD закріплено',
+    'old' => 'Було',
+    'new' => 'Стало',
     'ad_host' => 'Сервер AD',
     'ad_encrypted' => 'Шифрування',
+    'ad_port' => 'Порт AD',
+    'principal' => 'Принципал SSO',
+    'unit_ou' => 'Підрозділ',
     'ad_group' => 'Група AD',
     'ad_username' => 'Логін AD',
     'role_id' => 'Роль',
@@ -91,7 +97,7 @@ $shortenName = function (string $text): string {
 };
 ?>
 
-<form method="get" action="/admin/audit" class="card p-3 shadow-sm mb-4">
+<form method="get" action="<?= !empty($unitMode) ? '/unit/audit' : '/admin/audit' ?>" class="card p-3 shadow-sm mb-4">
     <div class="row g-2 align-items-end">
         <div class="col-md-3">
             <label class="form-label small mb-1">Тип сутності</label>

@@ -140,6 +140,8 @@ class AdminController
     {
         View::render('admin/users_create', [
             'roles' => User::roles(),
+            'knownOus' => \App\Core\Unit::knownOus(),
+            'unitReady' => \App\Core\Unit::localReady(),
             'error' => $_GET['error'] ?? null,
         ]);
     }
@@ -168,8 +170,17 @@ class AdminController
             return;
         }
 
+        $unit = LdapDn::fromInput((string) ($_POST['unit_ou'] ?? ''));
+        if ($unit === null) {
+            $this->redirectCreateUser('Некоректний підрозділ. Вкажіть назви від найбільшого до найменшого через «›», наприклад: Київ › ІТ');
+            return;
+        }
+
         $newId = User::create($fullName, $email, $password, $roleId);
-        Audit::log('user', $newId, 'created_by_admin', Auth::id());
+        if ($unit !== '') {
+            User::setUnitOu($newId, $unit);
+        }
+        Audit::log('user', $newId, 'created_by_admin', Auth::id(), $unit !== '' ? ['unit_ou' => LdapDn::ouLabel($unit)] : null);
         $this->redirectUsers('success', 'Користувача "' . $fullName . '" створено');
     }
 
@@ -190,6 +201,8 @@ class AdminController
         View::render('admin/users_edit', [
             'targetUser' => $user,
             'roles' => User::roles(),
+            'knownOus' => \App\Core\Unit::knownOus(),
+            'unitReady' => \App\Core\Unit::localReady(),
             'error' => $_GET['error'] ?? null,
         ]);
     }
@@ -218,8 +231,35 @@ class AdminController
             exit;
         }
 
+        $current = User::findById($userId);
+
+        // Підрозділ — лише для локальних користувачів (в AD-користувача він приходить із синхронізації).
+        $unit = null;
+        if ($current && $current['auth_source'] === 'local' && \App\Core\Unit::localReady() && isset($_POST['unit_ou'])) {
+            $unit = LdapDn::fromInput((string) $_POST['unit_ou']);
+            if ($unit === null) {
+                header("Location: /admin/users/{$userId}/edit?error=" . urlencode('Некоректний підрозділ. Вкажіть назви від найбільшого до найменшого через «›», наприклад: Київ › ІТ'));
+                exit;
+            }
+        }
+
         User::update($userId, $fullName, $email, $roleId);
-        Audit::log('user', $userId, 'updated_by_admin', Auth::id());
+        if ($unit !== null && $unit !== (string) ($current['unit_ou'] ?? '')) {
+            User::setUnitOu($userId, $unit);
+            Audit::log('user', $userId, 'unit_changed_by_admin', Auth::id(), ['old' => LdapDn::ouLabel((string) ($current['unit_ou'] ?? '')), 'new' => LdapDn::ouLabel($unit)]);
+        }
+
+        // AD-користувач: ручна зміна ролі автоматично закріплюється (інакше наступна синхронізація
+        // мовчки повернула б роль за групами AD); галочка дозволяє закріпити роль без зміни або зняти закріплення.
+        $audit = [];
+        if ($current && $current['auth_source'] === 'ad' && User::overridesReady()) {
+            $lock = isset($_POST['ad_role_locked']) || $roleId !== (int) $current['role_id'];
+            if ($lock !== !empty($current['ad_role_locked'])) {
+                User::setAdRoleLocked($userId, $lock);
+                $audit['ad_role_locked'] = $lock ? 1 : 0;
+            }
+        }
+        Audit::log('user', $userId, 'updated_by_admin', Auth::id(), $audit ?: null);
         $this->redirectUsers('success', 'Дані користувача оновлено');
     }
 
@@ -292,6 +332,12 @@ class AdminController
         }
 
         User::setActive($userId, $active);
+        // AD-користувач: ручна деактивація закріплюється, щоб синхронізація не вмикала його знову;
+        // ручна активація знімає закріплення (далі синхронізація керує статусом, як і раніше).
+        $target = User::findById($userId);
+        if ($target && $target['auth_source'] === 'ad') {
+            User::setAdBlocked($userId, !$active);
+        }
         Audit::log('user', $userId, $active ? 'activated_by_admin' : 'deactivated_by_admin', Auth::id());
         $this->redirectUsers('success', $active ? 'Обліковий запис активовано' : 'Обліковий запис деактивовано');
     }

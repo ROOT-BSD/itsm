@@ -35,7 +35,7 @@
             <?php endif; ?>
         <?php endif; ?>
 
-        <?php if (\App\Core\Auth::hasRole(['admin', 'it_manager', 'support_operator'])): ?>
+        <?php if (\App\Core\Access::canAssignTicketOperator(\App\Core\Auth::role())): ?>
         <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/operator" class="d-flex gap-2 align-items-center mb-2">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Оператор (виконавець тікета):</label>

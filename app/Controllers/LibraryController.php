@@ -4,7 +4,6 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Config;
-use App\Core\UploadLimits;
 use App\Core\View;
 use App\Models\Audit;
 use App\Models\LibraryDocument;

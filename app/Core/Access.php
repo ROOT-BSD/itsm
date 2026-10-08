@@ -23,18 +23,24 @@ final class Access
     /** Призначати й знімати оператора тікета. */
     public static function canAssignTicketOperator(?string $role): bool
     {
-        return in_array($role, ['admin', 'it_manager', 'support_operator'], true);
+        return in_array($role, ['admin', 'unit_admin', 'it_manager', 'support_operator'], true);
     }
 
     /** Чий це коментар у тікеті: оператора чи заявника (так історично визначає й веб-форма). */
     public static function ticketCommentAuthorType(?string $role): string
     {
-        return in_array($role, ['admin', 'support_operator'], true) ? 'operator' : 'requester';
+        return in_array($role, ['admin', 'unit_admin', 'support_operator'], true) ? 'operator' : 'requester';
     }
 
     /** Створювати проєкти й підпроєкти, призначати відповідального. */
     public static function canManageProjects(?string $role): bool
     {
-        return in_array($role, ['admin', 'it_manager'], true);
+        return in_array($role, ['admin', 'unit_admin', 'it_manager'], true);
+    }
+
+    /** Адміністратор підрозділу: керує користувачами й бачить дані свого AD OU (App\Core\Unit). */
+    public static function isUnitAdmin(?string $role): bool
+    {
+        return $role === Unit::ROLE;
     }
 }

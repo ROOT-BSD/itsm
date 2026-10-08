@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Core\Unit;
 use App\Services\NotificationService;
 
 /**
@@ -160,6 +161,16 @@ class Ticket
             return self::all();
         }
 
+        $params = ['uid1' => $userId, 'uid2' => $userId];
+        $extra = '';
+        // Адміністратор підрозділу додатково бачить тікети, де заявник або оператор — з його AD OU.
+        foreach ([['t.requester_user_id', 'tua'], ['t.assigned_operator_id', 'tub']] as [$col, $pfx]) {
+            if (($c = Unit::userCondition($col, $pfx, $userId)) !== null) {
+                $extra .= ' OR ' . $c[0];
+                $params += $c[1];
+            }
+        }
+
         $sql = "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
@@ -167,10 +178,11 @@ class Ticket
              LEFT JOIN projects p ON p.id = t.project_id
              WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2"
             . ($canSeeUnassigned ? ' OR t.assigned_operator_id IS NULL' : '')
+            . $extra
             . ' ORDER BY t.created_at DESC';
 
         $stmt = Database::connection()->prepare($sql);
-        $stmt->execute(['uid1' => $userId, 'uid2' => $userId]);
+        $stmt->execute($params);
         return $stmt->fetchAll();
     }
 
@@ -201,8 +213,13 @@ class Ticket
         if ($canSeeUnassigned && empty($ticket['assigned_operator_id'])) {
             return true;
         }
-        return (int) ($ticket['requester_user_id'] ?? 0) === $userId
-            || (int) ($ticket['assigned_operator_id'] ?? 0) === $userId;
+        if ((int) ($ticket['requester_user_id'] ?? 0) === $userId
+            || (int) ($ticket['assigned_operator_id'] ?? 0) === $userId) {
+            return true;
+        }
+        // Адміністратор підрозділу: заявник або оператор тікета — з його AD OU.
+        return Unit::containsUser($userId, (int) ($ticket['requester_user_id'] ?? 0))
+            || Unit::containsUser($userId, (int) ($ticket['assigned_operator_id'] ?? 0));
     }
 
     public static function find(int $id): ?array
@@ -303,59 +320,113 @@ class Ticket
         return $applied;
     }
 
-    /** Загальна картина по всіх зібраних CSAT-оцінках — для адмін-звіту. */
-    public static function csatSummary(): array
+    /**
+     * Додаткова умова «тікет підрозділу» (заявник або оператор — з AD OU / підрозділу адміністратора підрозділу).
+     * Без $unitAdminId — без обмежень (адмін-звіт); якщо підрозділ не визначено — «нічого», а не «все».
+     * @return array{0: string, 1: array<string, string>}
+     */
+    public static function unitWhere(string $alias, ?int $unitAdminId, string $prefix = 'cu'): array
     {
-        $row = Database::connection()->query(
+        if ($unitAdminId === null) {
+            return ['', []];
+        }
+        $a = Unit::userCondition("{$alias}.requester_user_id", "{$prefix}a", $unitAdminId);
+        $b = Unit::userCondition("{$alias}.assigned_operator_id", "{$prefix}b", $unitAdminId);
+        if ($a === null || $b === null) {
+            return [' AND 1 = 0', []];
+        }
+        return [" AND ({$a[0]} OR {$b[0]})", $a[1] + $b[1]];
+    }
+
+    /** Загальна картина по зібраних CSAT-оцінках — для адмін-звіту (з $unitAdminId — лише тікети підрозділу). */
+    public static function csatSummary(?int $unitAdminId = null): array
+    {
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        $stmt = Database::connection()->prepare(
             "SELECT COUNT(*) AS total, AVG(csat_score) AS avg_score,
-                    SUM(csat_score = 1) AS c1, SUM(csat_score = 2) AS c2, SUM(csat_score = 3) AS c3,
-                    SUM(csat_score = 4) AS c4, SUM(csat_score = 5) AS c5
-             FROM tickets WHERE csat_score IS NOT NULL"
-        )->fetch();
+                    COALESCE(SUM(csat_score = 1),0) AS c1, COALESCE(SUM(csat_score = 2),0) AS c2, COALESCE(SUM(csat_score = 3),0) AS c3,
+                    COALESCE(SUM(csat_score = 4),0) AS c4, COALESCE(SUM(csat_score = 5),0) AS c5
+             FROM tickets t WHERE t.csat_score IS NOT NULL{$w}"
+        );
+        $stmt->execute($p);
+        $row = $stmt->fetch();
         $row['avg_score'] = $row['avg_score'] !== null ? round((float) $row['avg_score'], 2) : null;
         return $row;
     }
 
     /** Середня оцінка по кожній черзі, де є хоч одна оцінка. */
-    public static function csatByQueue(): array
+    public static function csatByQueue(?int $unitAdminId = null): array
     {
-        return Database::connection()->query(
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        $stmt = Database::connection()->prepare(
             "SELECT q.name AS queue_name, COUNT(*) AS total, ROUND(AVG(t.csat_score), 2) AS avg_score
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
-             WHERE t.csat_score IS NOT NULL
+             WHERE t.csat_score IS NOT NULL{$w}
              GROUP BY q.id, q.name
              ORDER BY avg_score DESC"
-        )->fetchAll();
+        );
+        $stmt->execute($p);
+        return $stmt->fetchAll();
     }
 
     /** Середня оцінка по кожному оператору, якому призначались оцінені тікети. */
-    public static function csatByOperator(): array
+    public static function csatByOperator(?int $unitAdminId = null): array
     {
-        return Database::connection()->query(
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        $stmt = Database::connection()->prepare(
             "SELECT u.full_name AS operator_name, COUNT(*) AS total, ROUND(AVG(t.csat_score), 2) AS avg_score
              FROM tickets t
              JOIN users u ON u.id = t.assigned_operator_id
-             WHERE t.csat_score IS NOT NULL
+             WHERE t.csat_score IS NOT NULL{$w}
              GROUP BY u.id, u.full_name
              ORDER BY avg_score DESC"
-        )->fetchAll();
+        );
+        $stmt->execute($p);
+        return $stmt->fetchAll();
     }
 
     /** Останні оцінені тікети — для таблиці в адмін-звіті. */
-    public static function recentCsatRatings(int $limit = 50): array
+    public static function recentCsatRatings(int $limit = 50, ?int $unitAdminId = null): array
     {
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
         $stmt = Database::connection()->prepare(
             "SELECT t.id, t.subject, t.csat_score, t.updated_at, q.name AS queue_name, op.full_name AS operator_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
-             WHERE t.csat_score IS NOT NULL
+             WHERE t.csat_score IS NOT NULL{$w}
              ORDER BY t.updated_at DESC
              LIMIT :limit"
         );
+        foreach ($p as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
         $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
         $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /** Черги з кількістю тікетів підрозділу: усього / відкритих / закритих / прострочених за SLA не рахуємо (див. SLA на тікеті). */
+    public static function queuesForUnit(int $unitAdminId): array
+    {
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        $stmt = Database::connection()->prepare(
+            "SELECT q.id, q.name, q.description,
+                    COUNT(t.id) AS total,
+                    COALESCE(SUM(t.status <> 'closed'), 0) AS open_count,
+                    COALESCE(SUM(t.status = 'closed'), 0) AS closed_count,
+                    COALESCE(SUM(t.status <> 'closed' AND t.assigned_operator_id IS NULL), 0) AS unassigned_count,
+                    sp.first_response_minutes, sp.resolution_minutes,
+                    op.full_name AS default_operator_name
+             FROM ticket_queues q
+             LEFT JOIN tickets t ON t.queue_id = q.id{$w}
+             LEFT JOIN sla_policies sp ON sp.queue_id = q.id
+             LEFT JOIN users op ON op.id = q.default_operator_id
+             GROUP BY q.id, q.name, q.description, sp.first_response_minutes, sp.resolution_minutes, op.full_name
+             ORDER BY q.id"
+        );
+        $stmt->execute($p);
         return $stmt->fetchAll();
     }
 

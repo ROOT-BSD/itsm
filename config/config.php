@@ -121,6 +121,12 @@ return (function (): array {
             'name_attribute'     => $env('AD_NAME_ATTR', 'displayName'),
             'group_attribute'    => $env('AD_GROUP_ATTR', 'memberOf'),
             'verify_cert'        => filter_var($env('AD_VERIFY_CERT', 'true'), FILTER_VALIDATE_BOOLEAN),
+            // Безпарольний вхід (SSO, Kerberos/SPNEGO). Саму автентифікацію виконує веб-сервер
+            // (Apache mod_auth_gssapi на адресі /sso/login) і передає застосунку REMOTE_USER;
+            // застосунок лише зіставляє його з AD-користувачем. Докладніше — docs/ADMIN_GUIDE.md.
+            'sso_enabled'        => filter_var($env('AD_SSO_ENABLED', 'false'), FILTER_VALIDATE_BOOLEAN),
+            // Очікуваний Kerberos-realm (напр. COMPANY.LOCAL). Якщо задано — принципал з іншим realm відхиляється.
+            'sso_realm'          => strtoupper(trim((string) $env('AD_SSO_REALM', ''))),
         ],
         // Вкладення до тікетів і задач (App\Services\AttachmentService). Файли зберігаються
         // у storage/uploads — поза веб-коренем (public/), тож віддаються лише через контролер
@@ -175,7 +181,7 @@ return (function (): array {
         ],
         'app' => [
             'name'    => 'ITSM System',
-            'version' => '0.2.2',
+            'version' => '0.2.3',
             'env'     => getenv('APP_ENV') ?: 'local', // local | production
             'url'     => getenv('APP_URL') ?: 'http://localhost:8000',
         ],

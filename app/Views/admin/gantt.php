@@ -2,8 +2,8 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <?php require __DIR__ . '/_back.php'; ?>
-        <h3 class="mb-0 mt-1">Діаграма Ганта — усі проєкти</h3>
+        <?php if (!empty($unitMode)) { require __DIR__ . '/../unit/_nav.php'; } else { require __DIR__ . '/_back.php'; } ?>
+        <h3 class="mb-0 mt-1">Діаграма Ганта — <?= !empty($unitMode) ? "проєкти підрозділу" : "усі проєкти" ?></h3>
     </div>
 </div>
 

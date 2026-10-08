@@ -22,5 +22,11 @@
             </div>
             <button type="submit" class="btn btn-primary w-100">Увійти</button>
         </form>
+        <?php if (!empty($ssoEnabled)): ?>
+            <div class="text-center mt-3">
+                <a href="/sso/login" class="btn btn-outline-primary w-100">Увійти через Windows (без пароля)</a>
+                <div class="form-text">Для комп'ютерів домену: вхід за вашим обліковим записом Windows.</div>
+            </div>
+        <?php endif; ?>
     </div>
 </div>

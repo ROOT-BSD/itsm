@@ -421,7 +421,7 @@ class ProjectController
 
     private function requireManagerRole(): void
     {
-        if (!Auth::hasRole(['admin', 'it_manager'])) {
+        if (!\App\Core\Access::canManageProjects(Auth::role())) {
             http_response_code(403);
             echo 'Недостатньо прав для виконання цієї дії.';
             exit;

@@ -528,6 +528,9 @@ APP_URL=http://localhost
 #AD_NAME_ATTR=displayName
 #AD_GROUP_ATTR=memberOf
 #AD_DEFAULT_ROLE=requester
+# Безпарольний вхід (SSO, Kerberos через Apache mod_auth_gssapi на /sso/login) — див. docs/ADMIN_GUIDE.md, розділ 23.
+#AD_SSO_ENABLED=false
+#AD_SSO_REALM=COMPANY.LOCAL
 #AD_VERIFY_CERT=true
 
 # --- Вкладення до тікетів і задач ---

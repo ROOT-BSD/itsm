@@ -26,11 +26,16 @@ CREATE TABLE IF NOT EXISTS users (
     ad_ou VARCHAR(500) NULL,                       -- шлях OU з DN користувача в AD (лише OU=, без CN-контейнерів і DC=) — для групування на сторінці «Користувачі»
     role_id INT NOT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    ad_role_locked TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = роль AD-користувача задано вручну, синхронізація її не змінює
+    ad_blocked TINYINT(1) NOT NULL DEFAULT 0,      -- 1 = AD-користувача деактивовано вручну, синхронізація не вмикає його знову
+    unit_ou VARCHAR(500) NULL,                     -- підрозділ ЛОКАЛЬНОГО користувача (формат як ad_ou: "OU=IT,OU=Kyiv"); для AD-користувачів береться ad_ou
+    ad_guid CHAR(36) NULL,                         -- objectGUID з AD (стабільний ідентифікатор, переживає зміну email); NULL для локальних
     failed_login_attempts INT NOT NULL DEFAULT 0,  -- скидається до 0 при вдалому вході
     locked_until DATETIME NULL,                    -- NULL = не заблоковано; блокування завжди прив'язане до КОНКРЕТНОГО користувача, не IP
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (role_id) REFERENCES roles(id)
+    FOREIGN KEY (role_id) REFERENCES roles(id),
+    UNIQUE KEY uq_users_ad_guid (ad_guid)
 ) ENGINE=InnoDB;
 
 -- Загальносистемні налаштування (ключ-значення) — зараз лише параметри
