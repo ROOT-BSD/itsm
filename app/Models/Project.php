@@ -438,17 +438,16 @@ class Project
         return $ids;
     }
 
-    public static function create(string $name, ?string $description, string $visibility, int $createdBy, ?int $responsibleUserId = null, ?int $parentId = null): int
+    public static function create(string $name, ?string $description, int $createdBy, ?int $responsibleUserId = null, ?int $parentId = null): int
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO projects (parent_id, name, description, visibility, status, created_by, responsible_user_id)
-             VALUES (:parent_id, :name, :description, :visibility, "active", :created_by, :responsible_user_id)'
+            'INSERT INTO projects (parent_id, name, description, status, created_by, responsible_user_id)
+             VALUES (:parent_id, :name, :description, "active", :created_by, :responsible_user_id)'
         );
         $stmt->execute([
             'parent_id' => $parentId,
             'name' => $name,
             'description' => $description,
-            'visibility' => $visibility,
             'created_by' => $createdBy,
             'responsible_user_id' => $responsibleUserId ?: null,
         ]);
@@ -476,11 +475,47 @@ class Project
         NotificationService::projectResponsibleChanged($id, $responsibleUserId ?: null, $previousResponsibleUserId, $actingUserId);
     }
 
-    public static function updateVisibility(int $id, string $visibility, int $actingUserId): void
+    /**
+     * Чи причетна до проєкту людина НЕ з підрозділу адміністратора $adminId: автор, відповідальний, учасник,
+     * виконавець чи автор задачі або та, що вела облік часу. Від цього залежить, чи може адміністратор підрозділу
+     * видалити проєкт: проєкт із «чужими» людьми видаляє лише адміністратор системи.
+     */
+    public static function involvesOutsideUnit(int $projectId, int $adminId): bool
     {
-        $stmt = Database::connection()->prepare('UPDATE projects SET visibility = :visibility WHERE id = :id');
-        $stmt->execute(['visibility' => $visibility, 'id' => $id]);
-        Audit::log('project', $id, 'visibility_changed_to_' . $visibility, $actingUserId);
+        $ou = Unit::scopeOu($adminId);
+        if ($ou === null) {
+            return true; // не адміністратор підрозділу — підрозділу немає, тож «усі свої» не можна довести
+        }
+        $parts = [
+            'SELECT created_by AS uid FROM projects WHERE id = :p1',
+            'SELECT responsible_user_id FROM projects WHERE id = :p2',
+            'SELECT assignee_id FROM tasks WHERE project_id = :p3',
+            'SELECT author_id FROM tasks WHERE project_id = :p4',
+            'SELECT tl.user_id FROM time_logs tl JOIN tasks tk ON tk.id = tl.task_id WHERE tk.project_id = :p5',
+        ];
+        $params = ['p1' => $projectId, 'p2' => $projectId, 'p3' => $projectId, 'p4' => $projectId, 'p5' => $projectId];
+        if (self::membersTableExists()) {
+            $parts[] = 'SELECT user_id FROM project_members WHERE project_id = :p6';
+            $params['p6'] = $projectId;
+        }
+        [$match, $mParams] = Unit::matchSql('iu', 'ou', $ou);
+        $stmt = Database::connection()->prepare(
+            'SELECT 1 FROM (' . implode(' UNION ', $parts) . ') iv JOIN users iu ON iu.id = iv.uid WHERE NOT (' . $match . ') LIMIT 1'
+        );
+        $stmt->execute($params + $mParams);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Чи може адміністратор підрозділу видалити проєкт: або він сам його створив, або всі причетні люди — з його підрозділу.
+     * Решту (є «чужі» люди і проєкт створено не ним) видаляє лише адміністратор системи.
+     */
+    public static function unitAdminCanDelete(array $project, int $adminId): bool
+    {
+        if (Unit::scopeOu($adminId) === null) {
+            return false;
+        }
+        return (int) $project['created_by'] === $adminId || !self::involvesOutsideUnit((int) $project['id'], $adminId);
     }
 
     /** Статус проєкту: активний / архівний / закритий — впливає лише на позначку в списку, не приховує сам проєкт. */

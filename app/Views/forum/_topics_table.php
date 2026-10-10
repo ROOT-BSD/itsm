@@ -10,7 +10,8 @@ $e = static fn($v) => \App\Core\View::e($v);
             <td>
                 <?php if (!empty($t['is_pinned'])): ?><span class="badge bg-warning text-dark" title="Закріплена">📌</span><?php endif; ?>
                 <?php if (!empty($t['is_locked'])): ?><span class="badge bg-secondary" title="Закрита для відповідей">🔒</span><?php endif; ?>
-                <a href="/forum/topics/<?= (int) $t['id'] ?>" class="fw-semibold"><?= $e($t['title']) ?></a>
+                <?php if (!empty($t['is_unread'])): ?><span class="badge bg-success" title="Є нові повідомлення">нове</span><?php endif; ?>
+                <a href="/forum/topics/<?= (int) $t['id'] ?>" class="<?= !empty($t['is_unread']) ? 'fw-bold' : 'fw-semibold' ?>"><?= $e($t['title']) ?></a>
                 <div class="small text-muted">автор: <?= $e($t['author_name'] ?? 'користувача видалено') ?>, <?= $e(date('d.m.Y', strtotime($t['created_at']))) ?></div>
             </td>
             <?php if (!empty($showBoard)): ?><td class="small"><?= $e($t['board_name']) ?></td><?php endif; ?>

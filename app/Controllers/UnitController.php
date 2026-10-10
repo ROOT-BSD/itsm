@@ -38,6 +38,79 @@ class UnitController
         }
     }
 
+    /** Сторінка-розділ («Керування» чи «Налаштування системи») з картками — як /admin/manage і /admin/settings. */
+    public function hub(string $section): void
+    {
+        $ou = Unit::scopeOu((int) Auth::id());
+        View::render('admin/hub', [
+            'section' => $section,
+            'navClass' => \App\Core\UnitNav::class,
+            'unitLabel' => $ou !== null ? LdapDn::ouLabel($ou) : '',
+        ]);
+    }
+
+    /** Проєкти підрозділу: зміна статусу й видалення (видалення — лише проєктів, створених вами, або де всі причетні люди з підрозділу). */
+    public function projects(): void
+    {
+        $id = (int) Auth::id();
+        $projects = \App\Models\Project::allVisibleTo($id, false);
+        foreach ($projects as &$p) {
+            $p['can_delete'] = \App\Models\Project::unitAdminCanDelete($p, $id);
+        }
+        unset($p);
+        View::render('admin/projects', [
+            'unitMode' => true,
+            'basePath' => '/unit/projects',
+            'projects' => $projects,
+            'overdueProjectIds' => \App\Models\Project::overdueMilestoneProjectIds(),
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    public function updateProjectStatus(array $params): void
+    {
+        $project = $this->projectOr404($params);
+        $status = $_POST['status'] ?? '';
+        if (!in_array($status, ['active', 'archived', 'closed'], true)) {
+            $this->toProjects('error', 'Некоректне значення статусу');
+        }
+        \App\Models\Project::updateStatus((int) $project['id'], $status, (int) Auth::id());
+        $this->toProjects('success', 'Статус проєкту "' . $project['name'] . '" оновлено');
+    }
+
+    public function deleteProject(array $params): void
+    {
+        $project = $this->projectOr404($params);
+        if (!\App\Models\Project::unitAdminCanDelete($project, (int) Auth::id())) {
+            $this->toProjects('error', 'У проєкті «' . $project['name'] . '» є учасники з інших підрозділів, і створено його не вами — видалити його може лише адміністратор системи.');
+        }
+        if (trim((string) ($_POST['confirm_name'] ?? '')) !== $project['name']) {
+            $this->toProjects('error', 'Назву проєкту введено невірно — видалення скасовано');
+        }
+        \App\Models\Project::delete((int) $project['id'], (int) Auth::id());
+        $this->toProjects('success', 'Проєкт "' . $project['name'] . '" та всі повʼязані дані видалено');
+    }
+
+    /** Проєкт, який бачить адміністратор підрозділу; інакше 404 (чужий і неіснуючий не відрізняються). */
+    private function projectOr404(array $params): array
+    {
+        $id = ctype_digit((string) ($params['id'] ?? '')) ? (int) $params['id'] : 0;
+        $project = $id > 0 ? \App\Models\Project::find($id) : null;
+        if (!$project || !\App\Models\Project::isVisibleTo($project, (int) Auth::id(), false)) {
+            http_response_code(404);
+            echo 'Проєкт не знайдено у вашому підрозділі.';
+            exit;
+        }
+        return $project;
+    }
+
+    private function toProjects(string $key, string $message): never
+    {
+        header('Location: /unit/projects?' . $key . '=' . urlencode($message));
+        exit;
+    }
+
     public function index(): void
     {
         $ou = Unit::scopeOu((int) Auth::id());
@@ -266,7 +339,7 @@ class UnitController
 
     private function back(string $key, string $message): never
     {
-        header('Location: /unit?' . $key . '=' . urlencode($message));
+        header('Location: /unit/users?' . $key . '=' . urlencode($message));
         exit;
     }
 }

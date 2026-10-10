@@ -56,6 +56,7 @@ $support = new SupportController();
 $router->get('/support', [$support, 'showForm']);
 $router->post('/support', [$support, 'store']);
 $router->get('/support/track/{token}', [$support, 'track']);
+$router->get('/support/track/{token}/attachments/{id}', [$support, 'attachment']);
 $router->post('/support/track/{token}/comment', [$support, 'addComment']);
 $router->post('/support/track/{token}/rate', [$support, 'rateCsat']);
 
@@ -174,6 +175,9 @@ $router->get('/library/{id}/download', fn($p) => $library->download($p));
 // Форум. Статичні адреси («boards/new», «search») — ПЕРЕД адресами з {id}.
 $forum = new ForumController();
 $router->get('/forum', fn() => $forum->index());
+$router->post('/forum/preview', fn() => $forum->preview());
+$router->get('/forum/files/{id}', fn($p) => $forum->file($p));
+$router->post('/forum/read-all', fn() => $forum->readAll());
 $router->get('/forum/search', fn() => $forum->search());
 $router->get('/forum/boards/new', fn() => $forum->newBoard());
 $router->post('/forum/boards', fn() => $forum->storeBoard());
@@ -181,6 +185,8 @@ $router->get('/forum/boards/{id}', fn($p) => $forum->board($p));
 $router->get('/forum/boards/{id}/edit', fn($p) => $forum->editBoard($p));
 $router->post('/forum/boards/{id}', fn($p) => $forum->updateBoard($p));
 $router->post('/forum/boards/{id}/delete', fn($p) => $forum->deleteBoard($p));
+$router->post('/forum/boards/{id}/subscribe', fn($p) => $forum->subscribe($p));
+$router->post('/forum/boards/{id}/unsubscribe', fn($p) => $forum->unsubscribe($p));
 $router->get('/forum/boards/{id}/topics/new', fn($p) => $forum->newTopic($p));
 $router->post('/forum/boards/{id}/topics', fn($p) => $forum->storeTopic($p));
 $router->get('/forum/topics/{id}', fn($p) => $forum->topic($p));
@@ -248,9 +254,6 @@ $router->get('/admin/projects', function () {
 $router->post('/admin/projects/{id}/delete', function ($p) {
     (new AdminController())->deleteProject($p);
 });
-$router->post('/admin/projects/{id}/visibility', function ($p) {
-    (new AdminController())->updateProjectVisibility($p);
-});
 $router->post('/admin/projects/{id}/status', function ($p) {
     (new AdminController())->updateProjectStatus($p);
 });
@@ -265,7 +268,26 @@ $router->post('/admin/users/{id}/unlock', function ($p) {
 });
 // --- Адміністратор підрозділу (власний AD OU) ---
 $router->get('/unit', function () {
+    header('Location: /unit/manage');
+    exit;
+});
+$router->get('/unit/manage', function () {
+    (new \App\Controllers\UnitController())->hub('manage');
+});
+$router->get('/unit/settings', function () {
+    (new \App\Controllers\UnitController())->hub('settings');
+});
+$router->get('/unit/users', function () {
     (new \App\Controllers\UnitController())->index();
+});
+$router->get('/unit/projects', function () {
+    (new \App\Controllers\UnitController())->projects();
+});
+$router->post('/unit/projects/{id}/status', function ($p) {
+    (new \App\Controllers\UnitController())->updateProjectStatus($p);
+});
+$router->post('/unit/projects/{id}/delete', function ($p) {
+    (new \App\Controllers\UnitController())->deleteProject($p);
 });
 $router->get('/unit/board', function () {
     (new \App\Controllers\UnitController())->board();

@@ -45,6 +45,22 @@ $tid = (int) $topic['id'];
             <a href="/forum/posts/<?= (int) $p['id'] ?>" class="small text-muted text-decoration-none" title="Постійне посилання"><?= $e(date('d.m.Y H:i', strtotime($p['created_at']))) ?></a>
         </div>
         <div class="card-body wiki-content"><?= $p['html'] /* HTML від App\Core\Markdown: увесь текст екранований, посилання проходять білий список */ ?></div>
+        <?php if (!empty($p['attachments'])): ?>
+            <div class="card-body border-top py-2">
+                <div class="small text-muted mb-1">Прикріплені файли:</div>
+                <div class="d-flex flex-wrap gap-3 align-items-start">
+                    <?php foreach ($p['attachments'] as $a): $isImg = in_array($a['mime_type'], ['image/jpeg', 'image/png'], true); ?>
+                        <div class="small">
+                            <?php if ($isImg): ?>
+                                <a href="/forum/files/<?= (int) $a['id'] ?>" target="_blank" rel="noopener noreferrer"><img src="/forum/files/<?= (int) $a['id'] ?>?thumb=1" alt="<?= $e($a['original_name']) ?>" loading="lazy" style="max-width:120px;max-height:120px" class="img-thumbnail d-block mb-1"></a>
+                            <?php endif; ?>
+                            <a href="/forum/files/<?= (int) $a['id'] ?>" target="_blank" rel="noopener noreferrer"><?= $e($a['original_name']) ?></a>
+                            <span class="text-muted"><?= $e(\App\Core\UploadLimits::human((int) $a['size_bytes'])) ?></span>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endif; ?>
         <?php if ($p['edited_at'] !== null || $p['can_edit'] || $p['can_delete']): ?>
             <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2 small text-muted">
                 <span><?php if ($p['edited_at'] !== null): ?>змінено <?= $e(date('d.m.Y H:i', strtotime($p['edited_at']))) ?><?= $p['edited_by_name'] !== null ? ', ' . $e($p['edited_by_name']) : '' ?><?php endif; ?></span>
@@ -64,11 +80,13 @@ $tid = (int) $topic['id'];
 <?php $pagerBase = '/forum/topics/' . $tid; require __DIR__ . '/_pager.php'; ?>
 
 <?php if ($canReply): ?>
-    <form method="post" action="/forum/topics/<?= $tid ?>/reply" class="card card-body shadow-sm" id="reply">
+    <form method="post" action="/forum/topics/<?= $tid ?>/reply" class="card card-body shadow-sm" id="reply" enctype="multipart/form-data">
         <?= \App\Core\Csrf::field() ?>
         <label class="form-label" for="forum-reply">Ваша відповідь</label>
         <textarea id="forum-reply" name="body" class="form-control" rows="6" maxlength="<?= \App\Models\Forum::MAX_BODY ?>" required><?= $e($replyBody) ?></textarea>
         <div class="form-text">Markdown: **жирний**, *курсив*, `код`, списки, &gt; цитата, [текст](https://посилання).</div>
+        <?php $previewFor = 'forum-reply'; require __DIR__ . '/_preview.php'; ?>
+        <?php $fieldSuffix = 3; require __DIR__ . '/_files_field.php'; ?>
         <div class="mt-3"><button class="btn btn-primary">Відповісти</button></div>
     </form>
 <?php else: ?>

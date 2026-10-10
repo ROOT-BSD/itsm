@@ -160,9 +160,10 @@
 
 /* Вкладення (app/Views/attachments/_panel.php) */
 .attachment-thumb {
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+    background: #f8f9fa;
     border-radius: 4px;
     border: 1px solid #dee2e6;
 }

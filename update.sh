@@ -34,8 +34,12 @@
 #   29. Додає стабільний ідентифікатор AD-користувача objectGUID (міграція 028)
 #   30. Додає роль «Адміністратор Підрозділу» (міграція 029)
 #   31. Додає підрозділ (unit_ou) для локальних користувачів (міграція 030)
-#   32. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
-#   33. Перевстановлює права доступу на файли для веб-сервера
+#   32. Створює таблицю підписок на розділи форуму (міграція 031)
+#   33. Створює таблиці позначок «непрочитане» форуму (міграція 033)
+#   34. Створює таблицю вкладень форуму (міграція 034)
+#   35. Видаляє невикористане поле «Видимість» проєкту (міграція 032)
+#   36. Видаляє застарілий кеш метрик шрифтів PDF-звітів (якщо він містить шлях з іншого сервера)
+#   37. Перевстановлює права доступу на файли для веб-сервера
 #
 # ВИКОРИСТАННЯ (на сервері, у корені проєкту, ПІСЛЯ того, як нові файли
 # з архіву вже скопійовані поверх старих — .env при цьому НЕ чіпайте):
@@ -990,8 +994,112 @@ else
     ok "Колонка підрозділу локальних користувачів вже є — нічого створювати не треба"
 fi
 
-# ---------- 32. Очищення застарілого кешу PDF-шрифтів ----------
-section "32. Очищення кешу метрик шрифтів PDF-звітів"
+# ---------- 32. Підписки на розділи форуму ----------
+section "32. Перевірка таблиці підписок на розділи форуму"
+
+SUB_TABLE=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'forum_board_subscriptions';
+" | $MYSQL -N 2>/dev/null || echo "0")
+FORUM_TABLE=$(echo "
+    SELECT COUNT(*) FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'forum_boards';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${FORUM_TABLE:-0}" -lt 1 ]; then
+    warn "Таблиць форуму ще немає (крок 26) — підписки створити неможливо"
+elif [ "${SUB_TABLE:-0}" -lt 1 ]; then
+    info "Таблиці підписок на розділи форуму ще немає — створюю..."
+
+    MIGRATION_FSUB="${SCRIPT_DIR}/database/migrations/031_add_forum_board_subscriptions.sql"
+    if [ ! -f "$MIGRATION_FSUB" ]; then
+        fail "Файл ${MIGRATION_FSUB} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_FSUB" >/dev/null 2>&1; then
+        ok "Готово — на сторінці розділу форуму з'явиться кнопка «Підписатися»"
+    else
+        fail "Помилка міграції 031 (підписки на розділи форуму)"
+        exit 1
+    fi
+else
+    ok "Таблиця підписок на розділи форуму вже є — нічого створювати не треба"
+fi
+
+# ---------- 33. Позначки «непрочитане» форуму ----------
+section "33. Позначки «непрочитане» форуму"
+
+if [ "$(echo "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('forum_topic_reads','forum_read_marks');" | $MYSQL -N 2>/dev/null || echo 0)" -lt 2 ]; then
+    info "Таблиць відміток прочитання ще немає — створюю..."
+    MIGRATION_UNREAD="${SCRIPT_DIR}/database/migrations/033_add_forum_unread.sql"
+    if [ ! -f "$MIGRATION_UNREAD" ]; then
+        fail "Файл ${MIGRATION_UNREAD} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+    if $MYSQL < "$MIGRATION_UNREAD" >/dev/null 2>&1; then
+        ok "Готово — позначки «непрочитане» на форумі працюють"
+    else
+        fail "Помилка міграції 033 (позначки «непрочитане»)"
+        exit 1
+    fi
+else
+    ok "Таблиці відміток прочитання вже є — нічого створювати не треба"
+fi
+
+# ---------- 34. Вкладення в повідомленнях форуму ----------
+section "34. Вкладення в повідомленнях форуму"
+
+if [ "$(echo "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'forum_attachments';" | $MYSQL -N 2>/dev/null || echo 0)" -lt 1 ]; then
+    info "Таблиці вкладень форуму ще немає — створюю..."
+    MIGRATION_FATT="${SCRIPT_DIR}/database/migrations/034_add_forum_attachments.sql"
+    if [ ! -f "$MIGRATION_FATT" ]; then
+        fail "Файл ${MIGRATION_FATT} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+    if $MYSQL < "$MIGRATION_FATT" >/dev/null 2>&1; then
+        ok "Готово — до повідомлень форуму можна прикріплювати файли"
+    else
+        fail "Помилка міграції 034 (вкладення форуму)"
+        exit 1
+    fi
+else
+    ok "Таблиця вкладень форуму вже є — нічого створювати не треба"
+fi
+
+# ---------- 35. Видалення поля «Видимість» проєкту ----------
+section "35. Видалення невикористаного поля «Видимість» проєкту"
+
+VIS_COL=$(echo "
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projects' AND COLUMN_NAME = 'visibility';
+" | $MYSQL -N 2>/dev/null || echo "0")
+
+if [ "${VIS_COL:-0}" -gt 0 ]; then
+    info "Стовпець projects.visibility ще є (він ні на що не впливав) — видаляю..."
+
+    MIGRATION_PVIS="${SCRIPT_DIR}/database/migrations/032_drop_project_visibility.sql"
+    if [ ! -f "$MIGRATION_PVIS" ]; then
+        fail "Файл ${MIGRATION_PVIS} не знайдено"
+        info "Переконайтесь, що ви скопіювали ВСЮ папку database/ з нового архіву, і запустіть update.sh ще раз."
+        exit 1
+    fi
+
+    if $MYSQL < "$MIGRATION_PVIS" >/dev/null 2>&1; then
+        ok "Готово — поле «Видимість» проєкту прибрано"
+    else
+        fail "Помилка міграції 032 (видалення поля «Видимість» проєкту)"
+        exit 1
+    fi
+else
+    ok "Стовпця projects.visibility вже немає — нічого робити не треба"
+fi
+
+# ---------- 36. Очищення застарілого кешу PDF-шрифтів ----------
+section "36. Очищення кешу метрик шрифтів PDF-звітів"
 
 TFPDF_CACHE_DIR="${SCRIPT_DIR}/app/Vendor/tfpdf/font/unifont"
 if [ -d "$TFPDF_CACHE_DIR" ]; then
@@ -1007,8 +1115,8 @@ else
     ok "Директорія tFPDF ще не оновлена з нового архіву — пропускаю (з'явиться після копіювання файлів)"
 fi
 
-# ---------- 33. Права доступу ----------
-section "33. Права доступу до файлів"
+# ---------- 37. Права доступу ----------
+section "37. Права доступу до файлів"
 
 if [ "$(id -u)" -ne 0 ]; then
     warn "Скрипт запущено не від root — права доступу пропущено"

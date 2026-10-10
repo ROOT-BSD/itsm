@@ -200,6 +200,58 @@ class NotificationService
         }
     }
 
+    /**
+     * Нова тема в розділі форуму — лист підписникам розділу (кнопка «Підписатися» на сторінці розділу), крім автора.
+     * Одержувач мусить за роллю бачити розділ; кількість листів за одну тему обмежена (FORUM_MAX_RECIPIENTS), щоб
+     * створення теми не затримувалось на великій розсилці.
+     */
+    public static function forumTopicCreated(int $topicId, int $authorId): void
+    {
+        if (!self::forumEnabled()) {
+            return;
+        }
+        try {
+            $topic = \App\Models\Forum::findTopic($topicId);
+            if (!$topic) {
+                return;
+            }
+            $author = User::findById($authorId);
+            $by = $author ? $author['full_name'] : 'Хтось';
+            $firstPost = \App\Models\Forum::findPost(\App\Models\Forum::firstPostId($topicId));
+            $excerpt = '';
+            if ($firstPost) {
+                $excerpt = trim(preg_replace('/\s+/u', ' ', \App\Core\Markdown::plainText((string) $firstPost['body'])) ?? '');
+                if (mb_strlen($excerpt) > 300) {
+                    $excerpt = rtrim(mb_substr($excerpt, 0, 300)) . '…';
+                }
+            }
+            $link = Setting::appUrl() . '/forum/topics/' . $topicId;
+            $boardLink = Setting::appUrl() . '/forum/boards/' . (int) $topic['board_id'];
+            $subject = "Нова тема у розділі форуму «{$topic['board_name']}»: {$topic['title']}";
+
+            $sent = 0;
+            foreach (\App\Models\Forum::boardSubscribers((int) $topic['board_id'], $authorId) as $user) {
+                if (!in_array($topic['board_visibility'], \App\Models\Forum::allowedVisibilities($user['role_code']), true)) {
+                    continue;
+                }
+                if ($sent >= self::FORUM_MAX_RECIPIENTS) {
+                    break;
+                }
+                $body = "Доброго дня, {$user['full_name']}!\n\n{$by} створив(ла) нову тему «{$topic['title']}» у розділі «{$topic['board_name']}»:\n\n{$excerpt}\n\nПерейти до теми:\n{$link}\n\nЦе автоматичний лист. Ви отримуєте його, бо підписані на нові теми розділу. Скасувати підписку можна на сторінці розділу:\n{$boardLink}";
+                $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
+                $sent++;
+                if (!$result['ok']) {
+                    Audit::log('forum_topic', $topicId, 'notification_failed', null, ['to' => $user['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+                    if (!str_contains($result['message'], 'Некоректна адреса')) {
+                        break;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // навмисно мовчки — тему вже створено, лист не надіслався
+        }
+    }
+
     // ---------- Проєкти ----------
 
     /** Проєкт створено з одразу вказаним відповідальним — окреме сповіщення про призначення (нижче) при створенні не дублюється. */

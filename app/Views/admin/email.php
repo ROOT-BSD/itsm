@@ -151,7 +151,7 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                     </div>
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" name="notify_forum_enabled" id="notify_forum_enabled" value="1" <?= $notifyForumEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
-                        <label class="form-check-label" for="notify_forum_enabled">Сповіщення про форум — нова відповідь у темі, де ви автор або учасник</label>
+                        <label class="form-check-label" for="notify_forum_enabled">Сповіщення про форум — нова відповідь у темі, де ви автор або учасник, і нова тема в розділі, на який ви підписані</label>
                         <div class="form-text">Лист отримують автор теми та ті, хто в ній писав (не більше 20 адресатів на відповідь), якщо бачать розділ.</div>
                     </div>
                     <div class="form-check mb-3">

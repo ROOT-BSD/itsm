@@ -16,7 +16,6 @@ use App\Models\Setting;
 class AdminController
 {
     /** Допустимі значення видимості проєкту (ENUM у БД) — той самий список, що й у ProjectController. */
-    private const VISIBILITIES = ['public', 'private', 'restricted'];
 
     /** Допустимі значення статусу проєкту (ENUM у БД). */
     private const STATUSES = ['active', 'archived', 'closed'];
@@ -379,26 +378,6 @@ class AdminController
 
         Project::delete($projectId, Auth::id());
         header('Location: /admin/projects?success=' . urlencode('Проєкт "' . $project['name'] . '" та всі повʼязані дані видалено'));
-        exit;
-    }
-
-    public function updateProjectVisibility(array $params): void
-    {
-        $projectId = (int) $params['id'];
-        $visibility = $_POST['visibility'] ?? '';
-
-        $project = Project::find($projectId);
-        if (!$project) {
-            header('Location: /admin/projects?error=' . urlencode('Проєкт не знайдено'));
-            exit;
-        }
-        if (!in_array($visibility, self::VISIBILITIES, true)) {
-            header('Location: /admin/projects?error=' . urlencode('Некоректне значення видимості'));
-            exit;
-        }
-
-        Project::updateVisibility($projectId, $visibility, Auth::id());
-        header('Location: /admin/projects?success=' . urlencode('Видимість проєкту "' . $project['name'] . '" оновлено'));
         exit;
     }
 

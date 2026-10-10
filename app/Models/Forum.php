@@ -45,6 +45,222 @@ class Forum
         return Database::tableExists('forum_boards') && Database::tableExists('forum_topics') && Database::tableExists('forum_posts');
     }
 
+    // ------------------------------------------------------------------ підписки на розділи (міграція 031)
+
+    /** Чи є таблиця підписок. Без неї (update.sh не запускали) кнопка «Підписатися» не показується, сповіщень немає. */
+    public static function subscriptionsReady(): bool
+    {
+        return Database::tableExists('forum_board_subscriptions');
+    }
+
+    public static function isSubscribed(int $userId, int $boardId): bool
+    {
+        if (!self::subscriptionsReady()) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('SELECT 1 FROM forum_board_subscriptions WHERE user_id = :u AND board_id = :b');
+        $stmt->execute(['u' => $userId, 'b' => $boardId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public static function subscribe(int $userId, int $boardId): void
+    {
+        Database::connection()
+            ->prepare('INSERT IGNORE INTO forum_board_subscriptions (user_id, board_id) VALUES (:u, :b)')
+            ->execute(['u' => $userId, 'b' => $boardId]);
+    }
+
+    public static function unsubscribe(int $userId, int $boardId): void
+    {
+        Database::connection()
+            ->prepare('DELETE FROM forum_board_subscriptions WHERE user_id = :u AND board_id = :b')
+            ->execute(['u' => $userId, 'b' => $boardId]);
+    }
+
+    /**
+     * Підписники розділу (активні, крім $exceptUserId — автора теми) з кодом ролі: роль потрібна, щоб не слати
+     * тему з розділу, якого одержувач більше не бачить (розділ могли закрити для його ролі вже після підписки).
+     *
+     * @return array<int, array{id: int, email: string, full_name: string, role_code: string}>
+     */
+    public static function boardSubscribers(int $boardId, int $exceptUserId): array
+    {
+        if (!self::subscriptionsReady()) {
+            return [];
+        }
+        $stmt = Database::connection()->prepare(
+            'SELECT u.id, u.email, u.full_name, r.code AS role_code
+             FROM forum_board_subscriptions s
+             JOIN users u ON u.id = s.user_id
+             JOIN roles r ON r.id = u.role_id
+             WHERE s.board_id = :b AND u.is_active = 1 AND u.id <> :me
+             ORDER BY u.id'
+        );
+        $stmt->execute(['b' => $boardId, 'me' => $exceptUserId]);
+        return $stmt->fetchAll();
+    }
+
+    // ------------------------------------------------------------------ вкладення (міграція 034)
+
+    public const MAX_FILES_PER_POST = 5;
+
+    /** Чи є таблиця вкладень. Без неї (update.sh не запускали) файли до повідомлень прикріпити не можна. */
+    public static function attachmentsReady(): bool
+    {
+        return Database::tableExists('forum_attachments');
+    }
+
+    /** Вкладення повідомлень, згруповані за post_id. @param int[] $postIds @return array<int, array<int, array<string, mixed>>> */
+    public static function attachmentsForPosts(array $postIds): array
+    {
+        $postIds = array_values(array_unique(array_map('intval', $postIds)));
+        if (!$postIds || !self::attachmentsReady()) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($postIds), '?'));
+        $stmt = Database::connection()->prepare("SELECT * FROM forum_attachments WHERE post_id IN ({$in}) ORDER BY id");
+        $stmt->execute($postIds);
+        $out = [];
+        foreach ($stmt->fetchAll() as $a) {
+            $out[(int) $a['post_id']][] = $a;
+        }
+        return $out;
+    }
+
+    public static function attachmentCount(int $postId): int
+    {
+        if (!self::attachmentsReady()) {
+            return 0;
+        }
+        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM forum_attachments WHERE post_id = :p');
+        $stmt->execute(['p' => $postId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** Вкладення разом з видимістю розділу (для перевірки прав на завантаження). */
+    public static function findAttachment(int $id): ?array
+    {
+        if (!self::attachmentsReady()) {
+            return null;
+        }
+        $stmt = Database::connection()->prepare(
+            'SELECT a.*, b.visibility AS board_visibility
+             FROM forum_attachments a
+             JOIN forum_posts p ON p.id = a.post_id
+             JOIN forum_topics t ON t.id = p.topic_id
+             JOIN forum_boards b ON b.id = t.board_id
+             WHERE a.id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public static function addAttachment(int $postId, string $name, string $storedName, string $mime, int $size, ?int $userId): int
+    {
+        $pdo = Database::connection();
+        $pdo->prepare(
+            'INSERT INTO forum_attachments (post_id, original_name, stored_name, mime_type, size_bytes, uploaded_by)
+             VALUES (:p, :n, :s, :m, :z, :u)'
+        )->execute(['p' => $postId, 'n' => $name, 's' => $storedName, 'm' => $mime, 'z' => $size, 'u' => $userId]);
+        return (int) $pdo->lastInsertId();
+    }
+
+    /** Вкладення повідомлення за списком id (чужі id ігноруються) → імена файлів, що видалені з БД. @param int[] $ids @return array<int, array<string, mixed>> */
+    public static function removeAttachments(int $postId, array $ids): array
+    {
+        $removed = [];
+        foreach (self::attachmentsForPosts([$postId])[$postId] ?? [] as $a) {
+            if (in_array((int) $a['id'], $ids, true)) {
+                Database::connection()->prepare('DELETE FROM forum_attachments WHERE id = :id')->execute(['id' => $a['id']]);
+                $removed[] = $a;
+            }
+        }
+        return $removed;
+    }
+
+    /** Імена файлів вкладень повідомлення / теми / розділу — до видалення, щоб потім прибрати файли з диска. @return string[] */
+    public static function storedNames(string $scope, int $id): array
+    {
+        if (!self::attachmentsReady()) {
+            return [];
+        }
+        $sql = [
+            'post' => 'SELECT a.stored_name FROM forum_attachments a WHERE a.post_id = :id',
+            'topic' => 'SELECT a.stored_name FROM forum_attachments a JOIN forum_posts p ON p.id = a.post_id WHERE p.topic_id = :id',
+            'board' => 'SELECT a.stored_name FROM forum_attachments a JOIN forum_posts p ON p.id = a.post_id JOIN forum_topics t ON t.id = p.topic_id WHERE t.board_id = :id',
+        ][$scope];
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->execute(['id' => $id]);
+        return array_column($stmt->fetchAll(), 'stored_name');
+    }
+
+    // ------------------------------------------------------------------ «непрочитане» (міграція 033)
+
+    /** Чи є таблиці відміток прочитання. Без них (update.sh не запускали) позначок «нове» просто немає. */
+    public static function unreadReady(): bool
+    {
+        return Database::tableExists('forum_topic_reads') && Database::tableExists('forum_read_marks');
+    }
+
+    /**
+     * Фрагменти SQL для «непрочитаних» тем користувача над псевдонімом теми `t`: JOIN-и і вираз (0/1).
+     * Тема непрочитана, якщо останнє повідомлення новіше за пізнішу з відміток (дочитано тему / «усе прочитано»;
+     * для нового користувача — дата створення облікового запису) і написане не самим користувачем.
+     * Ідентифікатор вставляється як ціле, тож підстановка безпечна.
+     *
+     * @return array{join: string, expr: string}
+     */
+    private static function unreadSql(?int $userId): array
+    {
+        if ($userId === null || !self::unreadReady()) {
+            return ['join' => '', 'expr' => '0'];
+        }
+        $u = (int) $userId;
+        return [
+            'join' => " LEFT JOIN forum_topic_reads fr ON fr.topic_id = t.id AND fr.user_id = {$u}"
+                    . " LEFT JOIN forum_read_marks fm ON fm.user_id = {$u}"
+                    . " LEFT JOIN users me ON me.id = {$u}",
+            'expr' => "(t.last_post_at > GREATEST(COALESCE(fr.read_at, me.created_at, '1970-01-01'), COALESCE(fm.read_all_at, me.created_at, '1970-01-01'))"
+                    . " AND (t.last_post_by IS NULL OR t.last_post_by <> {$u}))",
+        ];
+    }
+
+    /** Позначити тему прочитаною (користувач дійшов до її останньої сторінки). */
+    public static function markRead(int $topicId, int $userId): void
+    {
+        if (!self::unreadReady()) {
+            return;
+        }
+        Database::connection()->prepare(
+            'INSERT INTO forum_topic_reads (user_id, topic_id, read_at) VALUES (:u, :t, NOW())
+             ON DUPLICATE KEY UPDATE read_at = NOW()'
+        )->execute(['u' => $userId, 't' => $topicId]);
+    }
+
+    /** «Позначити все прочитаним»: усе, що було на форумі до цього моменту. Окремі відмітки тем при цьому не потрібні. */
+    public static function markAllRead(int $userId): void
+    {
+        if (!self::unreadReady()) {
+            return;
+        }
+        $pdo = Database::connection();
+        $pdo->prepare(
+            'INSERT INTO forum_read_marks (user_id, read_all_at) VALUES (:u, NOW())
+             ON DUPLICATE KEY UPDATE read_all_at = NOW()'
+        )->execute(['u' => $userId]);
+        $pdo->prepare('DELETE FROM forum_topic_reads WHERE user_id = :u')->execute(['u' => $userId]);
+    }
+
+    /** Кількість непрочитаних тем у розділах, видимих ролі. */
+    public static function unreadTotal(?string $role, int $userId): int
+    {
+        $total = 0;
+        foreach (self::boards($role, $userId) as $b) {
+            $total += (int) ($b['unread_count'] ?? 0);
+        }
+        return $total;
+    }
+
     // ------------------------------------------------------------------ розділи
 
     /**
@@ -52,14 +268,16 @@ class Forum
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function boards(?string $role): array
+    public static function boards(?string $role, ?int $userId = null): array
     {
+        $un = self::unreadSql($userId);
         $allowed = self::allowedVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
         $stmt = Database::connection()->prepare(
-            "SELECT b.*, COUNT(t.id) AS topic_count, COALESCE(SUM(t.reply_count + 1), 0) AS post_count, MAX(t.last_post_at) AS last_activity
+            "SELECT b.*, COUNT(t.id) AS topic_count, COALESCE(SUM(t.reply_count + 1), 0) AS post_count, MAX(t.last_post_at) AS last_activity,
+                    COALESCE(SUM({$un['expr']}), 0) AS unread_count
              FROM forum_boards b
-             LEFT JOIN forum_topics t ON t.board_id = b.id
+             LEFT JOIN forum_topics t ON t.board_id = b.id{$un['join']}
              WHERE b.visibility IN ({$in})
              GROUP BY b.id
              ORDER BY b.sort_order, b.name"
@@ -123,16 +341,17 @@ class Forum
     // ------------------------------------------------------------------ теми
 
     /** Сторінка тем розділу: закріплені першими, далі за останньою активністю. @return array<int, array<string, mixed>> */
-    public static function topics(int $boardId, int $page, int $perPage): array
+    public static function topics(int $boardId, int $page, int $perPage, ?int $userId = null): array
     {
+        $un = self::unreadSql($userId);
         $stmt = Database::connection()->prepare(
-            'SELECT t.*, a.full_name AS author_name, l.full_name AS last_post_by_name
+            "SELECT t.*, a.full_name AS author_name, l.full_name AS last_post_by_name, {$un['expr']} AS is_unread
              FROM forum_topics t
              LEFT JOIN users a ON a.id = t.author_id
-             LEFT JOIN users l ON l.id = t.last_post_by
+             LEFT JOIN users l ON l.id = t.last_post_by{$un['join']}
              WHERE t.board_id = :b
              ORDER BY t.is_pinned DESC, t.last_post_at DESC, t.id DESC
-             LIMIT ' . (int) $perPage . ' OFFSET ' . (int) max(0, ($page - 1) * $perPage)
+             LIMIT " . (int) $perPage . ' OFFSET ' . (int) max(0, ($page - 1) * $perPage)
         );
         $stmt->execute(['b' => $boardId]);
         return $stmt->fetchAll();
@@ -326,8 +545,9 @@ class Forum
      *
      * @return array{rows: array<int, array<string, mixed>>, total: int}
      */
-    public static function search(?string $role, string $query, int $page, int $perPage): array
+    public static function search(?string $role, string $query, int $page, int $perPage, ?int $userId = null): array
     {
+        $un = self::unreadSql($userId);
         $allowed = self::allowedVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
         $like = '%' . addcslashes($query, '\\%_') . '%';
@@ -339,11 +559,11 @@ class Forum
         $count->execute($params);
 
         $stmt = $pdo->prepare(
-            "SELECT t.*, b.name AS board_name, a.full_name AS author_name, l.full_name AS last_post_by_name
+            "SELECT t.*, b.name AS board_name, a.full_name AS author_name, l.full_name AS last_post_by_name, {$un['expr']} AS is_unread
              FROM forum_topics t
              JOIN forum_boards b ON b.id = t.board_id
              LEFT JOIN users a ON a.id = t.author_id
-             LEFT JOIN users l ON l.id = t.last_post_by
+             LEFT JOIN users l ON l.id = t.last_post_by{$un['join']}
              WHERE {$where}
              ORDER BY t.last_post_at DESC, t.id DESC
              LIMIT " . (int) $perPage . ' OFFSET ' . (int) max(0, ($page - 1) * $perPage)
@@ -353,14 +573,15 @@ class Forum
     }
 
     /** Найновіші теми з усіх видимих розділів — для головної сторінки форуму. @return array<int, array<string, mixed>> */
-    public static function recentTopics(?string $role, int $limit): array
+    public static function recentTopics(?string $role, int $limit, ?int $userId = null): array
     {
+        $un = self::unreadSql($userId);
         $allowed = self::allowedVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
         $stmt = Database::connection()->prepare(
-            "SELECT t.id, t.title, t.reply_count, t.last_post_at, b.name AS board_name, l.full_name AS last_post_by_name
+            "SELECT t.id, t.title, t.reply_count, t.last_post_at, b.name AS board_name, l.full_name AS last_post_by_name, {$un['expr']} AS is_unread
              FROM forum_topics t JOIN forum_boards b ON b.id = t.board_id
-             LEFT JOIN users l ON l.id = t.last_post_by
+             LEFT JOIN users l ON l.id = t.last_post_by{$un['join']}
              WHERE b.visibility IN ({$in})
              ORDER BY t.last_post_at DESC, t.id DESC LIMIT " . (int) $limit
         );

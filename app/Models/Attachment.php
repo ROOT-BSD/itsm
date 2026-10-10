@@ -47,6 +47,19 @@ class Attachment
         return $stmt->fetchAll();
     }
 
+    /**
+     * Вкладення тікета, які бачить сам заявник на сторінці відстеження: лише надіслані ним самим (портал, лист).
+     * Файли, додані співробітниками (source = web, наприклад внутрішні скриншоти), заявнику не показуються.
+     */
+    public static function forRequester(int $ticketId): array
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT * FROM attachments WHERE ticket_id = :id AND source IN ('portal', 'email') ORDER BY created_at ASC, id ASC"
+        );
+        $stmt->execute(['id' => $ticketId]);
+        return $stmt->fetchAll();
+    }
+
     public static function countForOwner(string $ownerType, int $ownerId): int
     {
         $column = self::column($ownerType);

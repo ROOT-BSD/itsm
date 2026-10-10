@@ -48,7 +48,6 @@ final class ApiSerializer
             'name' => $p['name'],
             'description' => $p['description'] ?? null,
             'status' => $p['status'],
-            'visibility' => $p['visibility'],
             'parent_id' => !empty($p['parent_id']) ? (int) $p['parent_id'] : null,
             'created_by' => self::ref((int) $p['created_by'], $p['created_by_name'] ?? null, 'full_name'),
             'responsible' => self::ref(!empty($p['responsible_user_id']) ? (int) $p['responsible_user_id'] : null, $p['responsible_name'] ?? null, 'full_name'),

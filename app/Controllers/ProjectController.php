@@ -13,7 +13,6 @@ use App\Models\User;
 class ProjectController
 {
     /** Допустимі значення видимості (ENUM у БД). */
-    private const VISIBILITIES = ['public', 'private', 'restricted'];
 
     /** Допустимі типи зв'язків між задачами (ENUM у БД). */
     private const RELATION_TYPES = ['blocks', 'blocked_by', 'duplicates', 'related'];
@@ -60,16 +59,11 @@ class ProjectController
 
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
-        $visibility = $_POST['visibility'] ?? 'private';
         $responsibleUserId = !empty($_POST['responsible_user_id']) ? (int) $_POST['responsible_user_id'] : null;
         $parentId = !empty($_POST['parent_id']) ? (int) $_POST['parent_id'] : null;
 
         if ($name === '') {
             header('Location: /projects/create?error=' . urlencode('Назва проєкту обов\'язкова'));
-            exit;
-        }
-        if (!in_array($visibility, self::VISIBILITIES, true)) {
-            header('Location: /projects/create?error=' . urlencode('Некоректне значення видимості'));
             exit;
         }
         if ($parentId !== null) {
@@ -80,7 +74,7 @@ class ProjectController
             }
         }
 
-        $id = Project::create($name, $description, $visibility, Auth::id(), $responsibleUserId, $parentId);
+        $id = Project::create($name, $description, Auth::id(), $responsibleUserId, $parentId);
         header('Location: /projects/' . $id);
         exit;
     }

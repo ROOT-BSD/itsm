@@ -53,7 +53,6 @@ CREATE TABLE IF NOT EXISTS projects (
     parent_id INT NULL,
     name VARCHAR(200) NOT NULL,
     description TEXT,
-    visibility ENUM('public','private','restricted') NOT NULL DEFAULT 'private',
     status ENUM('active','archived','closed') NOT NULL DEFAULT 'active',
     created_by INT NOT NULL,
     responsible_user_id INT NULL,          -- виконавець/відповідальний за проєкт (обирається з існуючих користувачів)
@@ -66,8 +65,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 -- Учасники проєкту: користувачі, яким автор/відповідальний/адміністратор ЯВНО надали доступ до проєкту (крім автора й
 -- відповідального, які мають доступ завжди). Учасник бачить проєкт і всі його задачі й працює з ними так само, як
--- автор чи відповідальний; керувати складом учасників він не може. Доступ дає лише цей запис — поле projects.visibility
--- на доступ не впливає. Права НЕ успадковуються підпроєктами: кожен проєкт має власний перелік учасників.
+-- автор чи відповідальний; керувати складом учасників він не може. Доступ дає лише цей запис (поле «Видимість» проєкту видалено — міграція 032). Права НЕ успадковуються підпроєктами: кожен проєкт має власний перелік учасників.
 -- Видалення проєкту чи користувача прибирає й відповідні записи.
 CREATE TABLE IF NOT EXISTS project_members (
     project_id INT NOT NULL,
@@ -532,6 +530,49 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     CONSTRAINT fk_forum_posts_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_forum_posts_edited FOREIGN KEY (edited_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_forum_posts_topic (topic_id, id)
+) ENGINE=InnoDB;
+
+-- Вкладення в повідомленнях форуму (міграція 034).
+CREATE TABLE IF NOT EXISTS forum_attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    post_id INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    uploaded_by INT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_forum_attachments_post FOREIGN KEY (post_id) REFERENCES forum_posts(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_attachments_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_forum_attachments_post (post_id)
+) ENGINE=InnoDB;
+
+-- Позначки «непрочитане» на форумі (міграція 033): коли користувач дочитав тему / позначив усе прочитаним.
+CREATE TABLE IF NOT EXISTS forum_topic_reads (
+    user_id INT NOT NULL,
+    topic_id INT NOT NULL,
+    read_at DATETIME NOT NULL,
+    PRIMARY KEY (user_id, topic_id),
+    CONSTRAINT fk_forum_reads_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_reads_topic FOREIGN KEY (topic_id) REFERENCES forum_topics(id) ON DELETE CASCADE,
+    INDEX idx_forum_reads_topic (topic_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS forum_read_marks (
+    user_id INT NOT NULL PRIMARY KEY,
+    read_all_at DATETIME NOT NULL,
+    CONSTRAINT fk_forum_marks_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Підписки на розділи форуму: лист про кожну нову тему розділу (міграція 031).
+CREATE TABLE IF NOT EXISTS forum_board_subscriptions (
+    user_id INT NOT NULL,
+    board_id INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, board_id),
+    CONSTRAINT fk_forum_sub_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_sub_board FOREIGN KEY (board_id) REFERENCES forum_boards(id) ON DELETE CASCADE,
+    INDEX idx_forum_sub_board (board_id)
 ) ENGINE=InnoDB;
 
 -- Вкладення сторінки. Файли лежать у storage/uploads (поза веб-коренем) під випадковими іменами, як і решта файлів;

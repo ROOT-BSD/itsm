@@ -33,7 +33,7 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link" href="/library">Документи</a></li>
                 <li class="nav-item"><a class="nav-link" href="/forum">Форум</a></li>
                 <?php if (\App\Core\Access::isUnitAdmin(Auth::role())): ?>
-                <li class="nav-item"><a class="nav-link" href="/unit">Мій підрозділ</a></li>
+                <li class="nav-item"><a class="nav-link<?= \App\Core\UnitNav::currentSection() !== null ? ' active' : '' ?>" href="/unit">Мій підрозділ</a></li>
                 <?php endif; ?>
                 <?php if (Auth::hasRole(['admin'])): ?>
                 <li class="nav-item"><a class="nav-link<?= \App\Core\AdminNav::currentSection() !== null ? ' active' : '' ?>" href="/admin"<?= \App\Core\AdminNav::currentSection() !== null ? ' aria-current="page"' : '' ?>>Адмін-панель</a></li>
@@ -84,5 +84,6 @@ document.addEventListener('change', function (e) {
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/user-select.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/paste-images.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/wiki-editor.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/forum-editor.js')) ?>" defer></script>
 </body>
 </html>

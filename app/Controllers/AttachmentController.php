@@ -71,11 +71,27 @@ class AttachmentController
         [$ownerType, $ownerId] = $this->owner($attachment);
         $this->requireAccess($ownerType, $ownerId);
 
+        self::send($attachment);
+    }
+
+    /**
+     * Віддає файл вкладення (спільне для співробітників і для заявника порталу): ?thumb=1 — зменшена копія, ?download=1 —
+     * примусове завантаження. Права перевіряє той, хто викликає, — тут лише віддача.
+     */
+    public static function send(array $attachment): never
+    {
         $path = AttachmentService::path($attachment['stored_name']);
         if ($path === null || !is_file($path)) {
             http_response_code(404);
             echo 'Файл не знайдено на сервері (можливо, його видалено з диска). Зверніться до адміністратора.';
-            return;
+            exit;
+        }
+
+        // ?thumb=1 — зменшена копія для списків (створена при завантаженні або, для старих вкладень, при першому запиті).
+        // Якщо мініатюри немає (мале зображення, PDF, немає GD) — віддаємо оригінал. Повний файл — без ?thumb.
+        $servePath = $path;
+        if (isset($_GET['thumb']) && !isset($_GET['download']) && str_starts_with($attachment['mime_type'], 'image/')) {
+            $servePath = AttachmentService::thumbnailFor($attachment['stored_name'], $attachment['mime_type']) ?? $path;
         }
 
         // Зображення та PDF показуємо у браузері; ?download=1 — примусове завантаження.
@@ -91,11 +107,11 @@ class AttachmentController
         }
 
         header('Content-Type: ' . $attachment['mime_type']);
-        header('Content-Length: ' . filesize($path));
+        header('Content-Length: ' . filesize($servePath));
         header('Content-Disposition: ' . $disposition . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: private, max-age=3600');
-        readfile($path);
+        readfile($servePath);
         exit;
     }
 

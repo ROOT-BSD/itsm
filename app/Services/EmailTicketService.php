@@ -335,6 +335,7 @@ class EmailTicketService
                 continue;
             }
             $storedFiles[] = $written['stored_name'];
+            AttachmentService::createThumbnail($written['stored_name'], $img['mime']);
             $size = strlen($img['bytes']);
             Attachment::create('ticket', $ticketId, $img['name'], $written['stored_name'], $img['mime'], $size, null, 'email');
             Audit::log('ticket', $ticketId, 'attachment_from_email', null, ['file' => $img['name'], 'size_kb' => (int) ceil($size / 1024)]);

@@ -91,10 +91,29 @@ class SupportController
         View::render('support/track', [
             'ticket' => $ticket,
             'comments' => Ticket::comments($ticket['id']),
+            'attachments' => \App\Models\Attachment::forRequester((int) $ticket['id']),
             'sla' => Ticket::slaStatus($ticket, Ticket::slaPoliciesByQueue()),
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ]);
+    }
+
+    /**
+     * Власне вкладення заявника (картинка чи PDF, надіслані ним через портал або листом). Доступ — за секретним
+     * посиланням звернення, як і сама сторінка відстеження; вкладення інших тікетів і файли співробітників недоступні
+     * (однакова 404, щоб не підказувати, що вони існують). Хибні спроби враховує той самий ліміт, що й перебір токенів.
+     */
+    public function attachment(array $params): void
+    {
+        $ticket = $this->findByTokenOrFail($params['token'] ?? '');
+        $attachment = \App\Models\Attachment::find((int) ($params['id'] ?? 0));
+        if (!$attachment
+            || (int) $attachment['ticket_id'] !== (int) $ticket['id']
+            || !in_array($attachment['source'], ['portal', 'email'], true)) {
+            $this->tokenNotFound();
+            return;
+        }
+        \App\Controllers\AttachmentController::send($attachment);
     }
 
     public function addComment(array $params): void

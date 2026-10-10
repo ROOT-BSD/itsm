@@ -24,10 +24,10 @@ $isAdminUser = \App\Core\Auth::hasRole(['admin']);
                     <li class="list-group-item d-flex align-items-center gap-3">
                         <?php if ($isImage): ?>
                             <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener">
-                                <img src="/attachments/<?= (int)$a['id'] ?>" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
+                                <img src="/attachments/<?= (int)$a['id'] ?>?thumb=1" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
                             </a>
                         <?php else: ?>
-                            <span class="attachment-icon badge bg-danger">PDF</span>
+                            <span class="attachment-icon badge bg-danger align-self-start">PDF</span>
                         <?php endif; ?>
                         <div class="flex-grow-1">
                             <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener"><?= \App\Core\View::e($a['original_name']) ?></a>

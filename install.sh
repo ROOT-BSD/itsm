@@ -124,9 +124,9 @@ section "4. Перевірка розширень PHP"
 
 # Обов'язкові розширення для роботи застосунку
 REQUIRED_EXT="pdo pdo_mysql mbstring json session"
-# Опційні: openssl/iconv — для email-to-ticket; ldap — для AD-інтеграції. fileinfo і GD для вкладень НЕ потрібні:
-# тип файлу визначається за сигнатурою та getimagesize(), які є в ядрі PHP.
-OPTIONAL_EXT="ldap openssl iconv"
+# Опційні: openssl/iconv — для email-to-ticket; ldap — для AD-інтеграції; gd — для мініатюр зображень-вкладень.
+# fileinfo для вкладень НЕ потрібен: тип файлу визначається за сигнатурою та getimagesize(), які є в ядрі PHP.
+OPTIONAL_EXT="ldap openssl iconv gd"
 
 if command -v php >/dev/null 2>&1; then
     # Зчитуємо список розширень один раз у змінну.
@@ -154,6 +154,7 @@ if command -v php >/dev/null 2>&1; then
             case "$ext" in
                 ldap) warn "Відсутнє розширення ${ext} — потрібне для входу через Active Directory та синхронізації користувачів (Адмін-панель → Налаштування → Active Directory)" ;;
                 openssl) warn "Відсутнє розширення ${ext} — email-to-ticket не зможе підключатися до пошти по SSL/STARTTLS (лише без шифрування)" ;;
+                gd) warn "Відсутнє розширення ${ext} — вкладення-зображення працюватимуть, але без зменшених копій (мініатюр): у списку показуватимуться повні файли (Debian/Ubuntu: sudo apt-get install -y php8.3-gd)" ;;
                 iconv) warn "Відсутнє розширення ${ext} — email-to-ticket працюватиме, але рідкісні кодування листів (не UTF-8) розпізнаватимуться гірше" ;;
                 *) warn "Відсутнє опційне розширення ${ext}" ;;
             esac

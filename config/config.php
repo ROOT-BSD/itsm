@@ -137,6 +137,7 @@ return (function (): array {
             'dir'             => __DIR__ . '/../storage/uploads',
             'max_per_entity'  => 30,  // не більше вкладень на один тікет/задачу
             'max_per_request' => 10,  // не більше файлів за одне натискання «Прикріпити»
+            'thumb_px'        => 320, // найдовша сторона мініатюри зображення (створюється при завантаженні; потрібне розширення PHP GD)
             // Анонімний портал (/support): файли завантажує будь-хто без входу (частоту запитів обмежує rate_limits нижче),
             // тож ліміти суворіші, а вся можливість вимикається ATTACHMENT_PORTAL_ENABLED=false в .env.
             'portal_enabled'   => filter_var($env('ATTACHMENT_PORTAL_ENABLED', 'true'), FILTER_VALIDATE_BOOLEAN),

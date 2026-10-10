@@ -273,6 +273,7 @@ class AttachmentService
                 $errors[] = '«' . $result['name'] . '»: не вдалося зберегти запис про файл.';
                 continue;
             }
+            self::createThumbnail($result['stored_name'], $result['mime']);
             \App\Models\Audit::log($ownerType, $ownerId, 'attachment_added', $uploadedBy, [
                 'file' => $result['name'],
                 'size_kb' => (int) ceil($result['size'] / 1024),
@@ -365,6 +366,103 @@ class AttachmentService
         return self::storageDir() . '/' . substr($storedName, 0, 2) . '/' . $storedName;
     }
 
+    // ------------------------------------------------------------------ мініатюри
+
+    /** Не створюємо мініатюру для зображень більших за цю кількість пікселів — захист пам'яті від «бомб розпакування». */
+    private const THUMB_MAX_SOURCE_PIXELS = 40000000;
+
+    /** Шлях до мініатюри поруч з оригіналом (`<ім'я>_t`); null, якщо ім'я не схоже на те, що ми генеруємо. */
+    public static function thumbPath(string $storedName): ?string
+    {
+        $path = self::path($storedName);
+        return $path === null ? null : $path . '_t';
+    }
+
+    /** Чи доступне створення мініатюр (потрібне розширення GD). */
+    public static function thumbnailsAvailable(): bool
+    {
+        return function_exists('imagecreatetruecolor') && function_exists('imagecreatefromjpeg') && function_exists('imagecreatefrompng');
+    }
+
+    /**
+     * Створює зменшену копію зображення під час завантаження (найдовша сторона — attachments.thumb_px, 320 за замовчуванням).
+     * Best effort: без GD, для PDF, для малого зображення (мініатюра не потрібна — показується оригінал) чи при будь-якій
+     * помилці повертає false, і вкладення просто показується оригіналом. Виняток вкладення не скасовує.
+     */
+    public static function createThumbnail(string $storedName, string $mime): bool
+    {
+        $src = self::path($storedName);
+        $dest = self::thumbPath($storedName);
+        if ($src === null || $dest === null || !is_file($src) || !in_array($mime, self::IMAGE_MIMES, true) || !self::thumbnailsAvailable()) {
+            return false;
+        }
+        $max = max(32, (int) Config::get('attachments.thumb_px', 320));
+
+        try {
+            $info = @getimagesize($src);
+            if ($info === false) {
+                return false;
+            }
+            [$w, $h] = $info;
+            if ($w < 1 || $h < 1 || $w * $h > self::THUMB_MAX_SOURCE_PIXELS || max($w, $h) <= $max) {
+                return false;
+            }
+
+            $image = $mime === 'image/png' ? @imagecreatefrompng($src) : @imagecreatefromjpeg($src);
+            if ($image === false) {
+                return false;
+            }
+            // Фото з телефону зберігають поворот в EXIF — без цього мініатюра лягала б набік.
+            if ($mime === 'image/jpeg' && function_exists('exif_read_data') && function_exists('imagerotate')) {
+                $exif = @exif_read_data($src);
+                $angle = [3 => 180, 6 => -90, 8 => 90][(int) ($exif['Orientation'] ?? 1)] ?? 0;
+                if ($angle !== 0 && ($rotated = imagerotate($image, $angle, 0)) !== false) {
+                    $image = $rotated;
+                    [$w, $h] = [imagesx($image), imagesy($image)];
+                }
+            }
+
+            $ratio = $max / max($w, $h);
+            $tw = max(1, (int) round($w * $ratio));
+            $th = max(1, (int) round($h * $ratio));
+            $thumb = imagecreatetruecolor($tw, $th);
+            if ($mime === 'image/png') {
+                imagealphablending($thumb, false);
+                imagesavealpha($thumb, true);
+                imagefill($thumb, 0, 0, imagecolorallocatealpha($thumb, 0, 0, 0, 127));
+            }
+            imagecopyresampled($thumb, $image, 0, 0, 0, 0, $tw, $th, $w, $h);
+
+            $tmp = $dest . '.tmp';
+            $ok = $mime === 'image/png' ? @imagepng($thumb, $tmp, 6) : @imagejpeg($thumb, $tmp, 82);
+            if (!$ok || !@rename($tmp, $dest)) {
+                @unlink($tmp);
+                return false;
+            }
+            @chmod($dest, 0660);
+            return true;
+        } catch (\Throwable $e) {
+            error_log('[itsm] thumbnail failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Шлях до мініатюри для показу: існуючий, а для вкладень, завантажених до появи функції, — створений «на льоту» при
+     * першому запиті. null — мініатюри немає (мале зображення, не вдалося створити): віддаємо оригінал.
+     */
+    public static function thumbnailFor(string $storedName, string $mime): ?string
+    {
+        $thumb = self::thumbPath($storedName);
+        if ($thumb === null) {
+            return null;
+        }
+        if (is_file($thumb)) {
+            return $thumb;
+        }
+        return self::createThumbnail($storedName, $mime) ? $thumb : null;
+    }
+
     /** Видаляє файли за іменами зі сховища (best effort — відсутній файл не є помилкою). @param string[] $storedNames */
     public static function deleteFiles(array $storedNames): void
     {
@@ -372,6 +470,11 @@ class AttachmentService
             $path = self::path((string) $storedName);
             if ($path !== null && is_file($path)) {
                 @unlink($path);
+            }
+            // Мініатюра (якщо була) видаляється разом з оригіналом.
+            $thumb = self::thumbPath((string) $storedName);
+            if ($thumb !== null && is_file($thumb)) {
+                @unlink($thumb);
             }
         }
     }

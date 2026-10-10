@@ -8,6 +8,8 @@ use App\Core\RateLimiter;
 use App\Core\View;
 use App\Models\Audit;
 use App\Models\Forum;
+use App\Services\AttachmentService;
+use App\Services\LibraryService;
 
 /**
  * Форум: розділи → теми → повідомлення (Markdown). Читати можуть усі, хто увійшов (з урахуванням visibility розділу), писати —
@@ -26,10 +28,25 @@ class ForumController
     {
         $this->requireReady();
         $role = Auth::role();
+        $uid = (int) Auth::id();
+        $boards = Forum::boards($role, $uid);
         $this->render('forum/index', [
-            'boards' => Forum::boards($role),
-            'recent' => Forum::recentTopics($role, 8),
+            'boards' => $boards,
+            'recent' => Forum::recentTopics($role, 8, $uid),
+            'unreadReady' => Forum::unreadReady(),
+            'unreadTotal' => array_sum(array_map(static fn($b) => (int) ($b['unread_count'] ?? 0), $boards)),
         ]);
+    }
+
+    /** «Позначити все прочитаним». */
+    public function readAll(): void
+    {
+        $this->requireReady();
+        if (!Forum::unreadReady()) {
+            $this->redirect('/forum', 'error', 'Позначки «непрочитане» ще не налаштовано: адміністратор має виконати update.sh (міграція 033).');
+        }
+        Forum::markAllRead((int) Auth::id());
+        $this->redirect('/forum', 'success', 'Усі теми позначено прочитаними.');
     }
 
     public function board(array $params): void
@@ -42,12 +59,37 @@ class ForumController
 
         $this->render('forum/board', [
             'board' => $board,
-            'topics' => Forum::topics((int) $board['id'], $page, self::TOPICS_PER_PAGE),
+            'topics' => Forum::topics((int) $board['id'], $page, self::TOPICS_PER_PAGE, (int) Auth::id()),
             'total' => $total,
             'page' => $page,
             'totalPages' => $totalPages,
             'canStart' => $this->canStartTopic($board),
+            'subscriptionsReady' => Forum::subscriptionsReady(),
+            'isSubscribed' => Forum::isSubscribed((int) Auth::id(), (int) $board['id']),
+            'notifyEnabled' => \App\Models\Setting::get('email_notify_forum_enabled', '0') === '1',
         ]);
+    }
+
+    /** Підписка на нові теми розділу (лист про кожну нову тему). */
+    public function subscribe(array $params): void
+    {
+        $this->requireReady();
+        $board = $this->boardOrFail((int) $params['id']);
+        if (!Forum::subscriptionsReady()) {
+            $this->redirect('/forum/boards/' . $board['id'], 'error', 'Підписки ще не налаштовано: адміністратор має виконати update.sh (міграція 031).');
+        }
+        Forum::subscribe((int) Auth::id(), (int) $board['id']);
+        $this->redirect('/forum/boards/' . $board['id'], 'success', 'Ви підписані на нові теми розділу.');
+    }
+
+    public function unsubscribe(array $params): void
+    {
+        $this->requireReady();
+        $board = $this->boardOrFail((int) $params['id']);
+        if (Forum::subscriptionsReady()) {
+            Forum::unsubscribe((int) Auth::id(), (int) $board['id']);
+        }
+        $this->redirect('/forum/boards/' . $board['id'], 'success', 'Підписку на розділ скасовано.');
     }
 
     public function topic(array $params): void
@@ -72,11 +114,11 @@ class ForumController
         $this->requireReady();
         $query = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 100);
         $page = max(1, (int) ($_GET['page'] ?? 1));
-        $result = $query === '' ? ['rows' => [], 'total' => 0] : Forum::search(Auth::role(), $query, $page, self::TOPICS_PER_PAGE);
+        $result = $query === '' ? ['rows' => [], 'total' => 0] : Forum::search(Auth::role(), $query, $page, self::TOPICS_PER_PAGE, (int) Auth::id());
         $totalPages = max(1, (int) ceil($result['total'] / self::TOPICS_PER_PAGE));
         if ($page > $totalPages) {
             $page = $totalPages;
-            $result = Forum::search(Auth::role(), $query, $page, self::TOPICS_PER_PAGE);
+            $result = Forum::search(Auth::role(), $query, $page, self::TOPICS_PER_PAGE, (int) Auth::id());
         }
 
         $this->render('forum/search', [
@@ -91,7 +133,7 @@ class ForumController
         $this->requireReady();
         $board = $this->boardOrFail((int) $params['id']);
         $this->requireCanStart($board);
-        $this->render('forum/topic_form', ['board' => $board, 'form' => ['title' => '', 'body' => ''], 'error' => null]);
+        $this->render('forum/topic_form', ['board' => $board, 'form' => ['title' => '', 'body' => ''], 'error' => null, 'attachmentsReady' => Forum::attachmentsReady()]);
     }
 
     public function storeTopic(array $params): void
@@ -101,15 +143,18 @@ class ForumController
         $this->requireCanStart($board);
 
         $form = ['title' => trim((string) ($_POST['title'] ?? '')), 'body' => $this->cleanBody((string) ($_POST['body'] ?? ''))];
-        $error = $this->validateTitle($form['title']) ?? $this->validateBody($form['body']) ?? $this->floodError();
+        $files = $this->incomingFiles(0, $uploadError);
+        $error = $this->validateTitle($form['title']) ?? $this->validateBody($form['body']) ?? $uploadError ?? $this->floodError();
         if ($error !== null) {
-            $this->render('forum/topic_form', ['board' => $board, 'form' => $form, 'error' => $error]);
+            $this->render('forum/topic_form', ['board' => $board, 'form' => $form, 'error' => $error, 'attachmentsReady' => Forum::attachmentsReady()]);
             return;
         }
 
         $id = Forum::createTopic((int) $board['id'], $form['title'], $form['body'], Auth::id());
         Audit::log('forum_topic', $id, 'created', Auth::id(), ['title' => $form['title'], 'board' => $board['name']]);
-        $this->redirect('/forum/topics/' . $id, 'success', 'Тему створено.');
+        $fileErrors = $this->saveFiles(Forum::firstPostId($id), $files);
+        \App\Services\NotificationService::forumTopicCreated($id, (int) Auth::id());
+        $this->redirect('/forum/topics/' . $id, $fileErrors ? 'error' : 'success', $fileErrors ? 'Тему створено, але ' . implode(' ', $fileErrors) : 'Тему створено.');
     }
 
     public function reply(array $params): void
@@ -121,7 +166,8 @@ class ForumController
         }
 
         $body = $this->cleanBody((string) ($_POST['body'] ?? ''));
-        $error = $this->validateBody($body) ?? $this->floodError();
+        $files = $this->incomingFiles(0, $uploadError);
+        $error = $this->validateBody($body) ?? $uploadError ?? $this->floodError();
         if ($error !== null) {
             $this->renderTopic($topic, max(1, (int) ceil(($topic['reply_count'] + 1) / self::POSTS_PER_PAGE)), $error, $body);
             return;
@@ -129,9 +175,11 @@ class ForumController
 
         $postId = Forum::addPost((int) $topic['id'], $body, Auth::id());
         Audit::log('forum_topic', (int) $topic['id'], 'reply_added', Auth::id(), ['post' => $postId]);
+        $fileErrors = $this->saveFiles($postId, $files);
         \App\Services\NotificationService::forumReplyAdded((int) $topic['id'], $postId, (int) Auth::id());
         $page = Forum::pageOfPost((int) $topic['id'], $postId, self::POSTS_PER_PAGE);
-        header('Location: /forum/topics/' . (int) $topic['id'] . ($page > 1 ? '?page=' . $page : '') . '#post-' . $postId);
+        $query = ($page > 1 ? 'page=' . $page : '') . ($fileErrors ? ($page > 1 ? '&' : '') . http_build_query(['error' => 'Відповідь додано, але ' . implode(' ', $fileErrors)]) : '');
+        header('Location: /forum/topics/' . (int) $topic['id'] . ($query !== '' ? '?' . $query : '') . '#post-' . $postId);
         exit;
     }
 
@@ -154,7 +202,10 @@ class ForumController
         $isFirst = Forum::firstPostId((int) $post['topic_id']) === (int) $post['id'];
         $body = $this->cleanBody((string) ($_POST['body'] ?? ''));
         $title = trim((string) ($_POST['title'] ?? $post['topic_title']));
-        $error = ($isFirst ? $this->validateTitle($title) : null) ?? $this->validateBody($body);
+        $remove = array_map('intval', (array) ($_POST['remove_attachments'] ?? []));
+        $keep = max(0, Forum::attachmentCount((int) $post['id']) - count($remove));
+        $files = $this->incomingFiles($keep, $uploadError);
+        $error = ($isFirst ? $this->validateTitle($title) : null) ?? $this->validateBody($body) ?? $uploadError;
         if ($error !== null) {
             $this->render('forum/post_form', $this->postFormData($post, $body, $error, $title));
             return;
@@ -169,8 +220,22 @@ class ForumController
             Forum::updateTitle((int) $post['topic_id'], $title);
             $changes['title'] = $title;
         }
+        if ($remove) {
+            $removed = Forum::removeAttachments((int) $post['id'], $remove);
+            AttachmentService::deleteFiles(array_column($removed, 'stored_name'));
+            if ($removed) {
+                $changes['files_removed'] = array_column($removed, 'original_name');
+            }
+        }
+        $fileErrors = $this->saveFiles((int) $post['id'], $files);
+        if ($files && count($fileErrors) < count($files)) {
+            $changes['files_added'] = count($files) - count($fileErrors);
+        }
         if ($changes) {
             Audit::log('forum_topic', (int) $post['topic_id'], 'post_edited', Auth::id(), $changes);
+        }
+        if ($fileErrors) {
+            $this->redirect('/forum/posts/' . $post['id'], 'error', 'Зміни збережено, але ' . implode(' ', $fileErrors));
         }
         $this->redirect('/forum/posts/' . $post['id'], 'success', 'Зміни збережено.');
     }
@@ -190,7 +255,9 @@ class ForumController
             if (!Forum::canModerate($role) && !($isAuthor && $replies === 0)) {
                 $this->forbidden('Тему з відповідями видалити може лише модератор.');
             }
+            $stored = Forum::storedNames('topic', $topicId);
             Forum::deleteTopic($topicId);
+            AttachmentService::deleteFiles($stored);
             Audit::log('forum_topic', $topicId, 'deleted', Auth::id(), ['title' => $post['topic_title'], 'replies' => $replies]);
             $this->redirect('/forum/boards/' . (int) $post['board_id'], 'success', 'Тему «' . $post['topic_title'] . '» видалено.');
         }
@@ -198,7 +265,9 @@ class ForumController
         if (!Forum::canModerate($role) && !($isAuthor && !$post['topic_locked'])) {
             $this->forbidden('Видалити це повідомлення може лише його автор (поки тему не закрито) або модератор.');
         }
+        $stored = Forum::storedNames('post', (int) $post['id']);
         Forum::deletePost((int) $post['id'], $topicId);
+        AttachmentService::deleteFiles($stored);
         Audit::log('forum_topic', $topicId, 'post_deleted', Auth::id(), ['post' => (int) $post['id']]);
         $this->redirect('/forum/topics/' . $topicId, 'success', 'Повідомлення видалено.');
     }
@@ -299,7 +368,9 @@ class ForumController
             $this->forbidden('Видалити розділ разом з усіма темами може лише адміністратор.');
         }
         $topics = Forum::topicCount((int) $board['id']);
+        $stored = Forum::storedNames('board', (int) $board['id']);
         Forum::deleteBoard((int) $board['id']);
+        AttachmentService::deleteFiles($stored);
         Audit::log('forum_board', (int) $board['id'], 'deleted', Auth::id(), ['name' => $board['name'], 'topics' => $topics]);
         $this->redirect('/forum', 'success', 'Розділ «' . $board['name'] . '» видалено разом з темами (' . $topics . ').');
     }
@@ -315,8 +386,13 @@ class ForumController
         $renderer = new Markdown([]);
 
         $posts = Forum::posts((int) $topic['id'], $page, self::POSTS_PER_PAGE);
+        if ($page === $totalPages && Auth::id() !== null) {
+            Forum::markRead((int) $topic['id'], (int) Auth::id()); // тема дочитана до кінця
+        }
         $firstId = Forum::firstPostId((int) $topic['id']);
+        $files = Forum::attachmentsForPosts(array_column($posts, 'id'));
         foreach ($posts as &$p) {
+            $p['attachments'] = $files[(int) $p['id']] ?? [];
             $p['html'] = $renderer->toHtml($p['body']);
             $p['is_first'] = (int) $p['id'] === $firstId;
             $p['can_edit'] = $this->canEditPost($p + ['topic_locked' => $topic['is_locked']]);
@@ -336,6 +412,7 @@ class ForumController
             'moveTargets' => Forum::canModerate($role) ? Forum::moveTargets($role, (int) $topic['board_id']) : [],
             'error' => $error ?? ($_GET['error'] ?? null),
             'replyBody' => $replyBody,
+            'attachmentsReady' => Forum::attachmentsReady(),
         ]);
     }
 
@@ -450,12 +527,103 @@ class ForumController
         ];
     }
 
+    // ------------------------------------------------------------------ попередній перегляд і файли
+
+    /** HTML-фрагмент для кнопки «Попередній перегляд» (його вставляє public/assets/js/forum-editor.js). */
+    public function preview(): void
+    {
+        $this->requireReady();
+        $body = (string) ($_POST['body'] ?? '');
+        header('Content-Type: text/html; charset=UTF-8');
+        if (mb_strlen($body) > Forum::MAX_BODY) {
+            http_response_code(413);
+            echo '<div class="text-danger">Текст завеликий для перегляду.</div>';
+            return;
+        }
+        echo trim($body) === '' ? '<div class="text-muted">Нічого показувати — текст порожній.</div>' : (new Markdown([]))->toHtml($body);
+    }
+
+    /** Віддає вкладення, якщо читачеві видимий розділ повідомлення (інакше 404, як і для самої теми). */
+    public function file(array $params): void
+    {
+        $this->requireReady();
+        $attachment = Forum::findAttachment((int) $params['id']);
+        if (!$attachment || !in_array($attachment['board_visibility'], Forum::allowedVisibilities(Auth::role()), true)) {
+            $this->notFound();
+        }
+        if (!in_array($attachment['mime_type'], LibraryService::INLINE_MIMES, true)) {
+            $_GET['download'] = '1'; // docx/xlsx тощо — лише завантаження
+        }
+        AttachmentController::send($attachment);
+    }
+
+    /**
+     * Файли з форми: перевіряє кількість і кожен файл ДО створення повідомлення (щоб не лишати наполовину збережене).
+     * $uploadError — перша помилка (форма показує її й нічого не зберігає).
+     *
+     * @return array<int, array{name: string, tmp_name: string, error: int, size: int}>
+     */
+    private function incomingFiles(int $alreadyAttached, ?string &$uploadError): array
+    {
+        $uploadError = null;
+        $files = [];
+        foreach (AttachmentService::normalizeFiles($_FILES['files'] ?? []) as $f) {
+            if ($f['error'] !== UPLOAD_ERR_NO_FILE) {
+                $files[] = $f;
+            }
+        }
+        if (!$files) {
+            return [];
+        }
+        if (!Forum::attachmentsReady()) {
+            $uploadError = 'Вкладення форуму ще не налаштовано: адміністратор має виконати update.sh (міграція 034).';
+            return [];
+        }
+        if ($alreadyAttached + count($files) > Forum::MAX_FILES_PER_POST) {
+            $uploadError = 'До повідомлення можна прикріпити не більше ' . Forum::MAX_FILES_PER_POST . ' файлів.';
+            return [];
+        }
+        foreach ($files as $f) {
+            $checked = LibraryService::validate($f);
+            if (!$checked['ok']) {
+                $uploadError = 'Файл «' . $f['name'] . '» не прийнято: ' . $checked['error'] . '. Повідомлення не збережено — додайте файли ще раз.';
+                return [];
+            }
+        }
+        return $files;
+    }
+
+    /** Зберігає вже перевірені файли; повертає тексти помилок (порожньо — усе гаразд). @return string[] */
+    private function saveFiles(int $postId, array $files): array
+    {
+        $errors = [];
+        foreach ($files as $f) {
+            $stored = LibraryService::store($f);
+            if (!$stored['ok']) {
+                $errors[] = 'файл «' . $f['name'] . '» не збережено: ' . $stored['error'] . '.';
+                continue;
+            }
+            try {
+                Forum::addAttachment($postId, $stored['name'], $stored['stored_name'], $stored['mime'], $stored['size'], Auth::id());
+            } catch (\Throwable $e) {
+                AttachmentService::deleteFiles([$stored['stored_name']]);
+                throw $e;
+            }
+            if (str_starts_with($stored['mime'], 'image/')) {
+                AttachmentService::createThumbnail($stored['stored_name'], $stored['mime']);
+            }
+        }
+        return $errors;
+    }
+
     private function postFormData(array $post, string $body, ?string $error, ?string $title = null): array
     {
         return [
             'post' => $post, 'body' => $body, 'error' => $error,
             'title' => $title ?? $post['topic_title'],
             'isFirst' => Forum::firstPostId((int) $post['topic_id']) === (int) $post['id'],
+            'attachments' => Forum::attachmentsForPosts([(int) $post['id']])[(int) $post['id']] ?? [],
+            'attachmentsReady' => Forum::attachmentsReady(),
         ];
     }
 

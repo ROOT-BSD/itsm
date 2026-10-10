@@ -1,5 +1,5 @@
 <div class="mb-3">
-    <?php require __DIR__ . '/_back.php'; ?>
+    <?php if (!empty($unitMode)) { require __DIR__ . '/../unit/_nav.php'; } else { require __DIR__ . '/_back.php'; } ?>
 </div>
 
 <h3 class="mb-4">Проєкти</h3>
@@ -12,17 +12,18 @@
 <?php endif; ?>
 
 <div class="alert alert-warning small">
+    <?php if (!empty($unitMode)): ?>Ви бачите проєкти свого підрозділу. Видалити можна проєкт, який ви створили самі, або такий, у якому всі причетні люди (автор, відповідальний, учасники, виконавці задач, ті, хто вів облік часу) — з вашого підрозділу; решту видаляє адміністратор системи.<br><?php endif; ?>
     Видалення проєкту незворотне і видаляє <strong>всі</strong> повʼязані задачі, коментарі,
     вкладення та облік часу. Для підтвердження потрібно ввести точну назву проєкту.
 </div>
 
+<?php $base = $basePath ?? '/admin/projects'; ?>
 <table class="table table-bordered bg-white align-middle">
     <thead>
-        <tr><th>Назва</th><th>Статус</th><th>Видимість</th><th>Відкритих задач</th><th>Створив</th><th class="col-min-320">Дія</th></tr>
+        <tr><th>Назва</th><th>Статус</th><th>Відкритих задач</th><th>Створив</th><th class="col-min-320">Дія</th></tr>
     </thead>
     <tbody>
     <?php
-    $visibilityLabels = ['public' => 'Публічний', 'private' => 'Приватний', 'restricted' => 'Обмежений доступ'];
     $statusLabels = ['active' => 'Активний', 'archived' => 'Архівний', 'closed' => 'Закритий'];
     $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
     ?>
@@ -38,7 +39,7 @@
                 <?php endif; ?>
             </td>
             <td>
-                <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/status" class="d-flex gap-1">
+                <form method="post" action="<?= $base ?>/<?= (int)$p['id'] ?>/status" class="d-flex gap-1">
                     <?= \App\Core\Csrf::field() ?>
                     <select name="status" class="form-select form-select-sm bg-<?= $statusColors[$p['status']] ?? 'secondary' ?> text-white auto-submit-select">
                         <?php foreach ($statusLabels as $code => $label): ?>
@@ -47,20 +48,13 @@
                     </select>
                 </form>
             </td>
-            <td>
-                <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/visibility" class="d-flex gap-1">
-                    <?= \App\Core\Csrf::field() ?>
-                    <select name="visibility" class="form-select form-select-sm auto-submit-select">
-                        <?php foreach ($visibilityLabels as $code => $label): ?>
-                            <option value="<?= $code ?>" <?= $p['visibility'] === $code ? 'selected' : '' ?>><?= $label ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </form>
-            </td>
             <td><?= (int)$p['open_tasks_count'] ?></td>
             <td><?= \App\Core\View::e($p['created_by_name']) ?></td>
             <td>
-                <form method="post" action="/admin/projects/<?= (int)$p['id'] ?>/delete"
+                <?php if (!empty($unitMode) && empty($p['can_delete'])): ?>
+                    <span class="small text-muted">Є учасники з інших підрозділів, і створено не вами — видалити може лише адміністратор системи.</span>
+                <?php else: ?>
+                <form method="post" action="<?= $base ?>/<?= (int)$p['id'] ?>/delete"
                       class="d-flex gap-1"
                       data-confirm="Остаточно видалити проєкт «<?= \App\Core\View::e($p['name']) ?>» та всі його задачі?">
     <?= \App\Core\Csrf::field() ?>
@@ -68,6 +62,7 @@
                            placeholder="Введіть назву проєкту для підтвердження" required>
                     <button type="submit" class="btn btn-sm btn-danger text-nowrap">Видалити</button>
                 </form>
+                <?php endif; ?>
             </td>
         </tr>
     <?php endforeach; ?>

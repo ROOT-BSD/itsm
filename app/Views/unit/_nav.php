@@ -1,9 +1,5 @@
 <?php
-$__path = rtrim(parse_url($_SERVER['REQUEST_URI'] ?? '/unit', PHP_URL_PATH) ?: '/unit', '/');
-$__tabs = ['/unit' => 'Користувачі', '/projects' => 'Проєкти', '/tasks' => 'Задачі', '/tickets' => 'Тікети', '/unit/board' => 'Канбан', '/unit/gantt' => 'Гант', '/unit/time' => 'Облік часу', '/unit/queues' => 'Черги тікетів', '/unit/csat' => 'CSAT', '/unit/audit' => 'Журнал аудиту'];
+/** Посилання «назад» з підсторінки до її розділу («Керування» чи «Налаштування системи») — як admin/_back.php. */
+$__section = \App\Core\UnitNav::SECTIONS[\App\Core\UnitNav::currentSection() ?? 'manage'];
 ?>
-<ul class="nav nav-tabs">
-    <?php foreach ($__tabs as $__url => $__title): ?>
-        <li class="nav-item"><a class="nav-link <?= $__path === $__url ? 'active' : '' ?>" href="<?= $__url ?>"><?= \App\Core\View::e($__title) ?></a></li>
-    <?php endforeach; ?>
-</ul>
+<a href="<?= \App\Core\View::e($__section['url']) ?>" class="text-decoration-none">&larr; <?= \App\Core\View::e($__section['title']) ?></a>

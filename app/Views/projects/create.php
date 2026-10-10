@@ -25,14 +25,6 @@
         <div class="form-text">Якщо обрати — цей проєкт стане підпроєктом обраного, зі своїми задачами.</div>
     </div>
     <div class="mb-3">
-        <label class="form-label">Видимість</label>
-        <select name="visibility" class="form-select">
-            <option value="private">Приватний</option>
-            <option value="public">Публічний</option>
-            <option value="restricted">Обмежений доступ</option>
-        </select>
-    </div>
-    <div class="mb-3">
         <label class="form-label">Відповідальний за проєкт (виконавець)</label>
         <select name="responsible_user_id" class="form-select user-select">
             <option value="">— не призначено —</option>
