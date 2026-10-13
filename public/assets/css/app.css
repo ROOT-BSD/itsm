@@ -255,3 +255,5 @@
 .wiki-preview { background: #fff; }
 .wiki-toc summary { cursor: pointer; }
 .wiki-content img.wiki-image { max-width: 100%; height: auto; border: 1px solid #dee2e6; border-radius: 4px; margin: .25rem 0; }
+.library-thumb { width: 56px; height: 56px; object-fit: cover; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa; }
+.library-thumb-lg { width: 96px; height: 96px; }

@@ -8,6 +8,9 @@ use App\Services\NotificationService;
 
 class Project
 {
+    /** На скільки рівнів вгору шукаємо батьківський проєкт, доступ до якого успадковує підпроєкт (0 — успадкування вимкнено). */
+    public const INHERIT_DEPTH = 5;
+
     public static function all(): array
     {
         // Кількість відкритих задач рахується один раз через derived table (GROUP BY),
@@ -129,6 +132,28 @@ class Project
             $sql .= " OR EXISTS (SELECT 1 FROM project_members pm_{$prefix} WHERE pm_{$prefix}.project_id = {$table}.id AND pm_{$prefix}.user_id = :{$prefix}3)";
             $params["{$prefix}3"] = $userId;
         }
+        // Успадкування: прямий доступ (автор, відповідальний, учасник) до батьківського проєкту — чи будь-якого предка
+        // (до INHERIT_DEPTH рівнів) — дає доступ і до підпроєкту. Прямий доступ до самого підпроєкту при цьому не потрібен.
+        if (self::INHERIT_DEPTH > 0) {
+            $joins = '';
+            $direct = [];
+            for ($lvl = 1; $lvl <= self::INHERIT_DEPTH; $lvl++) {
+                $a = "ia{$lvl}_{$prefix}";
+                if ($lvl > 1) {
+                    $prev = 'ia' . ($lvl - 1) . "_{$prefix}";
+                    $joins .= " LEFT JOIN projects {$a} ON {$a}.id = {$prev}.parent_id";
+                }
+                $part = "{$a}.created_by = :{$prefix}ih{$lvl}a OR {$a}.responsible_user_id = :{$prefix}ih{$lvl}b";
+                $params["{$prefix}ih{$lvl}a"] = $userId;
+                $params["{$prefix}ih{$lvl}b"] = $userId;
+                if (self::membersTableExists()) {
+                    $part .= " OR EXISTS (SELECT 1 FROM project_members im{$lvl}_{$prefix} WHERE im{$lvl}_{$prefix}.project_id = {$a}.id AND im{$lvl}_{$prefix}.user_id = :{$prefix}ih{$lvl}c)";
+                    $params["{$prefix}ih{$lvl}c"] = $userId;
+                }
+                $direct[] = "({$part})";
+            }
+            $sql .= " OR EXISTS (SELECT 1 FROM projects ia1_{$prefix}{$joins} WHERE ia1_{$prefix}.id = {$table}.parent_id AND (" . implode(' OR ', $direct) . '))';
+        }
         // Адміністратор підрозділу додатково бачить проєкти, де автор, відповідальний або учасник — з його AD OU.
         $unitParts = [];
         if (($c = Unit::userCondition("{$table}.created_by", "{$prefix}ua", $userId)) !== null) {
@@ -192,8 +217,9 @@ class Project
             || self::isMember((int) $project['id'], $userId)) {
             return true;
         }
-        // Адміністратор підрозділу: те саме правило, що й у списках (accessCondition) — одне джерело істини.
-        if (Unit::scopeOu($userId) !== null) {
+        // Адміністратор підрозділу і доступ, успадкований від батьківського проєкту: те саме правило, що й у списках
+        // (accessCondition) — одне джерело істини.
+        if (Unit::scopeOu($userId) !== null || !empty($project['parent_id'])) {
             [$accessSql, $accessParams] = self::accessCondition('p', 'iv', $userId);
             $stmt = Database::connection()->prepare("SELECT 1 FROM projects p WHERE p.id = :pid AND {$accessSql}");
             $stmt->execute($accessParams + ['pid' => (int) $project['id']]);
@@ -298,6 +324,29 @@ class Project
         Audit::log('project', $projectId, 'member_added', $actingUserId, ['member_user_id' => $userId]);
         NotificationService::projectMemberAdded($projectId, $userId, $actingUserId);
         return 'added';
+    }
+
+    /** Чи є користувач ЯВНИМ учасником проєкту (не автор і не відповідальний): лише такий може сам вийти з проєкту. */
+    public static function canLeave(array $project, int $userId): bool
+    {
+        return (int) $project['created_by'] !== $userId
+            && (int) ($project['responsible_user_id'] ?? 0) !== $userId
+            && self::isMember((int) $project['id'], $userId);
+    }
+
+    /** Учасник сам виходить з проєкту. @return bool true — вийшов */
+    public static function leave(array $project, int $userId): bool
+    {
+        if (!self::canLeave($project, $userId)) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('DELETE FROM project_members WHERE project_id = :project AND user_id = :user');
+        $stmt->execute(['project' => (int) $project['id'], 'user' => $userId]);
+        if ($stmt->rowCount() === 0) {
+            return false;
+        }
+        Audit::log('project', (int) $project['id'], 'member_left', $userId, ['member_user_id' => $userId]);
+        return true;
     }
 
     /** Забирає доступ в учасника. @return bool true — його було в учасниках */

@@ -532,6 +532,17 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     INDEX idx_forum_posts_topic (topic_id, id)
 ) ENGINE=InnoDB;
 
+-- Відписка від сповіщень по окремій темі форуму (міграція 035).
+CREATE TABLE IF NOT EXISTS forum_topic_mutes (
+    user_id INT NOT NULL,
+    topic_id INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, topic_id),
+    CONSTRAINT fk_forum_mutes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_forum_mutes_topic FOREIGN KEY (topic_id) REFERENCES forum_topics(id) ON DELETE CASCADE,
+    INDEX idx_forum_mutes_topic (topic_id)
+) ENGINE=InnoDB;
+
 -- Вкладення в повідомленнях форуму (міграція 034).
 CREATE TABLE IF NOT EXISTS forum_attachments (
     id INT AUTO_INCREMENT PRIMARY KEY,

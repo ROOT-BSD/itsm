@@ -100,6 +100,31 @@ class Forum
         return $stmt->fetchAll();
     }
 
+    // ------------------------------------------------------------------ відписка від теми (міграція 035)
+
+    public static function mutesReady(): bool
+    {
+        return Database::tableExists('forum_topic_mutes');
+    }
+
+    public static function isMuted(int $userId, int $topicId): bool
+    {
+        if (!self::mutesReady()) {
+            return false;
+        }
+        $stmt = Database::connection()->prepare('SELECT 1 FROM forum_topic_mutes WHERE user_id = :u AND topic_id = :t');
+        $stmt->execute(['u' => $userId, 't' => $topicId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public static function setMuted(int $userId, int $topicId, bool $muted): void
+    {
+        $sql = $muted
+            ? 'INSERT IGNORE INTO forum_topic_mutes (user_id, topic_id) VALUES (:u, :t)'
+            : 'DELETE FROM forum_topic_mutes WHERE user_id = :u AND topic_id = :t';
+        Database::connection()->prepare($sql)->execute(['u' => $userId, 't' => $topicId]);
+    }
+
     // ------------------------------------------------------------------ вкладення (міграція 034)
 
     public const MAX_FILES_PER_POST = 5;
@@ -125,6 +150,28 @@ class Forum
             $out[(int) $a['post_id']][] = $a;
         }
         return $out;
+    }
+
+    /**
+     * Вкладення повідомлення для Markdown: у тексті на них посилаються за НОМЕРОМ по порядку завантаження —
+     * ![опис](file:1) — перший файл, file:2 — другий (id у тексті не потрібні, тож розмітку можна писати ще до завантаження).
+     *
+     * @param array<int, array<string, mixed>> $attachments вкладення повідомлення (за зростанням id)
+     * @return array<int, array{name: string, mime: string, image: bool, url: string}>
+     */
+    public static function markdownMap(array $attachments): array
+    {
+        $map = [];
+        $n = 0;
+        foreach ($attachments as $a) {
+            $map[++$n] = [
+                'name' => $a['original_name'],
+                'mime' => $a['mime_type'],
+                'image' => in_array($a['mime_type'], ['image/jpeg', 'image/png'], true),
+                'url' => '/forum/files/' . (int) $a['id'],
+            ];
+        }
+        return $map;
     }
 
     public static function attachmentCount(int $postId): int
@@ -526,12 +573,14 @@ class Forum
      */
     public static function participants(int $topicId, int $exceptUserId): array
     {
+        // Хто відписався від теми (міграція 035) — листів про неї не отримує.
+        $muted = self::mutesReady() ? ' AND NOT EXISTS (SELECT 1 FROM forum_topic_mutes m WHERE m.topic_id = p.topic_id AND m.user_id = u.id)' : '';
         $stmt = Database::connection()->prepare(
             'SELECT DISTINCT u.id, u.email, u.full_name, r.code AS role_code
              FROM forum_posts p
              JOIN users u ON u.id = p.author_id
              JOIN roles r ON r.id = u.role_id
-             WHERE p.topic_id = :t AND u.is_active = 1 AND u.id <> :me
+             WHERE p.topic_id = :t AND u.is_active = 1 AND u.id <> :me' . $muted . '
              ORDER BY u.id'
         );
         $stmt->execute(['t' => $topicId, 'me' => $exceptUserId]);

@@ -383,7 +383,6 @@ class ForumController
         $totalPages = max(1, (int) ceil($total / self::POSTS_PER_PAGE));
         $page = min($totalPages, $page);
         $role = Auth::role();
-        $renderer = new Markdown([]);
 
         $posts = Forum::posts((int) $topic['id'], $page, self::POSTS_PER_PAGE);
         if ($page === $totalPages && Auth::id() !== null) {
@@ -393,7 +392,7 @@ class ForumController
         $files = Forum::attachmentsForPosts(array_column($posts, 'id'));
         foreach ($posts as &$p) {
             $p['attachments'] = $files[(int) $p['id']] ?? [];
-            $p['html'] = $renderer->toHtml($p['body']);
+            $p['html'] = (new Markdown([]))->setAttachments(Forum::markdownMap($p['attachments']))->toHtml($p['body']);
             $p['is_first'] = (int) $p['id'] === $firstId;
             $p['can_edit'] = $this->canEditPost($p + ['topic_locked' => $topic['is_locked']]);
             $p['can_delete'] = Forum::canModerate($role)
@@ -413,6 +412,8 @@ class ForumController
             'error' => $error ?? ($_GET['error'] ?? null),
             'replyBody' => $replyBody,
             'attachmentsReady' => Forum::attachmentsReady(),
+            'mutesReady' => Forum::mutesReady(),
+            'isMuted' => Forum::isMuted((int) Auth::id(), (int) $topic['id']),
         ]);
     }
 
@@ -529,6 +530,41 @@ class ForumController
 
     // ------------------------------------------------------------------ попередній перегляд і файли
 
+    /** Сторінка підтвердження (на неї веде посилання з листа): «Не сповіщати про цю тему». */
+    public function mutePage(array $params): void
+    {
+        $this->requireReady();
+        $topic = $this->topicOrFail((int) $params['id']);
+        $this->render('forum/mute', [
+            'topic' => $topic,
+            'mutesReady' => Forum::mutesReady(),
+            'isMuted' => Forum::isMuted((int) Auth::id(), (int) $topic['id']),
+        ]);
+    }
+
+    public function mute(array $params): void
+    {
+        $this->setMute($params, true);
+    }
+
+    public function unmute(array $params): void
+    {
+        $this->setMute($params, false);
+    }
+
+    private function setMute(array $params, bool $muted): void
+    {
+        $this->requireReady();
+        $topic = $this->topicOrFail((int) $params['id']);
+        if (!Forum::mutesReady()) {
+            $this->redirect('/forum/topics/' . $topic['id'], 'error', 'Відписку від тем ще не налаштовано: адміністратор має виконати update.sh (міграція 035).');
+        }
+        Forum::setMuted((int) Auth::id(), (int) $topic['id'], $muted);
+        $this->redirect('/forum/topics/' . $topic['id'], 'success', $muted
+            ? 'Листи про відповіді в цій темі більше не надходитимуть.'
+            : 'Листи про відповіді в цій темі знову надходитимуть (якщо ви її автор чи писали в ній).');
+    }
+
     /** HTML-фрагмент для кнопки «Попередній перегляд» (його вставляє public/assets/js/forum-editor.js). */
     public function preview(): void
     {
@@ -540,7 +576,22 @@ class ForumController
             echo '<div class="text-danger">Текст завеликий для перегляду.</div>';
             return;
         }
-        echo trim($body) === '' ? '<div class="text-muted">Нічого показувати — текст порожній.</div>' : (new Markdown([]))->toHtml($body);
+        if (trim($body) === '') {
+            echo '<div class="text-muted">Нічого показувати — текст порожній.</div>';
+            return;
+        }
+        // Файли, на які можна посилатися: уже прикріплені до цього повідомлення (post_id при редагуванні) і вибрані, але ще не завантажені.
+        $attachments = [];
+        $postId = ctype_digit((string) ($_POST['post_id'] ?? '')) ? (int) $_POST['post_id'] : 0;
+        $post = $postId > 0 ? Forum::findPost($postId) : null;
+        if ($post && in_array($post['board_visibility'], Forum::allowedVisibilities(Auth::role()), true)) {
+            $attachments = Forum::markdownMap(Forum::attachmentsForPosts([$postId])[$postId] ?? []);
+        }
+        $pending = json_decode((string) ($_POST['pending'] ?? '[]'), true);
+        foreach (is_array($pending) ? array_slice($pending, 0, Forum::MAX_FILES_PER_POST) : [] as $name) {
+            $attachments[count($attachments) + 1] = ['name' => mb_substr((string) $name, 0, 100), 'mime' => 'application/octet-stream', 'image' => false, 'url' => '#'];
+        }
+        echo (new Markdown([]))->setAttachments($attachments)->toHtml($body);
     }
 
     /** Віддає вкладення, якщо читачеві видимий розділ повідомлення (інакше 404, як і для самої теми). */

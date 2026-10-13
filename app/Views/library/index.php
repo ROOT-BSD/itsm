@@ -55,6 +55,9 @@ $pageUrl = static function (int $p) use ($currentCategory, $query): string {
                 <?php foreach ($documents as $d): ?>
                     <tr>
                         <td>
+                            <?php if (str_starts_with((string) $d['mime_type'], 'image/')): ?>
+                                <a href="/library/<?= (int) $d['id'] ?>" class="float-start me-2"><img src="/library/<?= (int) $d['id'] ?>/download?thumb=1" alt="" class="library-thumb" loading="lazy"></a>
+                            <?php endif; ?>
                             <a href="/library/<?= (int) $d['id'] ?>" class="fw-semibold"><?= $e($d['title']) ?></a>
                             <?php if ($d['visibility'] !== 'all'): ?>
                                 <span class="badge bg-secondary" title="<?= $e(\App\Models\LibraryDocument::visibilities()[$d['visibility']] ?? '') ?>"><?= $d['visibility'] === 'admin' ? 'адмін' : 'персонал' ?></span>

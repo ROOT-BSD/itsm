@@ -174,6 +174,7 @@ class NotificationService
                 $excerpt = rtrim(mb_substr($excerpt, 0, 300)) . '…';
             }
             $subject = "Нова відповідь у темі форуму «{$topic['title']}»";
+            $muteLink = Setting::appUrl() . '/forum/topics/' . $topicId . '/mute';
 
             $sent = 0;
             foreach (\App\Models\Forum::participants($topicId, $authorId) as $user) {
@@ -183,7 +184,7 @@ class NotificationService
                 if ($sent >= self::FORUM_MAX_RECIPIENTS) {
                     break;
                 }
-                $body = "Доброго дня, {$user['full_name']}!\n\n{$by} відповів(ла) у темі «{$topic['title']}» (розділ «{$topic['board_name']}»):\n\n{$excerpt}\n\nПерейти до відповіді:\n{$link}\n\nЦе автоматичний лист. Ви отримуєте його, бо створили цю тему або писали в ній.";
+                $body = "Доброго дня, {$user['full_name']}!\n\n{$by} відповів(ла) у темі «{$topic['title']}» (розділ «{$topic['board_name']}»):\n\n{$excerpt}\n\nПерейти до відповіді:\n{$link}\n\nЦе автоматичний лист. Ви отримуєте його, бо створили цю тему або писали в ній.\nНе хочете отримувати листи про цю тему? Відпишіться: {$muteLink}";
                 $result = MailerService::send($user['email'], $user['full_name'], $subject, $body);
                 $sent++;
                 if (!$result['ok']) {

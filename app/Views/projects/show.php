@@ -97,7 +97,16 @@ $eMember = static fn($v) => \App\Core\View::e($v);
 <div class="card mb-3" id="project-access">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span>🔑 Доступ до проєкту<?= !empty($members) ? ' (учасників: ' . count($members) . ')' : '' ?></span>
-        <span class="text-muted small">Автор і відповідальний мають доступ завжди</span>
+        <span class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-muted small">Автор і відповідальний мають доступ завжди</span>
+            <?php if (!empty($canLeave)): ?>
+                <form method="post" action="/projects/<?= (int)$project['id'] ?>/leave"
+                      data-confirm="Вийти з проєкту «<?= $eMember($project['name']) ?>»? Ви більше не бачитимете його й його задачі (і підпроєкти, доступ до яких успадковано від нього), доки вас не додадуть знову.">
+                    <?= \App\Core\Csrf::field() ?>
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Вийти з проєкту</button>
+                </form>
+            <?php endif; ?>
+        </span>
     </div>
     <div class="card-body">
         <?php if (!empty($success)): ?>
@@ -107,6 +116,9 @@ $eMember = static fn($v) => \App\Core\View::e($v);
             <div class="alert alert-danger py-2"><?= $eMember($error) ?></div>
         <?php endif; ?>
 
+        <?php if (!empty($parentName)): ?>
+            <p class="small text-muted">Це підпроєкт «<?= $eMember($parentName) ?>»: <strong>усі, хто має доступ до батьківського проєкту, мають доступ і сюди</strong> (успадкування). Нижче — лише ті, кого додано саме до цього підпроєкту.</p>
+        <?php endif; ?>
         <?php if (empty($members)): ?>
             <p class="text-muted mb-3">Додаткових учасників ще немає — проєкт бачать лише автор, відповідальний та адміністратор системи.</p>
         <?php else: ?>
@@ -147,7 +159,8 @@ $eMember = static fn($v) => \App\Core\View::e($v);
             </form>
             <div class="form-text mt-2">
                 Учасник бачить проєкт і всі його задачі та працює з ними так само, як автор чи відповідальний, але
-                не може керувати доступом. Підпроєкти мають власний перелік учасників.
+                не може керувати доступом. Доступ до проєкту (як автор, відповідальний чи учасник) <strong>успадковують і його підпроєкти</strong>:
+                хто має доступ до цього проєкту, бачить і всі його підпроєкти.
             </div>
         <?php endif; ?>
     </div>

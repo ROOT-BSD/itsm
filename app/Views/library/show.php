@@ -34,9 +34,14 @@ $maxFile = \App\Services\LibraryService::maxBytes();
 
                 <?php if ($latest): ?>
                     <div class="border rounded p-3 mt-3 d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+                        <div class="d-flex align-items-center gap-3">
+                        <?php if (str_starts_with((string) $latest['mime_type'], 'image/')): ?>
+                            <a href="/library/<?= $id ?>/download" target="_blank" rel="noopener"><img src="/library/<?= $id ?>/download?thumb=1" alt="" class="library-thumb library-thumb-lg"></a>
+                        <?php endif; ?>
                         <div>
                             <div class="fw-semibold"><?= $e($latest['original_name']) ?></div>
                             <div class="small text-muted">версія <?= (int) $latest['version_no'] ?> · <?= $e($human((int) $latest['size_bytes'])) ?> · <?= $e(date('d.m.Y H:i', strtotime($latest['created_at']))) ?></div>
+                        </div>
                         </div>
                         <div class="d-flex gap-2">
                             <?php if (in_array($latest['mime_type'], \App\Services\LibraryService::INLINE_MIMES, true)): ?>
@@ -59,6 +64,10 @@ $maxFile = \App\Services\LibraryService::maxBytes();
             <ul class="list-group list-group-flush">
                 <?php foreach ($versions as $v): ?>
                     <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                        <?php if (str_starts_with((string) $v['mime_type'], 'image/')): ?>
+                            <img src="/library/versions/<?= (int) $v['id'] ?>/download?thumb=1" alt="" class="library-thumb" loading="lazy">
+                        <?php endif; ?>
                         <div>
                             <span class="badge <?= $v === $latest ? 'bg-success' : 'bg-secondary' ?>">v<?= (int) $v['version_no'] ?></span>
                             <a href="/library/versions/<?= (int) $v['id'] ?>/download?download=1"><?= $e($v['original_name']) ?></a>
@@ -66,6 +75,7 @@ $maxFile = \App\Services\LibraryService::maxBytes();
                                 <?= $e($human((int) $v['size_bytes'])) ?> · <?= $e($v['uploader_name'] ?? 'користувача видалено') ?> · <?= $e(date('d.m.Y H:i', strtotime($v['created_at']))) ?>
                                 <?php if (!empty($v['comment'])): ?> · «<?= $e($v['comment']) ?>»<?php endif; ?>
                             </div>
+                        </div>
                         </div>
                         <?php if ($canDelete && count($versions) > 1): ?>
                             <form method="post" action="/library/versions/<?= (int) $v['id'] ?>/delete" data-confirm="Видалити версію <?= (int) $v['version_no'] ?>? Файл буде видалено безповоротно.">

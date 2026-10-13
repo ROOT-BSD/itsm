@@ -98,6 +98,7 @@ $router->post('/projects/{id}/relations/{relationId}', fn($p) => $projects->upda
 $router->post('/projects/{id}/relations/{relationId}/delete', fn($p) => $projects->deleteRelation($p));
 $router->post('/projects/{id}/responsible', fn($p) => $projects->updateResponsible($p));
 $router->post('/projects/{id}/members', fn($p) => $projects->addMember($p));
+$router->post('/projects/{id}/leave', fn($p) => $projects->leave($p));
 $router->post('/projects/{id}/members/{userId}/delete', fn($p) => $projects->removeMember($p));
 
 // --- Задачі ---
@@ -190,6 +191,9 @@ $router->post('/forum/boards/{id}/unsubscribe', fn($p) => $forum->unsubscribe($p
 $router->get('/forum/boards/{id}/topics/new', fn($p) => $forum->newTopic($p));
 $router->post('/forum/boards/{id}/topics', fn($p) => $forum->storeTopic($p));
 $router->get('/forum/topics/{id}', fn($p) => $forum->topic($p));
+$router->get('/forum/topics/{id}/mute', fn($p) => $forum->mutePage($p));
+$router->post('/forum/topics/{id}/mute', fn($p) => $forum->mute($p));
+$router->post('/forum/topics/{id}/unmute', fn($p) => $forum->unmute($p));
 $router->post('/forum/topics/{id}/reply', fn($p) => $forum->reply($p));
 $router->post('/forum/topics/{id}/pin', fn($p) => $forum->pin($p));
 $router->post('/forum/topics/{id}/lock', fn($p) => $forum->lock($p));

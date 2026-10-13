@@ -37,7 +37,7 @@ class Markdown
     /** @var array<string, true> існуючі slug-и сторінок вікі (для [[посилань]]) */
     private array $existingSlugs;
 
-    /** @var array<int, array{name: string, mime: string, image: bool}> вкладення поточної сторінки вікі: id => опис */
+    /** @var array<int, array{name: string, mime: string, image: bool, url?: string}> вкладення поточної сторінки вікі (чи повідомлення форуму): ключ => опис; url — адреса файлу, якщо не /wiki/files/ключ */
     private array $attachments = [];
 
     /**
@@ -45,7 +45,7 @@ class Markdown
      * на файл. Посилання на id, якого немає в цьому списку (чужий, видалений), стає звичайним текстом, тож
      * через розмітку не можна дістатися до файлів інших сторінок.
      *
-     * @param array<int, array{name: string, mime: string, image: bool}> $attachments
+     * @param array<int, array{name: string, mime: string, image: bool, url?: string}> $attachments
      */
     public function setAttachments(array $attachments): self
     {
@@ -498,10 +498,10 @@ class Markdown
                 if ($file === null) {
                     return $this->token('<span class="text-muted">[зображення недоступне: ' . $alt . ']</span>');
                 }
-                $url = '/wiki/files/' . (int) $f[1];
+                $url = $file['url'] ?? '/wiki/files/' . (int) $f[1];
                 if ($file['image']) {
                     return $this->token('<a href="' . $url . '" target="_blank" rel="noopener noreferrer" class="wiki-image-link">'
-                        . '<img src="' . $url . '" alt="' . ($alt !== '' ? $alt : $this->esc($file['name'])) . '" class="wiki-image" loading="lazy"></a>');
+                        . '<img src="' . $url . (str_contains($url, '?') ? '&amp;' : '?') . 'thumb=1" alt="' . ($alt !== '' ? $alt : $this->esc($file['name'])) . '" class="wiki-image" loading="lazy"></a>');
                 }
                 return $this->token($this->linkHtml($url, $alt !== '' ? $alt : $this->esc($file['name'])));
             }
@@ -514,7 +514,7 @@ class Markdown
                 $inner = $this->inline($m[1], false);
                 if (preg_match('/^file:([1-9][0-9]{0,9})$/', $m[2], $f)) {
                     return $this->token(isset($this->attachments[(int) $f[1]])
-                        ? $this->linkHtml('/wiki/files/' . (int) $f[1], $inner, $m[3] ?? null)
+                        ? $this->linkHtml($this->attachments[(int) $f[1]]['url'] ?? '/wiki/files/' . (int) $f[1], $inner, $m[3] ?? null)
                         : '<span class="text-muted" title="Файл недоступний">' . $inner . '</span>');
                 }
                 $url = self::safeUrl($m[2]);

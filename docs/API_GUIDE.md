@@ -242,7 +242,7 @@ curl -X PATCH https://itsm.example.org/api/v1/tickets/2 \
 | `project.status_changed` | Змінено статус проєкту |
 | `project.responsible_changed` | Змінено відповідального |
 | `project.member_added` | Користувачу надано доступ до проєкту |
-| `project.member_removed` | У користувача забрано доступ |
+| `project.member_removed` | У користувача забрано доступ (або він вийшов з проєкту сам) |
 | `project.deleted` | Видалено проєкт |
 
 Окрема службова подія `webhook.ping` надсилається кнопкою «Надіслати тестову подію» — вона не входить до переліку підписки.

@@ -332,6 +332,11 @@ class WikiController
             echo 'Файл не знайдено на сервері (можливо, його видалено з диска). Зверніться до адміністратора.';
             exit;
         }
+        // ?thumb=1 — зменшена копія зображення (якщо GD доступний і зображення велике); інакше віддається оригінал.
+        $sendPath = $path;
+        if (isset($_GET['thumb']) && !isset($_GET['download']) && str_starts_with((string) $attachment['mime_type'], 'image/')) {
+            $sendPath = AttachmentService::thumbnailFor($attachment['stored_name'], $attachment['mime_type']) ?? $path;
+        }
         $inline = in_array($attachment['mime_type'], LibraryService::INLINE_MIMES, true) && !isset($_GET['download']);
         $name = $attachment['original_name'];
         $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?: 'file';
@@ -341,11 +346,11 @@ class WikiController
             ob_end_clean();
         }
         header('Content-Type: ' . $attachment['mime_type']);
-        header('Content-Length: ' . filesize($path));
+        header('Content-Length: ' . filesize($sendPath));
         header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: private, max-age=3600');
-        readfile($path);
+        readfile($sendPath);
         exit;
     }
 

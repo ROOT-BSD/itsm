@@ -33,6 +33,17 @@ $tid = (int) $topic['id'];
     <?php endif; ?>
 </div>
 
+<?php if (!empty($mutesReady)): ?>
+    <form method="post" action="/forum/topics/<?= $tid ?>/<?= $isMuted ? 'unmute' : 'mute' ?>" class="mb-3">
+        <?= \App\Core\Csrf::field() ?>
+        <?php if ($isMuted): ?>
+            <button class="btn btn-sm btn-outline-secondary">🔔 Сповіщення про цю тему вимкнено — увімкнути</button>
+        <?php else: ?>
+            <button class="btn btn-sm btn-outline-secondary" title="Листи про нові відповіді в цій темі перестануть надходити">🔕 Не сповіщати про цю тему</button>
+        <?php endif; ?>
+    </form>
+<?php endif; ?>
+
 <?php $pagerBase = '/forum/topics/' . $tid; require __DIR__ . '/_pager.php'; ?>
 
 <?php foreach ($posts as $p): ?>

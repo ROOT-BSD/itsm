@@ -91,6 +91,8 @@ class ProjectController
             'membersAvailable' => Project::membersTableExists(),
             'members' => Project::members((int) $project['id']),
             'canManageMembers' => $canManageMembers,
+            'canLeave' => Project::canLeave($project, (int) Auth::id()),
+            'parentName' => !empty($project['parent_id']) ? ($project['parent_name'] ?? null) : null,
             'memberCandidates' => $canManageMembers ? Project::memberCandidates($project) : [],
             'success' => $_GET['success'] ?? null,
             'error' => $_GET['error'] ?? null,
@@ -364,6 +366,18 @@ class ProjectController
             $removed ? 'success' : 'error',
             $removed ? 'Доступ до проєкту скасовано.' : 'Цей користувач не є учасником проєкту.'
         );
+    }
+
+    /** Учасник сам виходить з проєкту (автор і відповідальний — ні: спершу треба передати відповідальність). */
+    public function leave(array $params): void
+    {
+        Auth::requireLogin();
+        $project = $this->requireProjectAccess((int) $params['id']);
+        if (!Project::leave($project, (int) Auth::id())) {
+            $this->backToProject((int) $project['id'], 'error', 'Вийти можна лише з проєкту, до якого вас додано учасником. Автор і відповідальний вийти не можуть, а доступ до підпроєкту від батьківського проєкту скасовується виходом із батьківського.');
+        }
+        header('Location: /projects?success=' . urlencode('Ви вийшли з проєкту «' . $project['name'] . '»: доступ до нього й до його задач скасовано.'));
+        exit;
     }
 
     private function requireMemberManager(array $project): void

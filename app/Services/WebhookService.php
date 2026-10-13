@@ -53,7 +53,7 @@ final class WebhookService
                        'description_changed' => 'task.updated', 'dates_changed' => 'task.updated', 'project_changed' => 'task.updated', 'milestone_changed' => 'task.updated',
                        'deleted' => 'task.deleted'],
             'project' => ['created' => 'project.created', 'responsible_changed' => 'project.responsible_changed', 'member_added' => 'project.member_added',
-                          'member_removed' => 'project.member_removed', 'deleted' => 'project.deleted'],
+                          'member_removed' => 'project.member_removed', 'member_left' => 'project.member_removed', 'deleted' => 'project.deleted'],
         ];
         if (isset($map[$entityType][$action])) {
             return $map[$entityType][$action];
