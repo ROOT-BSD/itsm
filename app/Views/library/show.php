@@ -20,10 +20,10 @@ $maxFile = \App\Services\LibraryService::maxBytes();
                         <h4 class="mb-1"><?= $e($document['title']) ?></h4>
                         <div class="small text-muted">
                             Розділ: <?= $document['category_name'] !== null ? '<a href="/library?category=' . (int) $document['category_id'] . '">' . $e($document['category_name']) . '</a>' : 'без розділу' ?>
-                            · Бачить: <?= $e(\App\Models\LibraryDocument::visibilities()[$document['visibility']] ?? $document['visibility']) ?>
+                            · Бачить: <?= $e(\App\Models\LibraryDocument::visibilities()[$document['visibility']] ?? $document['visibility']) ?><?= $unitLabel !== '' ? ' (' . $e($unitLabel) . ')' : '' ?>
                         </div>
                     </div>
-                    <?php if ($canEdit): ?>
+                    <?php if ($canManage): ?>
                         <a href="/library/<?= $id ?>/edit" class="btn btn-sm btn-outline-secondary text-nowrap">Редагувати</a>
                     <?php endif; ?>
                 </div>
@@ -44,6 +44,9 @@ $maxFile = \App\Services\LibraryService::maxBytes();
                         </div>
                         </div>
                         <div class="d-flex gap-2">
+                            <?php if (!empty($previewReady) && \App\Services\LibraryPreview::supportsName((string) $latest['original_name'])): ?>
+                                <a href="/library/<?= $id ?>/preview" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Переглянути (PDF)</a>
+                            <?php endif; ?>
                             <?php if (in_array($latest['mime_type'], \App\Services\LibraryService::INLINE_MIMES, true)): ?>
                                 <a href="/library/<?= $id ?>/download" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Відкрити</a>
                             <?php endif; ?>
@@ -71,6 +74,9 @@ $maxFile = \App\Services\LibraryService::maxBytes();
                         <div>
                             <span class="badge <?= $v === $latest ? 'bg-success' : 'bg-secondary' ?>">v<?= (int) $v['version_no'] ?></span>
                             <a href="/library/versions/<?= (int) $v['id'] ?>/download?download=1"><?= $e($v['original_name']) ?></a>
+                            <?php if (!empty($previewReady) && \App\Services\LibraryPreview::supportsName((string) $v['original_name'])): ?>
+                                <a href="/library/versions/<?= (int) $v['id'] ?>/preview" target="_blank" rel="noopener" class="small ms-1">PDF</a>
+                            <?php endif; ?>
                             <div class="small text-muted">
                                 <?= $e($human((int) $v['size_bytes'])) ?> · <?= $e($v['uploader_name'] ?? 'користувача видалено') ?> · <?= $e(date('d.m.Y H:i', strtotime($v['created_at']))) ?>
                                 <?php if (!empty($v['comment'])): ?> · «<?= $e($v['comment']) ?>»<?php endif; ?>
@@ -88,7 +94,7 @@ $maxFile = \App\Services\LibraryService::maxBytes();
             </ul>
         </div>
 
-        <?php if ($canEdit): ?>
+        <?php if ($canManage): ?>
             <div class="card mb-4">
                 <div class="card-header">Завантажити нову версію</div>
                 <form method="post" action="/library/<?= $id ?>/versions" enctype="multipart/form-data" class="card-body">

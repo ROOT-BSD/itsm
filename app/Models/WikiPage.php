@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Core\Database;
+use App\Services\WikiStore;
 
 /**
  * Сторінки вікі (таблиці wiki_pages, wiki_revisions). Права визначаються ЛИШЕ тут і в контролері через
@@ -15,6 +16,9 @@ class WikiPage
     /** Максимальна глибина вкладеності (кореневі сторінки — рівень 1). */
     public const MAX_DEPTH = 6;
     /** Адреси, що збігаються з маршрутами вікі, — для сторінок заборонені. */
+    /** Скільки останніх версій сторінки зберігається в історії (разом з поточною). */
+    public const MAX_REVISIONS = 5;
+
     private const RESERVED_SLUGS = ['new', 'preview', 'search', 'edit', 'history', 'revisions', 'delete', 'files', 'attachments'];
 
     // ------------------------------------------------------------------ права
@@ -60,14 +64,26 @@ class WikiPage
              WHERE p.slug = :slug'
         );
         $stmt->execute(['slug' => $slug]);
-        return $stmt->fetch() ?: null;
+        return self::withContent($stmt->fetch() ?: null);
+    }
+
+    /** Підставляє текст з диска (якщо сторінку вже перенесено), інакше лишає той, що в БД. */
+    private static function withContent(?array $page): ?array
+    {
+        if ($page !== null) {
+            $disk = WikiStore::readCurrent((int) $page['id']);
+            if ($disk !== null) {
+                $page['content'] = $disk;
+            }
+        }
+        return $page;
     }
 
     public static function findById(int $id): ?array
     {
         $stmt = Database::connection()->prepare('SELECT * FROM wiki_pages WHERE id = :id');
         $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
+        return self::withContent($stmt->fetch() ?: null);
     }
 
     /** Список сторінок, видимих ролі (без вмісту — він може бути великим). @return array<int, array<string, mixed>> */
@@ -96,17 +112,31 @@ class WikiPage
     {
         $allowed = self::allowedVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
-        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query) . '%';
+        // Текст лежить на диску, тож LIKE по БД неможливий: беремо видимі сторінки й шукаємо в PHP (без урахування регістру).
         $stmt = Database::connection()->prepare(
-            "SELECT p.id, p.slug, p.title, p.content, p.updated_at,
-                    (p.title LIKE ? ESCAPE '\\\\') AS in_title
-             FROM wiki_pages p
-             WHERE p.visibility IN ($in) AND (p.title LIKE ? ESCAPE '\\\\' OR p.content LIKE ? ESCAPE '\\\\')
-             ORDER BY in_title DESC, p.sort_order ASC, p.title ASC
-             LIMIT " . (int) $limit
+            "SELECT p.id, p.slug, p.title, p.content, p.updated_at
+             FROM wiki_pages p WHERE p.visibility IN ($in)
+             ORDER BY p.sort_order ASC, p.title ASC"
         );
-        $stmt->execute(array_merge([$like], $allowed, [$like, $like]));
-        return $stmt->fetchAll();
+        $stmt->execute($allowed);
+        $inTitle = [];
+        $inText = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $titleHit = mb_stripos((string) $row['title'], $query) !== false;
+            $row = self::withContent($row);
+            $textHit = !$titleHit && mb_stripos((string) $row['content'], $query) !== false;
+            if ($titleHit) {
+                $row['in_title'] = 1;
+                $inTitle[] = $row;
+            } elseif ($textHit) {
+                $row['in_title'] = 0;
+                $inText[] = $row;
+            }
+            if (count($inTitle) + count($inText) >= $limit * 3) {
+                break;
+            }
+        }
+        return array_slice(array_merge($inTitle, $inText), 0, $limit);
     }
 
     /** @return string[] */
@@ -340,14 +370,15 @@ class WikiPage
         try {
             $stmt = $pdo->prepare(
                 'INSERT INTO wiki_pages (slug, title, content, visibility, sort_order, version, source, imported_hash, created_by, updated_by)
-                 VALUES (:slug, :title, :content, :visibility, :sort_order, 1, :source, :hash, :user, :user2)'
+                 VALUES (:slug, :title, \'\', :visibility, :sort_order, 1, :source, :hash, :user, :user2)'
             );
             $stmt->execute([
-                'slug' => $slug, 'title' => $title, 'content' => $content, 'visibility' => $visibility,
+                'slug' => $slug, 'title' => $title, 'visibility' => $visibility,
                 'sort_order' => $sortOrder, 'source' => $source, 'hash' => $importedHash, 'user' => $userId, 'user2' => $userId,
             ]);
             $id = (int) $pdo->lastInsertId();
             self::addRevision($id, 1, $title, $content, $userId);
+            WikiStore::write($id, 1, $content);
             if ($own) {
                 $pdo->commit();
             }
@@ -375,10 +406,10 @@ class WikiPage
             $pdo->beginTransaction();
         }
         try {
-            $sql = 'UPDATE wiki_pages SET title = :title, content = :content, visibility = :visibility, sort_order = :sort_order,
+            $sql = 'UPDATE wiki_pages SET title = :title, content = \'\', visibility = :visibility, sort_order = :sort_order,
                            version = version + 1, updated_by = :user' . ($setHash ? ', imported_hash = :hash' : '') . '
                     WHERE id = :id AND version = :version';
-            $params = ['title' => $title, 'content' => $content, 'visibility' => $visibility, 'sort_order' => $sortOrder,
+            $params = ['title' => $title, 'visibility' => $visibility, 'sort_order' => $sortOrder,
                        'user' => $userId, 'id' => $id, 'version' => $expectedVersion];
             if ($setHash) {
                 $params['hash'] = $importedHash;
@@ -392,9 +423,11 @@ class WikiPage
                 return false;
             }
             self::addRevision($id, $expectedVersion + 1, $title, $content, $userId);
+            WikiStore::write($id, $expectedVersion + 1, $content);
             if ($own) {
                 $pdo->commit();
             }
+            self::pruneRevisions($id); // після коміту: файли видаляються лише для вже збереженої версії
             return true;
         } catch (\Throwable $e) {
             if ($own && $pdo->inTransaction()) {
@@ -421,6 +454,7 @@ class WikiPage
             if ($own) {
                 $pdo->commit();
             }
+            WikiStore::deletePage($id);
         } catch (\Throwable $e) {
             if ($own && $pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -434,20 +468,45 @@ class WikiPage
     private static function addRevision(int $pageId, int $version, string $title, string $content, ?int $userId): void
     {
         Database::connection()->prepare(
-            'INSERT INTO wiki_revisions (page_id, version, title, content, edited_by) VALUES (:page, :version, :title, :content, :user)'
-        )->execute(['page' => $pageId, 'version' => $version, 'title' => $title, 'content' => $content, 'user' => $userId]);
+            'INSERT INTO wiki_revisions (page_id, version, title, content, edited_by) VALUES (:page, :version, :title, \'\', :user)'
+        )->execute(['page' => $pageId, 'version' => $version, 'title' => $title, 'user' => $userId]);
+    }
+
+    /**
+     * Лишає в історії сторінки лише MAX_REVISIONS найновіших версій (разом з поточною): старіші записи
+     * і їхні файли rev-N.md видаляються. Повертає кількість видалених версій.
+     */
+    public static function pruneRevisions(int $pageId): int
+    {
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare(
+            'SELECT id, version FROM wiki_revisions WHERE page_id = :page ORDER BY version DESC LIMIT 1000000 OFFSET ' . self::MAX_REVISIONS
+        );
+        $stmt->execute(['page' => $pageId]);
+        $old = $stmt->fetchAll();
+        foreach ($old as $row) {
+            $pdo->prepare('DELETE FROM wiki_revisions WHERE id = :id')->execute(['id' => (int) $row['id']]);
+            WikiStore::deleteRevision($pageId, (int) $row['version']);
+        }
+        return count($old);
     }
 
     /** @return array<int, array<string, mixed>> від найновішої до найстарішої (без вмісту) */
     public static function revisions(int $pageId): array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT r.id, r.version, r.title, r.created_at, r.edited_by, u.full_name AS edited_by_name, CHAR_LENGTH(r.content) AS size_chars
+            'SELECT r.id, r.version, r.title, r.created_at, r.edited_by, u.full_name AS edited_by_name, r.content AS db_content
              FROM wiki_revisions r LEFT JOIN users u ON u.id = r.edited_by
              WHERE r.page_id = :page ORDER BY r.version DESC'
         );
         $stmt->execute(['page' => $pageId]);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $text = WikiStore::readRevision($pageId, (int) $row['version']) ?? (string) $row['db_content'];
+            $row['size_chars'] = mb_strlen($text);
+            unset($row['db_content']);
+        }
+        return $rows;
     }
 
     /** Версія саме ЦІЄЇ сторінки (id версії з чужої сторінки не підійде). */
@@ -458,6 +517,13 @@ class WikiPage
              WHERE r.id = :id AND r.page_id = :page'
         );
         $stmt->execute(['id' => $revisionId, 'page' => $pageId]);
-        return $stmt->fetch() ?: null;
+        $row = $stmt->fetch() ?: null;
+        if ($row !== null) {
+            $disk = WikiStore::readRevision($pageId, (int) $row['version']);
+            if ($disk !== null) {
+                $row['content'] = $disk;
+            }
+        }
+        return $row;
     }
 }

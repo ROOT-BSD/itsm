@@ -6,85 +6,11 @@
 
 <?php
 // Українські підписи для типів сутностей — використовуються і у фільтрі, і в таблиці.
-$entityTypeLabels = [
-    'project' => 'Проєкт',
-    'task' => 'Задача',
-    'ticket' => 'Тікет',
-    'wiki_page' => 'Сторінка вікі',
-    'library_document' => 'Документ бібліотеки',
-    'forum_topic' => 'Тема форуму',
-    'forum_board' => 'Розділ форуму',
-    'milestone' => 'Етап',
-    'task_relation' => "Зв'язок задач",
-    'ticket_queue' => 'Черга тікетів',
-    'user' => 'Користувач',
-    'app_settings' => 'Налаштування',
-    'ad_group_role_mapping' => 'Відповідність AD-груп ролям',
-];
+$entityTypeLabels = \App\Models\Audit::ENTITY_TYPE_LABELS;
 
 // Підписи для полів усередині JSON-колонки "changes" — щоб замість
 // "status_id: 3" показувати "Статус: В роботі".
-$changeKeyLabels = [
-    'status_id' => 'Статус',
-    'assignee_id' => 'Виконавець',
-    'responsible_user_id' => 'Відповідальний',
-    'member_user_id' => 'Учасник проєкту',
-    'via' => 'Через',
-    'operator_id' => 'Оператор',
-    'default_operator_id' => 'Оператор за замовчуванням',
-    'assigned_operator_id' => 'Призначений оператор',
-    'milestone_id' => 'Етап',
-    'related_task_id' => "Пов'язана задача",
-    'relation_type' => "Тип зв'язку",
-    'start_date' => 'Дата початку',
-    'due_date' => 'Термін виконання',
-    'name' => 'Назва',
-    'title' => 'Назва',
-    'visibility' => 'Хто бачить',
-    'category_id' => 'Розділ',
-    'versions' => 'Версій',
-    'board' => 'Розділ',
-    'post' => 'Повідомлення №',
-    'replies' => 'Відповідей',
-    'parent' => 'Батьківська сторінка №',
-    'attachments' => 'Вкладень',
-    'from_board' => 'З розділу',
-    'to_board' => 'До розділу',
-    'description_changed' => 'Опис змінено',
-    'email' => 'Email',
-    'first_response_minutes' => 'Перша відповідь (хв)',
-    'resolution_minutes' => 'Вирішення (хв)',
-    'email_ticket_enabled' => 'Обробка пошти',
-    'ad_sync_enabled' => 'Синхронізація з AD',
-    'ad_role_locked' => 'Роль AD закріплено',
-    'old' => 'Було',
-    'new' => 'Стало',
-    'ad_host' => 'Сервер AD',
-    'ad_encrypted' => 'Шифрування',
-    'ad_port' => 'Порт AD',
-    'principal' => 'Принципал SSO',
-    'unit_ou' => 'Підрозділ',
-    'ad_group' => 'Група AD',
-    'ad_username' => 'Логін AD',
-    'role_id' => 'Роль',
-    'email_ticket_queue_id' => 'Черга для пошти (0 = перша)',
-    'email_autoreply_enabled' => 'Автовідповідь заявнику',
-    'email_notify_tickets_enabled' => 'Сповіщення про тікети',
-    'email_notify_projects_enabled' => 'Сповіщення про проєкти',
-    'email_notify_tasks_enabled' => 'Сповіщення про задачі',
-    'email_notify_forum_enabled' => 'Сповіщення про форум',
-    'email_notify_reminders_enabled' => 'Нагадування про термін',
-    'app_url' => 'Домен застосунку',
-    'error' => 'Помилка',
-    'to' => 'Кому',
-    'csat_score' => 'Оцінка CSAT',
-    'slug' => 'Адреса',
-    'version' => 'Версія',
-    'restored_version' => 'Відновлено з версії',
-    'file' => 'Файл',
-    'size_kb' => 'Розмір, КБ',
-    'from' => 'Відправник',
-];
+$changeKeyLabels = \App\Models\Audit::CHANGE_KEY_LABELS;
 
 // Значення поля relation_type — той самий переклад, що й на сторінці Ганта.
 $relationTypeLabels = ['blocks' => 'блокує', 'blocked_by' => 'залежить від', 'duplicates' => 'дублює', 'related' => "пов'язана з"];
@@ -135,7 +61,10 @@ $shortenName = function (string $text): string {
     </div>
 </form>
 
-<p class="text-muted small">Знайдено записів: <?= (int)$total ?></p>
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <p class="text-muted small mb-0">Знайдено записів: <?= (int)$total ?></p>
+    <?php $exportUrl = !empty($unitMode) ? '/unit/audit/export' : '/admin/audit/export'; require __DIR__ . '/../_export_button.php'; ?>
+</div>
 
 <?php
 $entityLinks = ['task' => '/tasks/', 'project' => '/projects/', 'ticket' => '/tickets/', 'library_document' => '/library/', 'forum_topic' => '/forum/topics/', 'forum_board' => '/forum/boards/'];

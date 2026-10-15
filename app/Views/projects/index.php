@@ -1,7 +1,12 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="mb-0">Проєкти</h3>
     <?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
-        <a href="/projects/create" class="btn btn-primary">+ Новий проєкт</a>
+        <span>
+            <a href="/templates" class="btn btn-outline-secondary">Шаблони</a>
+            <a href="/projects/create" class="btn btn-primary">+ Новий проєкт</a>
+        </span>
+    <?php else: ?>
+        <a href="/templates" class="btn btn-outline-secondary">Шаблони</a>
     <?php endif; ?>
 </div>
 
@@ -22,7 +27,7 @@ $subProjectsWord = static function (int $n): string {
 ?>
 <?php foreach ($projects as $p): ?>
     <div class="col-md-4 mb-3">
-        <div class="card h-100">
+        <div class="card h-100 <?= \App\Models\Project::urgencyClass((int)$p['id']) ?>">
             <div class="card-body">
                 <h5 class="card-title"><?= \App\Core\View::e($p['name']) ?></h5>
                 <?php if (!empty($p['parent_id'])): ?>

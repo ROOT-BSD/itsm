@@ -11,6 +11,8 @@ $fileMax = \App\Core\UploadLimits::effectiveFileMax();
 $postMax = \App\Core\UploadLimits::postMax();
 $maxPerRequest = (int) \App\Core\Config::get('attachments.max_per_request', 10);
 $isAdminUser = \App\Core\Auth::hasRole(['admin']);
+// Документи Office (DOCX, XLSX, …) приймаються лише в задачах і лише після міграції 037.
+$officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::officeReady();
 ?>
 <div class="card mb-4">
     <div class="card-header">Вкладення (<?= count($attachments) ?>)</div>
@@ -20,23 +22,33 @@ $isAdminUser = \App\Core\Auth::hasRole(['admin']);
         <?php else: ?>
             <ul class="list-group mb-3">
                 <?php foreach ($attachments as $a): ?>
-                    <?php $isImage = str_starts_with($a['mime_type'], 'image/'); ?>
+                    <?php
+                    $isImage = str_starts_with($a['mime_type'], 'image/');
+                    $isOffice = \App\Services\AttachmentService::isOfficeMime($a['mime_type']);
+                    $ext = strtoupper(pathinfo($a['original_name'], PATHINFO_EXTENSION));
+                    $canPreview = $isOffice && \App\Services\LibraryPreview::supportsName((string) $a['original_name']);
+                    ?>
                     <li class="list-group-item d-flex align-items-center gap-3">
                         <?php if ($isImage): ?>
                             <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener">
                                 <img src="/attachments/<?= (int)$a['id'] ?>?thumb=1" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
                             </a>
+                        <?php elseif ($isOffice): ?>
+                            <span class="attachment-icon badge bg-primary align-self-start"><?= \App\Core\View::e($ext) ?></span>
                         <?php else: ?>
                             <span class="attachment-icon badge bg-danger align-self-start">PDF</span>
                         <?php endif; ?>
                         <div class="flex-grow-1">
-                            <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener"><?= \App\Core\View::e($a['original_name']) ?></a>
+                            <a href="/attachments/<?= (int)$a['id'] ?><?= $isOffice ? '?download=1' : '' ?>"<?= $isOffice ? '' : ' target="_blank" rel="noopener"' ?>><?= \App\Core\View::e($a['original_name']) ?></a>
                             <div class="small text-muted">
                                 <?= \App\Core\View::e(\App\Core\UploadLimits::human((int)$a['size_bytes'])) ?>
                                 · <?= \App\Core\View::e($a['uploader_name'] ?? (['portal' => 'заявник (портал)', 'email' => 'з електронного листа'][$a['source'] ?? 'web'] ?? 'користувача видалено')) ?>
                                 · <?= \App\Core\View::e(date('d.m.Y H:i', strtotime($a['created_at']))) ?>
                             </div>
                         </div>
+                        <?php if ($canPreview): ?>
+                            <a href="/attachments/<?= (int)$a['id'] ?>?preview=1" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Переглянути (PDF)</a>
+                        <?php endif; ?>
                         <a href="/attachments/<?= (int)$a['id'] ?>?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a>
                         <?php if ($isAdminUser || (int)$a['uploaded_by'] === \App\Core\Auth::id()): ?>
                             <form method="post" action="/attachments/<?= (int)$a['id'] ?>/delete"
@@ -54,11 +66,11 @@ $isAdminUser = \App\Core\Auth::hasRole(['admin']);
             <?= \App\Core\Csrf::field() ?>
             <div class="input-group">
                 <input type="file" name="files[]" class="form-control" multiple required
-                       accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf">
+                       accept="<?= $officeOn ? '.jpg,.jpeg,.png,.gif,.webp,.pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp' : '.jpg,.jpeg,.png,.gif,.webp,.pdf,image/jpeg,image/png,image/gif,image/webp,application/pdf' ?>">
                 <button class="btn btn-outline-primary" type="submit">Прикріпити</button>
             </div>
             <div class="form-text">
-                Дозволено JPG, PNG та PDF. До <?= \App\Core\View::e(\App\Core\UploadLimits::human($fileMax)) ?> на файл,
+                Дозволено <?= $officeOn ? 'JPG, PNG, GIF, WebP, PDF та документи Office (DOCX, XLSX, PPTX, ODT, ODS, ODP; без макросів)' : 'JPG, PNG, GIF, WebP та PDF' ?>. До <?= \App\Core\View::e(\App\Core\UploadLimits::human($fileMax)) ?> на файл,
                 до <?= $maxPerRequest ?> файлів за раз (разом не більше <?= \App\Core\View::e(\App\Core\UploadLimits::human($postMax)) ?>).
             </div>
         </form>

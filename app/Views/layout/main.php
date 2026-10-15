@@ -45,6 +45,10 @@ use App\Core\Auth;
                 </a>
             </span>
             <a href="/logout" class="btn btn-outline-light btn-sm">Вийти</a>
+            <form class="d-flex ms-2 mt-2 mt-lg-0" role="search" method="get" action="/search">
+                <input class="form-control form-control-sm" type="search" name="q" placeholder="Пошук…" aria-label="Пошук" maxlength="100"
+                       value="<?= \App\Core\View::e(parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) === '/search' ? (string) ($_GET['q'] ?? '') : '') ?>" style="width:100px" data-search-box>
+            </form>
         </div>
     </div>
 </nav>

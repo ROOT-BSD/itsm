@@ -8,12 +8,14 @@ use App\Core\View;
 use App\Models\Audit;
 use App\Models\LibraryDocument;
 use App\Services\AttachmentService;
+use App\Services\LibraryPreview;
 use App\Services\LibraryService;
 
 /**
  * Бібліотека документів: файли, не прив'язані до тікета чи задачі (регламенти, інструкції, форми, шаблони).
- * Читати можуть усі, хто увійшов (з урахуванням visibility документа); завантажувати, оновлювати й керувати розділами —
- * адміністратор та IT-менеджер (LibraryDocument::canEdit). Документ, недоступний за visibility, для решти ВИГЛЯДАЄ неіснуючим (404),
+ * Читати можуть усі, хто увійшов (з урахуванням visibility документа). Документи «для всіх/персоналу/адміністратора» й розділи
+ * ведуть адміністратор та IT-менеджер (LibraryDocument::canEdit); решта користувачів додає власні документи —
+ * лише для себе або для свого підрозділу — і керує ними (canCreate/canManage). Документ, недоступний за visibility, для решти ВИГЛЯДАЄ неіснуючим (404),
  * а не забороненим. Файли віддаються виключно через download*() — прямого URL на файл у веб-корені немає.
  */
 class LibraryController
@@ -30,15 +32,17 @@ class LibraryController
             $category = null;
         }
         $query = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 100);
+        $scope = in_array($_GET['scope'] ?? '', ['mine', 'unit'], true) ? (string) $_GET['scope'] : '';
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = max(5, (int) Config::get('library.per_page', 30));
 
-        $result = LibraryDocument::search($role, $category, $query, $page, $perPage);
+        $uid = Auth::id();
+        $result = LibraryDocument::search($role, $uid, $category, $query, $page, $perPage, $scope);
         // Сторінка за межами списку (застаріле посилання після видалень) — показуємо останню існуючу, а не порожню.
         $lastPage = max(1, (int) ceil($result['total'] / $perPage));
         if ($page > $lastPage) {
             $page = $lastPage;
-            $result = LibraryDocument::search($role, $category, $query, $page, $perPage);
+            $result = LibraryDocument::search($role, $uid, $category, $query, $page, $perPage, $scope);
         }
 
         View::render('library/index', $this->common() + [
@@ -48,6 +52,7 @@ class LibraryController
             'totalPages' => max(1, (int) ceil($result['total'] / $perPage)),
             'currentCategory' => $category,
             'query' => $query,
+            'scope' => $scope,
         ]);
     }
 
@@ -60,6 +65,8 @@ class LibraryController
             'document' => $document,
             'versions' => LibraryDocument::versions((int) $document['id']),
             'canDelete' => LibraryDocument::canDelete(Auth::role(), Auth::id(), $document),
+            'canManage' => LibraryDocument::canManage(Auth::role(), Auth::id(), $document),
+            'unitLabel' => $document['visibility'] === 'unit' ? (string) ($document['unit_ou'] ?? '') : '',
             'currentCategory' => $document['category_id'] !== null ? (string) $document['category_id'] : 'none',
             'query' => '',
         ]);
@@ -70,18 +77,19 @@ class LibraryController
     public function create(): void
     {
         $this->requireReady();
-        $this->requireEditor();
+        $this->requireCreator();
+        $allowed = LibraryDocument::formVisibilities(Auth::role(), Auth::id(), null);
         View::render('library/form', $this->formData(null, [
-            'title' => '', 'description' => '', 'category_id' => (string) ($_GET['category'] ?? ''), 'visibility' => 'all', 'comment' => '',
+            'title' => '', 'description' => '', 'category_id' => (string) ($_GET['category'] ?? ''), 'visibility' => in_array('private', $allowed, true) ? 'private' : ($allowed[0] ?? 'all'), 'comment' => '',
         ], null));
     }
 
     public function store(): void
     {
         $this->requireReady();
-        $this->requireEditor();
+        $this->requireCreator();
 
-        [$form, $error] = $this->parseMeta();
+        [$form, $error] = $this->parseMeta(null);
         $file = null;
         if ($error === null) {
             $file = $this->uploadedFile();
@@ -100,20 +108,19 @@ class LibraryController
         }
 
         try {
-            $id = LibraryDocument::create($form['title'], $form['description'] ?: null, $form['category_id'] ?: null, $form['visibility'], $stored, $form['comment'] ?: null, Auth::id());
+            $id = LibraryDocument::create($form['title'], $form['description'] ?: null, $form['category_id'] ?: null, $form['visibility'], $stored, $form['comment'] ?: null, Auth::id(), LibraryDocument::unitFor($form['visibility'], Auth::id()));
         } catch (\Throwable $e) {
             AttachmentService::deleteFiles([$stored['stored_name']]); // файл уже на диску, а запису в БД немає
             throw $e;
         }
-        Audit::log('library_document', $id, 'created', Auth::id(), ['title' => $form['title'], 'file' => $stored['name']]);
+        Audit::log('library_document', $id, 'created', Auth::id(), ['title' => $form['title'], 'file' => $stored['name'], 'visibility' => $form['visibility']]);
         $this->redirect('/library/' . $id, 'success', 'Документ додано.');
     }
 
     public function edit(array $params): void
     {
         $this->requireReady();
-        $this->requireEditor();
-        $document = $this->visibleOrFail((int) $params['id']);
+        $document = $this->manageOrFail((int) $params['id']);
 
         View::render('library/form', $this->formData($document, [
             'title' => $document['title'], 'description' => (string) $document['description'],
@@ -124,16 +131,20 @@ class LibraryController
     public function update(array $params): void
     {
         $this->requireReady();
-        $this->requireEditor();
-        $document = $this->visibleOrFail((int) $params['id']);
+        $document = $this->manageOrFail((int) $params['id']);
 
-        [$form, $error] = $this->parseMeta();
+        [$form, $error] = $this->parseMeta($document);
         if ($error !== null) {
             View::render('library/form', $this->formData($document, $form, $error));
             return;
         }
 
-        LibraryDocument::update((int) $document['id'], $form['title'], $form['description'] ?: null, $form['category_id'] ?: null, $form['visibility'], Auth::id());
+        $unitOu = null;
+        if ($form['visibility'] === 'unit') {
+            // Підрозділ фіксується при відкритті доступу; повторне збереження вже відкритого документа його не змінює.
+            $unitOu = $document['visibility'] === 'unit' && trim((string) $document['unit_ou']) !== '' ? (string) $document['unit_ou'] : LibraryDocument::unitFor('unit', Auth::id());
+        }
+        LibraryDocument::update((int) $document['id'], $form['title'], $form['description'] ?: null, $form['category_id'] ?: null, $form['visibility'], Auth::id(), $unitOu);
         $changes = [];
         foreach (['title' => 'title', 'visibility' => 'visibility'] as $field => $key) {
             if ((string) $document[$field] !== (string) $form[$key]) {
@@ -155,8 +166,7 @@ class LibraryController
     public function addVersion(array $params): void
     {
         $this->requireReady();
-        $this->requireEditor();
-        $document = $this->visibleOrFail((int) $params['id']);
+        $document = $this->manageOrFail((int) $params['id']);
         $back = '/library/' . $document['id'];
 
         if (LibraryDocument::versionCount((int) $document['id']) >= LibraryDocument::maxVersions()) {
@@ -189,7 +199,7 @@ class LibraryController
         $this->requireReady();
         $document = $this->visibleOrFail((int) $params['id']);
         if (!LibraryDocument::canDelete(Auth::role(), Auth::id(), $document)) {
-            $this->forbidden('Видалити документ може адміністратор або той редактор, який його створив.');
+            $this->forbidden('Видалити документ може його автор або адміністратор.');
         }
 
         $files = LibraryDocument::storedNames((int) $document['id']);
@@ -208,7 +218,7 @@ class LibraryController
             $this->notFound();
         }
         if (!LibraryDocument::canDelete(Auth::role(), Auth::id(), $document)) {
-            $this->forbidden('Видалити версію може адміністратор або той редактор, який створив документ.');
+            $this->forbidden('Видалити версію може автор документа або адміністратор.');
         }
         $back = '/library/' . $document['id'];
         if (LibraryDocument::versionCount((int) $document['id']) < 2) {
@@ -247,6 +257,53 @@ class LibraryController
         $this->sendFile($version);
     }
 
+    /** PDF-перегляд поточної версії (Word/Excel/PowerPoint/OpenDocument). */
+    public function preview(array $params): void
+    {
+        $this->requireReady();
+        $document = $this->visibleOrFail((int) $params['id']);
+        $version = LibraryDocument::latestVersion((int) $document['id']);
+        if (!$version) {
+            $this->notFound();
+        }
+        $this->sendPreview($version);
+    }
+
+    public function previewVersion(array $params): void
+    {
+        $this->requireReady();
+        $version = LibraryDocument::findVersion((int) $params['id']);
+        if (!$version) {
+            $this->notFound();
+        }
+        $this->visibleOrFail((int) $version['document_id']);
+        $this->sendPreview($version);
+    }
+
+    private function sendPreview(array $version): void
+    {
+        $result = LibraryPreview::ensure($version['stored_name'], $version['original_name']);
+        if (!$result['ok']) {
+            http_response_code(503);
+            echo $result['error'];
+            exit;
+        }
+        $path = $result['path'];
+        $name = pathinfo($version['original_name'], PATHINFO_FILENAME) . '.pdf';
+        $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?: 'file.pdf';
+        session_write_close();
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/pdf');
+        header('Content-Length: ' . filesize($path));
+        header('Content-Disposition: inline; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, max-age=3600');
+        readfile($path);
+        exit;
+    }
+
     private function sendFile(array $version): void
     {
         $path = AttachmentService::path($version['stored_name']);
@@ -262,6 +319,8 @@ class LibraryController
         if (isset($_GET['thumb']) && !isset($_GET['download']) && str_starts_with((string) $version['mime_type'], 'image/')) {
             $sendPath = AttachmentService::thumbnailFor($version['stored_name'], $version['mime_type']) ?? $path;
         }
+        // Мініатюра GIF/WebP — це PNG, тому тип відповіді беремо з неї, а не з оригіналу.
+        $sendMime = $sendPath !== $path ? AttachmentService::thumbMime($version['mime_type']) : $version['mime_type'];
         $inline = in_array($version['mime_type'], LibraryService::INLINE_MIMES, true) && !isset($_GET['download']);
         $name = $version['original_name'];
         $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?: 'file';
@@ -270,7 +329,7 @@ class LibraryController
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
-        header('Content-Type: ' . $version['mime_type']);
+        header('Content-Type: ' . $sendMime);
         header('Content-Length: ' . filesize($sendPath));
         header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');
@@ -326,8 +385,11 @@ class LibraryController
     {
         $role = Auth::role();
         return [
-            'sidebar' => LibraryDocument::categoriesWithCounts($role),
+            'sidebar' => LibraryDocument::categoriesWithCounts($role, Auth::id()),
             'canEdit' => LibraryDocument::canEdit($role),
+            'canCreate' => LibraryDocument::canCreate($role),
+            'previewReady' => LibraryPreview::enabled(),
+            'scope' => $_GET['scope'] ?? '',
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ];
@@ -340,21 +402,37 @@ class LibraryController
             'document' => $document,
             'form' => $form,
             'error' => $error ?? ($_GET['error'] ?? null),
-            'categories' => LibraryDocument::categoriesWithCounts(Auth::role())['categories'],
-            'visibilities' => array_intersect_key(LibraryDocument::visibilities(), array_flip(LibraryDocument::allowedVisibilities(Auth::role()))),
+            'categories' => LibraryDocument::categoriesWithCounts(Auth::role(), Auth::id())['categories'],
+            'visibilities' => $this->visibilityOptions($document),
             'currentCategory' => null,
             'query' => '',
         ] + $this->common();
     }
 
+    /** Варіанти «Хто бачить» для форми: значення => підпис (для «unit» — з назвою підрозділу). @return array<string, string> */
+    private function visibilityOptions(?array $document): array
+    {
+        $labels = LibraryDocument::visibilities();
+        $ou = Auth::id() !== null ? \App\Core\Unit::userOu((int) Auth::id()) : null;
+        if ($ou !== null) {
+            $labels['unit'] = 'Мій підрозділ (' . $ou . ')';
+        }
+        $labels['private'] = 'Лише я';
+        $out = [];
+        foreach (LibraryDocument::formVisibilities(Auth::role(), Auth::id(), $document) as $value) {
+            $out[$value] = $labels[$value] ?? $value;
+        }
+        return $out;
+    }
+
     /** @return array{0: array{title: string, description: string, category_id: string, visibility: string, comment: string}, 1: ?string} */
-    private function parseMeta(): array
+    private function parseMeta(?array $document): array
     {
         $form = [
             'title' => trim((string) ($_POST['title'] ?? '')),
             'description' => trim((string) ($_POST['description'] ?? '')),
             'category_id' => (string) ($_POST['category_id'] ?? ''),
-            'visibility' => (string) ($_POST['visibility'] ?? 'all'),
+            'visibility' => (string) ($_POST['visibility'] ?? ''),
             'comment' => mb_substr(trim((string) ($_POST['comment'] ?? '')), 0, 255),
         ];
 
@@ -365,7 +443,7 @@ class LibraryController
             $error = 'Назва задовга (не більше ' . LibraryDocument::MAX_TITLE . ' символів).';
         } elseif (mb_strlen($form['description']) > LibraryDocument::MAX_DESCRIPTION) {
             $error = 'Опис задовгий (не більше ' . LibraryDocument::MAX_DESCRIPTION . ' символів).';
-        } elseif (!in_array($form['visibility'], LibraryDocument::allowedVisibilities(Auth::role()), true)) {
+        } elseif (!in_array($form['visibility'], LibraryDocument::formVisibilities(Auth::role(), Auth::id(), $document), true)) {
             $error = 'Недопустиме значення «Хто бачить».';
         } elseif ($form['category_id'] !== '' && (!ctype_digit($form['category_id']) || !LibraryDocument::categoryExists((int) $form['category_id']))) {
             $error = 'Обраного розділу не існує.';
@@ -399,8 +477,18 @@ class LibraryController
     private function visibleOrFail(int $id): array
     {
         $document = LibraryDocument::find($id);
-        if (!$document || !LibraryDocument::visibleTo($document, Auth::role())) {
+        if (!$document || !LibraryDocument::visibleTo($document, Auth::role(), Auth::id())) {
             $this->notFound();
+        }
+        return $document;
+    }
+
+    /** Документ, який поточний користувач може змінювати (інакше 404, якщо не бачить, або 403). */
+    private function manageOrFail(int $id): array
+    {
+        $document = $this->visibleOrFail($id);
+        if (!LibraryDocument::canManage(Auth::role(), Auth::id(), $document)) {
+            $this->forbidden('Змінювати цей документ може лише його автор' . (LibraryDocument::isPersonal($document) ? '.' : ', адміністратор або IT-менеджер.'));
         }
         return $document;
     }
@@ -412,6 +500,13 @@ class LibraryController
             http_response_code(503);
             View::render('library/unavailable', []);
             exit;
+        }
+    }
+
+    private function requireCreator(): void
+    {
+        if (!LibraryDocument::canCreate(Auth::role())) {
+            $this->forbidden('Додавання документів недоступне: на сервері не застосована міграція 036 (запустіть update.sh).');
         }
     }
 

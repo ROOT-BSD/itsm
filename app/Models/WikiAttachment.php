@@ -12,7 +12,7 @@ class WikiAttachment
 {
     public const MAX_PER_PAGE = 100;
     /** Що показується на сторінці як картинка. */
-    public const IMAGE_MIMES = ['image/jpeg', 'image/png'];
+    public const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     public static function isImage(string $mime): bool
     {

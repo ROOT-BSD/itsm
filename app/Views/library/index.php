@@ -7,9 +7,9 @@ foreach ($sidebar['categories'] as $c) {
         $currentCat = $c;
     }
 }
-$heading = $currentCat ? $currentCat['name'] : ($currentCategory === 'none' ? 'Без розділу' : 'Усі документи');
-$pageUrl = static function (int $p) use ($currentCategory, $query): string {
-    $q = array_filter(['category' => $currentCategory, 'q' => $query, 'page' => $p > 1 ? $p : null], static fn($v) => $v !== null && $v !== '');
+$heading = $currentCat ? $currentCat['name'] : ($currentCategory === 'none' ? 'Без розділу' : ($scope === 'mine' ? 'Мої документи' : ($scope === 'unit' ? 'Документи підрозділу' : 'Усі документи')));
+$pageUrl = static function (int $p) use ($currentCategory, $query, $scope): string {
+    $q = array_filter(['category' => $currentCategory, 'scope' => $scope, 'q' => $query, 'page' => $p > 1 ? $p : null], static fn($v) => $v !== null && $v !== '');
     return '/library' . ($q ? '?' . http_build_query($q) : '');
 };
 ?>
@@ -46,7 +46,7 @@ $pageUrl = static function (int $p) use ($currentCategory, $query): string {
         <?php if (empty($documents)): ?>
             <div class="alert alert-light border">
                 <?= $query !== '' ? 'Нічого не знайдено. Спробуйте інше слово або частину назви.' : 'Тут поки немає документів.' ?>
-                <?php if ($canEdit && $query === ''): ?><a href="/library/new">Додати документ</a>.<?php endif; ?>
+                <?php if (!empty($canCreate) && $query === ''): ?><a href="/library/new">Додати документ</a>.<?php endif; ?>
             </div>
         <?php else: ?>
             <table class="table table-bordered bg-white align-middle">
@@ -60,14 +60,19 @@ $pageUrl = static function (int $p) use ($currentCategory, $query): string {
                             <?php endif; ?>
                             <a href="/library/<?= (int) $d['id'] ?>" class="fw-semibold"><?= $e($d['title']) ?></a>
                             <?php if ($d['visibility'] !== 'all'): ?>
-                                <span class="badge bg-secondary" title="<?= $e(\App\Models\LibraryDocument::visibilities()[$d['visibility']] ?? '') ?>"><?= $d['visibility'] === 'admin' ? 'адмін' : 'персонал' ?></span>
+                                <span class="badge bg-secondary" title="<?= $e($d['visibility'] === 'unit' ? 'Бачить підрозділ: ' . ($d['unit_ou'] ?? '') : (\App\Models\LibraryDocument::visibilities()[$d['visibility']] ?? '')) ?>"><?= ['admin' => 'адмін', 'staff' => 'персонал', 'private' => 'особистий', 'unit' => 'підрозділ'][$d['visibility']] ?? $e($d['visibility']) ?></span>
                             <?php endif; ?>
-                            <div class="small text-muted"><?= $e(strtoupper(pathinfo($d['original_name'], PATHINFO_EXTENSION))) ?> · <?= $e($human((int) $d['size_bytes'])) ?></div>
+                            <div class="small text-muted"><?= $e(strtoupper(pathinfo($d['original_name'], PATHINFO_EXTENSION))) ?> · <?= $e($human((int) $d['size_bytes'])) ?><?php if (in_array($d['visibility'], ['private', 'unit'], true) && !empty($d['created_by_name'])): ?> · автор: <?= $e($d['created_by_name']) ?><?php endif; ?></div>
                         </td>
                         <td class="small"><?= $d['category_name'] !== null ? $e($d['category_name']) : '<span class="text-muted">—</span>' ?></td>
                         <td class="text-nowrap">v<?= (int) $d['version_no'] ?></td>
                         <td class="text-nowrap small"><?= $e(date('d.m.Y', strtotime($d['version_at']))) ?></td>
-                        <td class="text-end"><a href="/library/<?= (int) $d['id'] ?>/download?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a></td>
+                        <td class="text-end text-nowrap">
+                            <?php if (!empty($previewReady) && \App\Services\LibraryPreview::supportsName((string) $d['original_name'])): ?>
+                                <a href="/library/<?= (int) $d['id'] ?>/preview" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">PDF</a>
+                            <?php endif; ?>
+                            <a href="/library/<?= (int) $d['id'] ?>/download?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

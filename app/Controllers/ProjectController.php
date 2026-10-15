@@ -74,7 +74,35 @@ class ProjectController
             }
         }
 
+        // Шаблон проєкту (необов'язково): перевіряємо ДО створення проєкту, щоб помилка не лишила порожній проєкт.
+        $template = null;
+        $baseDate = null;
+        if (!empty($_POST['template_id']) && \App\Models\Template::ready()) {
+            $template = \App\Models\Template::find((int) $_POST['template_id']);
+            if (!$template || $template['kind'] !== 'project') {
+                header('Location: /projects/create?error=' . urlencode('Шаблон проєкту не знайдено'));
+                exit;
+            }
+            $baseDate = \App\Controllers\TemplateController::baseDate((string) ($_POST['start_date'] ?? ''));
+            if ($baseDate === false) {
+                header('Location: /projects/create?error=' . urlencode('Некоректна дата старту'));
+                exit;
+            }
+            if ($description === '' && !empty($template['project_description'])) {
+                $description = $template['project_description'];
+            }
+        }
+
         $id = Project::create($name, $description, Auth::id(), $responsibleUserId, $parentId);
+        if ($template !== null) {
+            try {
+                $r = \App\Services\TemplateService::apply((int) $template['id'], $id, $baseDate, Auth::id());
+                header('Location: /projects/' . $id . '?success=' . urlencode('За шаблоном «' . $template['name'] . '» створено задач: ' . $r['tasks'] . ($r['subtasks'] ? ' (і підзадач: ' . $r['subtasks'] . ')' : '')));
+            } catch (\Throwable $e) {
+                header('Location: /projects/' . $id . '?error=' . urlencode('Проєкт створено, але шаблон не застосовано: ' . $e->getMessage()));
+            }
+            exit;
+        }
         header('Location: /projects/' . $id);
         exit;
     }

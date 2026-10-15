@@ -77,6 +77,14 @@ $router->get('/reports/pdf', [$reports, 'generatePdf']);
 $profile = new ProfileController();
 $router->get('/profile', [$profile, 'index']);
 $router->post('/profile/password', [$profile, 'updatePassword']);
+$sessions = new \App\Controllers\SessionController();
+$router->get('/profile/sessions', [$sessions, 'mine']);
+$router->post('/profile/sessions/revoke-others', [$sessions, 'revokeOthers']);
+$router->post('/profile/sessions/{id}/revoke', fn($p) => $sessions->revokeMine($p));
+$router->get('/admin/sessions', [$sessions, 'adminIndex']);
+$router->post('/admin/sessions/{id}/revoke', fn($p) => $sessions->adminRevoke($p));
+$router->post('/admin/sessions/user/{id}/revoke', fn($p) => $sessions->adminRevokeUser($p));
+$router->get('/admin/login-log', [$sessions, 'adminLog']);
 $router->post('/profile/api-tokens', [$profile, 'createApiToken']);
 $router->post('/profile/api-tokens/{id}/revoke', fn($p) => $profile->revokeApiToken($p));
 
@@ -104,6 +112,7 @@ $router->post('/projects/{id}/members/{userId}/delete', fn($p) => $projects->rem
 // --- Задачі ---
 $tasks = new TaskController();
 $router->get('/tasks', fn() => $tasks->indexOpen());
+$router->get('/tasks/export', fn() => (new \App\Controllers\ExportController())->tasks());
 $router->get('/projects/{project_id}/tasks/create', fn($p) => $tasks->showCreateForm($p));
 $router->post('/projects/{project_id}/tasks', fn($p) => $tasks->store($p));
 $router->get('/tasks/{id}', fn($p) => $tasks->show($p));
@@ -116,10 +125,26 @@ $router->post('/tasks/{id}/time', fn($p) => $tasks->logTime($p));
 $router->post('/tasks/{id}/description', fn($p) => $tasks->updateDescription($p));
 $router->post('/tasks/{id}/project', fn($p) => $tasks->updateProject($p));
 $router->post('/tasks/{id}/delete', fn($p) => $tasks->delete($p));
+$templates = new \App\Controllers\TemplateController();
+$router->get('/templates', fn() => $templates->index());
+$router->get('/templates/new', fn() => $templates->showNew());
+$router->post('/templates', fn() => $templates->store());
+$router->get('/templates/{id}', fn($p) => $templates->show($p));
+$router->post('/templates/{id}', fn($p) => $templates->update($p));
+$router->post('/templates/{id}/delete', fn($p) => $templates->delete($p));
+$router->post('/projects/{id}/apply-template', fn($p) => $templates->apply($p));
+$router->post('/projects/{id}/save-template', fn($p) => $templates->saveFromProject($p));
+$router->post('/tasks/{id}/save-template', fn($p) => $templates->saveFromTask($p));
+$router->post('/tasks/{id}/subtasks', fn($p) => $tasks->storeSubtask($p));
+$router->post('/tasks/{id}/detach', fn($p) => $tasks->detachSubtask($p));
+$router->post('/tasks/{id}/checklist', fn($p) => $tasks->addChecklist($p));
+$router->post('/tasks/{id}/checklist/{item}/toggle', fn($p) => $tasks->toggleChecklist($p));
+$router->post('/tasks/{id}/checklist/{item}/delete', fn($p) => $tasks->deleteChecklist($p));
 
 // --- Тікети (Service Desk, базова версія — Епік 12) ---
 $tickets = new TicketController();
 $router->get('/tickets', fn() => $tickets->index());
+$router->get('/tickets/export', fn() => (new \App\Controllers\ExportController())->tickets());
 $router->get('/tickets/create', fn() => $tickets->showCreateForm());
 $router->post('/tickets', fn() => $tickets->store());
 $router->get('/tickets/{id}', fn($p) => $tickets->show($p));
@@ -165,6 +190,7 @@ $router->post('/library/categories', fn() => $library->createCategory());
 $router->post('/library/categories/{id}', fn($p) => $library->updateCategory($p));
 $router->post('/library/categories/{id}/delete', fn($p) => $library->deleteCategory($p));
 $router->get('/library/versions/{id}/download', fn($p) => $library->downloadVersion($p));
+$router->get('/library/versions/{id}/preview', fn($p) => $library->previewVersion($p));
 $router->post('/library/versions/{id}/delete', fn($p) => $library->deleteVersion($p));
 $router->get('/library/{id}', fn($p) => $library->show($p));
 $router->get('/library/{id}/edit', fn($p) => $library->edit($p));
@@ -172,9 +198,11 @@ $router->post('/library/{id}', fn($p) => $library->update($p));
 $router->post('/library/{id}/versions', fn($p) => $library->addVersion($p));
 $router->post('/library/{id}/delete', fn($p) => $library->delete($p));
 $router->get('/library/{id}/download', fn($p) => $library->download($p));
+$router->get('/library/{id}/preview', fn($p) => $library->preview($p));
 
 // Форум. Статичні адреси («boards/new», «search») — ПЕРЕД адресами з {id}.
 $forum = new ForumController();
+$router->get('/search', fn() => (new \App\Controllers\SearchController())->index());
 $router->get('/forum', fn() => $forum->index());
 $router->post('/forum/preview', fn() => $forum->preview());
 $router->get('/forum/files/{id}', fn($p) => $forum->file($p));
@@ -222,6 +250,13 @@ $router->get('/admin/gantt', function () {
 $router->get('/admin/time', function () {
     (new AdminController())->timeReport();
 });
+$router->get('/admin/backup', fn() => (new \App\Controllers\BackupController())->index());
+$router->post('/admin/backup', fn() => (new \App\Controllers\BackupController())->create());
+$router->post('/admin/backup/settings', fn() => (new \App\Controllers\BackupController())->settings());
+$router->get('/admin/backup/{stamp}/download', fn($p) => (new \App\Controllers\BackupController())->download($p));
+$router->post('/admin/backup/{stamp}/delete', fn($p) => (new \App\Controllers\BackupController())->delete($p));
+$router->get('/admin/status', fn() => (new AdminController())->status());
+$router->get('/admin/audit/export', fn() => (new \App\Controllers\ExportController())->audit());
 $router->get('/admin/audit', function () {
     (new AuditController())->index();
 });
@@ -308,6 +343,7 @@ $router->get('/unit/queues', function () {
 $router->get('/unit/csat', function () {
     (new \App\Controllers\UnitController())->csat();
 });
+$router->get('/unit/audit/export', fn() => (new \App\Controllers\ExportController())->unitAudit());
 $router->get('/unit/audit', function () {
     (new \App\Controllers\UnitController())->audit();
 });

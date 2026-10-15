@@ -167,7 +167,7 @@ class Forum
             $map[++$n] = [
                 'name' => $a['original_name'],
                 'mime' => $a['mime_type'],
-                'image' => in_array($a['mime_type'], ['image/jpeg', 'image/png'], true),
+                'image' => in_array($a['mime_type'], \App\Services\AttachmentService::IMAGE_MIMES, true),
                 'url' => '/forum/files/' . (int) $a['id'],
             ];
         }

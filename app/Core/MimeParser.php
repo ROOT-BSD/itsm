@@ -22,7 +22,7 @@ class MimeParser
     private const MAX_DEPTH = 10;
 
     /** MIME-типи, що можуть бути PNG/JPG; справжній тип потім перевіряється за вмістом (AttachmentService). */
-    private const IMAGE_TYPES = ['image/png', 'image/x-png', 'image/jpeg', 'image/jpg', 'image/pjpeg'];
+    private const IMAGE_TYPES = ['image/png', 'image/x-png', 'image/jpeg', 'image/jpg', 'image/pjpeg', 'image/gif', 'image/webp'];
 
     /** Більші частини не декодуємо взагалі (захист пам'яті); у EmailTicketService весь лист і так обмежений 10 МБ. */
     private const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -362,7 +362,7 @@ class MimeParser
     }
 
     /**
-     * Чи варто декодувати частину як можливе зображення PNG/JPG: за MIME-типом, або (клієнти часто шлють
+     * Чи варто декодувати частину як можливе зображення PNG/JPG/GIF/WebP: за MIME-типом, або (клієнти часто шлють
      * фото як application/octet-stream) за розширенням у назві. Остаточне рішення — за вмістом, не тут.
      */
     private static function isImageCandidate(string $type, string $filename): bool
@@ -371,7 +371,7 @@ class MimeParser
             return true;
         }
         return $type === 'application/octet-stream'
-            && in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['png', 'jpg', 'jpeg'], true);
+            && in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['png', 'jpg', 'jpeg', 'gif', 'webp'], true);
     }
 
     /** @return string[] тіла (разом із заголовками) частин multipart */

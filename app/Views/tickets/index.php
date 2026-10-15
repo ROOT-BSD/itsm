@@ -1,6 +1,9 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="mb-0">Тікети</h3>
-    <a href="/tickets/create" class="btn btn-primary">+ Нове звернення</a>
+    <div class="d-flex gap-2">
+        <?php $exportUrl = '/tickets/export'; require __DIR__ . '/../_export_button.php'; ?>
+        <a href="/tickets/create" class="btn btn-primary">+ Нове звернення</a>
+    </div>
 </div>
 
 <table class="table table-bordered bg-white align-middle">

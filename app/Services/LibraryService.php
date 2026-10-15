@@ -25,6 +25,8 @@ class LibraryService
         'jpg'  => 'image/jpeg',
         'jpeg' => 'image/jpeg',
         'png'  => 'image/png',
+        'gif'  => 'image/gif',
+        'webp' => 'image/webp',
         'docx' => self::OOXML . 'wordprocessingml.document',
         'xlsx' => self::OOXML . 'spreadsheetml.sheet',
         'pptx' => self::OOXML . 'presentationml.presentation',
@@ -36,7 +38,7 @@ class LibraryService
     ];
 
     /** Що браузер може показати сам (решта лише завантажується). */
-    public const INLINE_MIMES = ['application/pdf', 'image/jpeg', 'image/png'];
+    public const INLINE_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     /** Для підказки в формі: «.pdf,.jpg,…» */
     public static function acceptAttribute(): string
@@ -132,6 +134,9 @@ class LibraryService
             case 'jpg':
             case 'jpeg':
             case 'png':
+            case 'gif':
+            case 'webp':
+                // detectMime перевіряє сигнатуру, getimagesize і правдоподібність GIF/WebP (декодування, розмір, цілісність RIFF)
                 return AttachmentService::detectMime($path) === self::TYPES[$extension] ? null : $mismatch;
 
             case 'docx':

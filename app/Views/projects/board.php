@@ -24,6 +24,9 @@
                             <a href="/tasks/<?= (int)$task['id'] ?>" class="fw-semibold text-decoration-none">
                                 <?= \App\Models\Task::isOverdue($task) ? '⚠️ ' : '' ?>#<?= (int)$task['id'] ?> <?= \App\Core\View::e($task['title']) ?>
                             </a>
+                            <?php if (!empty($task['subtasks_total']) || !empty($task['checklist_total'])): ?>
+                                <div class="mt-1"><?= \App\Core\View::progress($task, true) ?></div>
+                            <?php endif; ?>
                             <div class="small text-muted mt-1">
                                 <?= \App\Core\View::e($task['type_name']) ?> ·
                                 <span class="badge bg-<?php

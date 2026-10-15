@@ -128,6 +128,15 @@ return (function (): array {
             // Очікуваний Kerberos-realm (напр. COMPANY.LOCAL). Якщо задано — принципал з іншим realm відхиляється.
             'sso_realm'          => strtoupper(trim((string) $env('AD_SSO_REALM', ''))),
         ],
+        // Текст сторінок вікі та історії версій зберігається файлами (App\Services\WikiStore): storage/wiki/<id сторінки>/
+        // current.md і rev-<версія>.md — поза веб-коренем. У БД лишаються метадані (назва, права, версія).
+        'wiki' => [
+            'dir' => __DIR__ . '/../storage/wiki',
+        ],
+        // Резервні копії (App\Services\BackupService): архіви tar.gz у storage/backups — поза веб-коренем.
+        'backup' => [
+            'dir' => $env('BACKUP_DIR', __DIR__ . '/../storage/backups'),
+        ],
         // Вкладення до тікетів і задач (App\Services\AttachmentService). Файли зберігаються
         // у storage/uploads — поза веб-коренем (public/), тож віддаються лише через контролер
         // з перевіркою прав. Реальний ліміт розміру — менше з цього значення та PHP-налаштувань
@@ -153,6 +162,15 @@ return (function (): array {
             'max_bytes'    => max(1, (int) $env('LIBRARY_MAX_MB', '25')) * 1048576,
             'max_versions' => 50,   // не більше версій одного документа (захист сховища від безкінечних завантажень)
             'per_page'     => 30,
+            // Перегляд Word/Excel/PowerPoint/OpenDocument як PDF (App\Services\LibraryPreview): потрібен LibreOffice
+            // (`soffice`); PDF створюється при першому перегляді й кешується поряд з файлом. LIBRARY_PREVIEW=false вимикає.
+            'preview'      => [
+                'enabled' => filter_var($env('LIBRARY_PREVIEW', 'true'), FILTER_VALIDATE_BOOLEAN),
+                // auto — LibreOffice, а без нього вбудований конвертер (DOCX, XLSX); libreoffice | builtin — лише один із них.
+                'engine'  => (string) $env('LIBRARY_PREVIEW_ENGINE', 'auto'),
+                'soffice' => (string) $env('LIBREOFFICE_BIN', 'soffice'),
+                'timeout' => 90,      // секунд на одну конвертацію
+            ],
         ],
         // Обмеження частоти запитів до публічного порталу /support (App\Core\RateLimiter), окремо для кожної IP-адреси.
         // Кожне правило — [скільки запитів, за скільки секунд]; дозволено, лише коли вкладаємось в усі правила дії.
@@ -182,9 +200,12 @@ return (function (): array {
         ],
         'app' => [
             'name'    => 'ITSM System',
-            'version' => '0.2.3',
+            'version' => '0.3.0',
             'env'     => getenv('APP_ENV') ?: 'local', // local | production
             'url'     => getenv('APP_URL') ?: 'http://localhost:8000',
+            // Часовий пояс застосунку: ним користуються PHP (date(), нагадування, журнали) і сесія БД. Без цього PHP бере
+            // date.timezone з php.ini, а там зазвичай UTC — і час у системі відстає від серверного на різницю поясу.
+            'timezone' => $env('APP_TIMEZONE', 'Europe/Kyiv'),
         ],
     ];
 })();

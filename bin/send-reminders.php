@@ -23,6 +23,7 @@ use App\Services\NotificationService;
 $stamp = static fn(string $msg): string => '[' . date('Y-m-d H:i:s') . '] [itsm-reminders] ' . $msg . "\n";
 
 try {
+    \App\Models\Setting::set('reminders_last_run', date('Y-m-d H:i:s')); // сторінка «Стан системи» показує, чи cron працює
     $result = NotificationService::sendDueDateReminders();
     if ($result['skipped_reason'] !== null) {
         echo $stamp($result['skipped_reason']);

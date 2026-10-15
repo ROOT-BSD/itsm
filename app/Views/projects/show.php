@@ -42,7 +42,7 @@ $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => '
 <div class="row">
     <?php foreach ($subProjects as $sp): ?>
         <div class="col-md-4 mb-3">
-            <div class="card h-100">
+            <div class="card h-100 <?= \App\Models\Project::urgencyClass((int)$sp['id']) ?>">
                 <div class="card-body">
                     <h5 class="card-title"><?= \App\Core\View::e($sp['name']) ?></h5>
                     <p class="card-text text-muted small"><?= \App\Core\View::e(mb_strimwidth($sp['description'] ?? '', 0, 100, '…')) ?></p>
@@ -168,6 +168,33 @@ $eMember = static fn($v) => \App\Core\View::e($v);
 
 <?php endif; ?>
 
+<?php $applicable = \App\Models\Template::ready() ? \App\Models\Template::all() : []; ?>
+<?php if ($applicable): ?>
+<details class="mb-3">
+    <summary class="text-muted">Додати задачі за шаблоном</summary>
+    <form method="post" action="/projects/<?= (int)$project['id'] ?>/apply-template" class="row g-2 align-items-end mt-1">
+        <?= \App\Core\Csrf::field() ?>
+        <div class="col-md-5">
+            <label class="form-label small mb-1">Шаблон</label>
+            <select name="template_id" class="form-select form-select-sm" required>
+                <option value="">— оберіть —</option>
+                <?php foreach ($applicable as $t): ?>
+                    <option value="<?= (int)$t['id'] ?>"><?= $t['kind'] === 'project' ? 'Проєкт' : 'Задача' ?>: <?= \App\Core\View::e($t['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-1">Дата старту</label>
+            <input type="date" name="start_date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>">
+        </div>
+        <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Додати задачі</button></div>
+        <?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
+        <div class="col-md-2 text-md-end"><button class="btn btn-sm btn-link" type="submit" formaction="/projects/<?= (int)$project['id'] ?>/save-template" formnovalidate>Зберегти проєкт як шаблон</button></div>
+        <?php endif; ?>
+    </form>
+</details>
+<?php endif; ?>
+
 <table class="table table-bordered bg-white">
     <thead>
         <tr><th>#</th><th>Назва</th><th>Тип</th><th>Статус</th><th>Пріоритет</th><th>Виконавець</th><th>Термін</th></tr>
@@ -175,10 +202,15 @@ $eMember = static fn($v) => \App\Core\View::e($v);
     <tbody>
     <?php if (empty($tasks)): ?>
         <tr><td colspan="7" class="text-center text-muted">Задач ще немає</td></tr>
-    <?php else: foreach ($tasks as $t): ?>
-        <tr>
+    <?php else:
+        // Відкриті — зверху, за терміном (найближчі першими, без терміну — в кінці); закриті — внизу.
+        $sortedTasks = $tasks;
+        usort($sortedTasks, static fn($a, $b) => [(int)$a['is_closed'], $a['due_date'] === null, (string)$a['due_date'], (int)$a['id']] <=> [(int)$b['is_closed'], $b['due_date'] === null, (string)$b['due_date'], (int)$b['id']]);
+        foreach ($sortedTasks as $t): ?>
+        <tr class="<?= empty($t['is_closed']) ? \App\Core\View::urgencyClass($t['due_date'] ?? null) : '' ?>">
             <td><a href="/tasks/<?= (int)$t['id'] ?>">#<?= (int)$t['id'] ?></a></td>
-            <td><?= \App\Core\View::e($t['title']) ?></td>
+            <td><?php if (!empty($t['parent_task_id'])): ?><span class="text-muted" title="Підзадача задачі #<?= (int)$t['parent_task_id'] ?>">↳ </span><?php endif; ?><?= \App\Core\View::e($t['title']) ?>
+                <?= \App\Core\View::progress($t) ?></td>
             <td><?= \App\Core\View::e($t['type_name']) ?></td>
             <td><span class="badge bg-secondary"><?= \App\Core\View::e($t['status_name']) ?></span></td>
             <td><?= \App\Core\View::e($t['priority']) ?></td>

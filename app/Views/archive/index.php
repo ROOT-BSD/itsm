@@ -30,7 +30,10 @@
     </tbody>
 </table>
 
-<h5 class="mt-4">Закриті тікети</h5>
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h5 class="mb-0">Закриті тікети</h5>
+    <?php $exportUrl = '/tickets/export'; $exportExtra = ['status' => 'closed']; require __DIR__ . '/../_export_button.php'; ?>
+</div>
 <table class="table table-bordered bg-white align-middle">
     <thead>
         <tr><th>#</th><th>Тема</th><th>Черга</th><th>Проєкт</th><th>Заявник</th><th>Оператор</th></tr>
@@ -57,7 +60,10 @@
     </tbody>
 </table>
 
-<h5 class="mt-4">Закриті задачі</h5>
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h5 class="mb-0">Закриті задачі</h5>
+    <?php $exportUrl = '/tasks/export'; $exportExtra = ['status' => 'closed']; require __DIR__ . '/../_export_button.php'; ?>
+</div>
 <table class="table table-bordered bg-white align-middle">
     <thead>
         <tr><th>#</th><th>Назва</th><th>Проєкт</th><th>Виконавець</th><th>Пріоритет</th></tr>
@@ -68,7 +74,7 @@
     <?php else: foreach ($tasks as $t): ?>
         <tr>
             <td><a href="/tasks/<?= (int)$t['id'] ?>">#<?= (int)$t['id'] ?></a></td>
-            <td><?= \App\Core\View::e($t['title']) ?></td>
+            <td><?= \App\Core\View::e($t['title']) ?> <?= \App\Core\View::progress($t) ?></td>
             <td><a href="/projects/<?= (int)$t['project_id'] ?>"><?= \App\Core\View::e($t['project_name']) ?></a></td>
             <td><?= \App\Core\View::e($t['assignee_name'] ?? '— не призначено —') ?></td>
             <td><?= \App\Core\View::e($t['priority']) ?></td>

@@ -33,5 +33,24 @@
             <?php endforeach; ?>
         </select>
     </div>
+    <?php $projectTemplates = \App\Models\Template::ready() ? \App\Models\Template::all('project') : []; ?>
+    <?php if ($projectTemplates): ?>
+    <div class="row g-2 mb-3">
+        <div class="col-md-7">
+            <label class="form-label">Шаблон проєкту (необов'язково)</label>
+            <select name="template_id" class="form-select">
+                <option value="">— без шаблону —</option>
+                <?php foreach ($projectTemplates as $t): ?>
+                    <option value="<?= (int)$t['id'] ?>"><?= \App\Core\View::e($t['name']) ?> (задач: <?= (int)$t['items_count'] ?>)</option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">Дата старту</label>
+            <input type="date" name="start_date" class="form-control" value="<?= date('Y-m-d') ?>">
+        </div>
+        <div class="form-text">Шаблон створить у проєкті набір задач (з чек-листами й підзадачами); дати початку й терміну рахуються від дати старту.</div>
+    </div>
+    <?php endif; ?>
     <button type="submit" class="btn btn-primary">Створити</button>
 </form>

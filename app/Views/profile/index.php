@@ -48,6 +48,14 @@
     </div>
 </div>
 
+<div class="card mt-4 form-card-md">
+    <div class="card-header">🖥️ Сесії та входи</div>
+    <div class="card-body">
+        <p class="text-muted small mb-2">Де ви зараз ввійшли в систему, історія входів і можливість завершити чужі сесії.</p>
+        <a href="/profile/sessions" class="btn btn-sm btn-outline-primary">Мої сесії та історія входів</a>
+    </div>
+</div>
+
 <?php if (!empty($apiEnabled)): ?>
 <div class="card mt-4" id="api-tokens">
     <div class="card-header">🔌 Токени доступу до API</div>

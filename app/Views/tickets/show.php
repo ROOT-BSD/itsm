@@ -12,7 +12,7 @@
 <div class="card mb-4">
     <div class="card-body">
         <h3><?= \App\Core\View::e($ticket['subject']) ?> <small class="text-muted">#<?= (int)$ticket['id'] ?></small></h3>
-        <p><?= nl2br(\App\Core\View::e($ticket['description'])) ?></p>
+        <p><?= \App\Core\View::richText($ticket['description'], $attachments ?? [], fn($id) => '/attachments/' . $id) ?></p>
         <table class="table table-sm w-auto">
             <tr><th>Черга</th><td><?= \App\Core\View::e($ticket['queue_name']) ?></td></tr>
             <?php if (!empty($ticket['project_id'])): ?>
@@ -87,7 +87,7 @@ require __DIR__ . '/../attachments/_panel.php';
             <strong><?= \App\Core\View::e($c['author_name'] ?? $ticket['requester_name']) ?></strong>
             <span class="badge bg-light text-dark border"><?= $c['author_type'] === 'operator' ? 'оператор' : 'заявник' ?></span>
             <span class="text-muted small"><?= \App\Core\View::e($c['created_at']) ?></span>
-            <p class="mb-0"><?= nl2br(\App\Core\View::e($c['body'])) ?></p>
+            <p class="mb-0"><?= \App\Core\View::richText($c['body'], $attachments ?? [], fn($id) => '/attachments/' . $id) ?></p>
         </li>
         <?php endforeach; ?>
     </ul>

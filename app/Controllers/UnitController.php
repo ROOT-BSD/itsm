@@ -308,6 +308,7 @@ class UnitController
             $this->back('error', 'Паролі не збігаються.');
         }
         User::updatePassword((int) $target['id'], $new);
+        \App\Models\UserSession::revokeAllFor((int) $target['id'], 'password', Auth::id());
         Audit::log('user', (int) $target['id'], 'password_changed_by_unit_admin', Auth::id());
         $this->back('success', 'Пароль користувача «' . $target['full_name'] . '» змінено.');
     }

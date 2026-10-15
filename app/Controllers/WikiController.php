@@ -337,6 +337,8 @@ class WikiController
         if (isset($_GET['thumb']) && !isset($_GET['download']) && str_starts_with((string) $attachment['mime_type'], 'image/')) {
             $sendPath = AttachmentService::thumbnailFor($attachment['stored_name'], $attachment['mime_type']) ?? $path;
         }
+        // Мініатюра GIF/WebP — це PNG, тому тип відповіді беремо з неї, а не з оригіналу.
+        $sendMime = $sendPath !== $path ? AttachmentService::thumbMime($attachment['mime_type']) : $attachment['mime_type'];
         $inline = in_array($attachment['mime_type'], LibraryService::INLINE_MIMES, true) && !isset($_GET['download']);
         $name = $attachment['original_name'];
         $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?: 'file';
@@ -345,7 +347,7 @@ class WikiController
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
-        header('Content-Type: ' . $attachment['mime_type']);
+        header('Content-Type: ' . $sendMime);
         header('Content-Length: ' . filesize($sendPath));
         header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');

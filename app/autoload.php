@@ -18,3 +18,6 @@ spl_autoload_register(function (string $class) {
         require $file;
     }
 });
+
+// Часовий пояс застосунку (APP_TIMEZONE у .env, типово Europe/Kyiv) — для веб-запитів і всіх CLI-скриптів із bin/.
+\App\Core\Timezone::apply();

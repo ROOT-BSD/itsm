@@ -40,6 +40,7 @@ $cancelUrl = $isNew ? '/library' : '/library/' . (int) $document['id'];
                             <option value="<?= $e($value) ?>" <?= $form['visibility'] === $value ? 'selected' : '' ?>><?= $e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <div class="form-text">«Лише я» — бачите тільки ви; «Мій підрозділ» — ви й колеги вашого підрозділу (разом із вкладеними). Підрозділ задає адміністратор у вашому профілі.</div>
                 </div>
                 <?php if ($isNew): ?>
                     <div class="col-md-6">

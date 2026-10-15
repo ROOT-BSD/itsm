@@ -3,8 +3,10 @@
 namespace App\Core;
 
 use App\Models\Audit;
+use App\Models\LoginLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\UserSession;
 
 class Auth
 {
@@ -13,8 +15,45 @@ class Auth
     public static function start(): void
     {
         if (session_status() === PHP_SESSION_NONE) {
+            // Cookie сесії: недоступна скриптам сторінки (HttpOnly), не надсилається з чужих сайтів (SameSite) і йде лише по HTTPS,
+            // якщо вхід виконано через HTTPS (прямо чи через проксі із заголовком X-Forwarded-Proto).
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'secure' => Request::isHttps(),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
             session_start();
         }
+        self::enforceSessionRegistry();
+    }
+
+    /**
+     * Звіряє сесію з реєстром (міграція 040): завершену користувачем/адміністратором/зміною пароля/деактивацією
+     * сесію анулює. Не частіше за UserSession::CHECK_INTERVAL секунд, щоб не навантажувати БД кожним запитом.
+     */
+    private static function enforceSessionRegistry(): void
+    {
+        if (!isset($_SESSION['user_id'])) {
+            return;
+        }
+        $last = (int) ($_SESSION['sess_checked_at'] ?? 0);
+        if (time() - $last < UserSession::CHECK_INTERVAL) {
+            return;
+        }
+        try {
+            $alive = UserSession::validate((int) $_SESSION['user_id'], session_id());
+        } catch (\Throwable) {
+            $alive = true; // збій реєстру не повинен виганяти людей
+        }
+        if (!$alive) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+            $_SESSION['flash_logged_out'] = true;
+            return;
+        }
+        $_SESSION['sess_checked_at'] = time();
     }
 
     public static function attempt(string $email, string $password): bool
@@ -23,11 +62,15 @@ class Auth
         $user = User::findByEmail($email);
 
         if (!$user) {
+            LoginLog::record(null, $email, 'local', false, 'unknown_user');
             self::$lastError = 'Невірний email або пароль';
             return false;
         }
 
+        $method = $user['auth_source'] === 'ad' ? 'ad' : 'local';
+
         if (!$user['is_active']) {
+            LoginLog::record((int) $user['id'], $email, $method, false, 'inactive');
             self::$lastError = 'Невірний email або пароль';
             return false;
         }
@@ -37,6 +80,7 @@ class Auth
         // Застосовується однаково для local і ad — захист від підбору пароля на AD-акаунт
         // через цей застосунок має сенс незалежно від того, чи є в самого AD власний lockout.
         if (!empty($user['locked_until']) && strtotime($user['locked_until']) > time()) {
+            LoginLog::record((int) $user['id'], $email, $method, false, 'locked');
             $minutesLeft = (int) ceil((strtotime($user['locked_until']) - time()) / 60);
             self::$lastError = "Обліковий запис тимчасово заблоковано через забагато невдалих спроб входу. Спробуйте ще раз через {$minutesLeft} хв.";
             return false;
@@ -50,6 +94,7 @@ class Auth
             $maxAttempts = (int) Setting::get('max_login_attempts', '5');
             $lockoutMinutes = (int) Setting::get('lockout_minutes', '15');
 
+            LoginLog::record((int) $user['id'], $email, $method, false, 'bad_password');
             $attempts = User::registerFailedLogin($user['id']);
 
             if ($attempts >= $maxAttempts) {
@@ -67,6 +112,7 @@ class Auth
         // Успішний вхід — лічильник невдалих спроб скидається.
         User::resetFailedLogins($user['id']);
         self::openSession($user);
+        LoginLog::record((int) $user['id'], $email, $method, true);
 
         return true;
     }
@@ -83,6 +129,10 @@ class Auth
         // НЕ скидаємо тут — форма логіну вже надіслала токен старої сесії,
         // і його заміна одразу після цього не додає захисту, лише ускладнила б код.
         session_regenerate_id(true);
+
+        // Реєстр активних сесій (міграція 040).
+        $_SESSION['sess_checked_at'] = time();
+        UserSession::open((int) $user['id'], session_id());
     }
 
     /**
@@ -120,12 +170,14 @@ class Auth
         // щоб форма не підказувала, які AD-логіни існують.
         if (!$user || !$user['is_active']
             || (!empty($user['locked_until']) && strtotime($user['locked_until']) > time())) {
+            LoginLog::record($user ? (int) $user['id'] : null, $login, 'sso', false, 'sso_denied');
             self::$lastError = 'Для вашого облікового запису Windows немає доступу до системи. Зверніться до адміністратора.';
             return false;
         }
 
         User::resetFailedLogins((int) $user['id']);
         self::openSession($user);
+        LoginLog::record((int) $user['id'], $login, 'sso', true);
         Audit::log('user', (int) $user['id'], 'ad_sso_login', (int) $user['id'], ['principal' => $login . ($realm !== null ? '@' . strtoupper($realm) : '')]);
 
         return true;
@@ -164,6 +216,9 @@ class Auth
 
     public static function logout(): void
     {
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user_id'])) {
+            UserSession::end(session_id(), 'logout', (int) $_SESSION['user_id']);
+        }
         $_SESSION = [];
 
         if (ini_get('session.use_cookies')) {

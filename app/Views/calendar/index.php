@@ -51,7 +51,7 @@
                             ?>
                             <a href="/tasks/<?= (int)$task['id'] ?>"
                                class="d-block small text-decoration-none mb-1 px-1 rounded <?= $task['is_closed'] ? 'text-muted bg-light text-decoration-line-through' : 'text-white ' . $priorityClass . ' ' . $rangeClass ?>"
-                               title="<?= \App\Core\View::e($task['project_name']) ?>: <?= \App\Core\View::e($task['title']) ?> (<?= \App\Core\View::e($task['start_date'] ?? $task['due_date']) ?> — <?= \App\Core\View::e($task['due_date'] ?? $task['start_date']) ?>)">
+                               title="<?= \App\Core\View::e($task['project_name']) ?>: <?= \App\Core\View::e($task['title']) ?> (<?= \App\Core\View::e($task['start_date'] ?? $task['due_date']) ?> — <?= \App\Core\View::e($task['due_date'] ?? $task['start_date']) ?>)<?= ($pt = \App\Core\View::progressText($task)) !== '' ? ' · ' . \App\Core\View::e($pt) : '' ?>">
                                 <?= $prefix ?><?= \App\Core\View::e(mb_strimwidth($task['title'], 0, 20, '…')) ?><?= $suffix ?>
                             </a>
                         <?php endforeach; ?>

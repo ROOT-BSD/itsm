@@ -63,6 +63,7 @@ final class ApiSerializer
             'id' => (int) $t['id'],
             'project' => ['id' => (int) $t['project_id'], 'name' => $t['project_name'] ?? null],
             'title' => $t['title'],
+            'parent_task_id' => !empty($t['parent_task_id']) ? (int) $t['parent_task_id'] : null,
             'description' => $t['description'] ?? null,
             'type' => ['id' => (int) $t['type_id'], 'name' => $t['type_name'] ?? null],
             'status' => ['id' => (int) $t['status_id'], 'name' => $t['status_name'] ?? null, 'is_closed' => (bool) ($t['is_closed'] ?? false)],
@@ -83,7 +84,7 @@ final class ApiSerializer
         return [
             'id' => (int) $t['id'],
             'subject' => $t['subject'],
-            'description' => $t['description'] ?? null,
+            'description' => isset($t['description']) ? \App\Core\View::withoutImageTokens($t['description']) : null,
             'status' => $t['status'],
             'queue' => ['id' => (int) $t['queue_id'], 'name' => $t['queue_name'] ?? null],
             'requester' => [
@@ -108,7 +109,7 @@ final class ApiSerializer
             'id' => (int) $c['id'],
             'author_type' => $c['author_type'],
             'author' => self::ref(!empty($c['author_id']) ? (int) $c['author_id'] : null, $c['author_name'] ?? null, 'full_name'),
-            'body' => $c['body'],
+            'body' => \App\Core\View::withoutImageTokens($c['body']),
             'created_at' => self::iso($c['created_at'] ?? null),
         ];
     }

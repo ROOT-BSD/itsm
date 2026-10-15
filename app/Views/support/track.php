@@ -27,7 +27,7 @@ $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true);
                     <tr><th>Створено</th><td><?= \App\Core\View::e($ticket['created_at']) ?></td></tr>
                 </table>
                 <?php if (!empty($ticket['description'])): ?>
-                    <p class="mb-0"><?= nl2br(\App\Core\View::e($ticket['description'])) ?></p>
+                    <p class="mb-0"><?= \App\Core\View::richText($ticket['description'], $attachments ?? [], fn($id) => '/support/track/' . $ticket['access_token'] . '/attachments/' . $id) ?></p>
                 <?php endif; ?>
 
                 <?php if ($sla['has_policy']): ?>
@@ -77,7 +77,7 @@ $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true);
                 <li class="list-group-item">
                     <strong><?= $c['author_type'] === 'operator' ? \App\Core\View::e($c['author_name'] ?? 'Оператор') : \App\Core\View::e($ticket['requester_name']) ?></strong>
                     <span class="text-muted small"><?= \App\Core\View::e($c['created_at']) ?></span>
-                    <p class="mb-0"><?= nl2br(\App\Core\View::e($c['body'])) ?></p>
+                    <p class="mb-0"><?= \App\Core\View::richText($c['body'], $attachments ?? [], fn($id) => '/support/track/' . $ticket['access_token'] . '/attachments/' . $id) ?></p>
                 </li>
                 <?php endforeach; ?>
             </ul>

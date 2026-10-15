@@ -453,6 +453,47 @@ class Project
         return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }
 
+    /**
+     * Терміновість проєктів за найближчим терміном їхніх ВІДКРИТИХ задач: [project_id => 1..4] (0/відсутні — без підсвітки).
+     * Задачі підпроєктів враховуються й для батьківських проєктів. Один запит на весь список, результат кешується на запит.
+     */
+    public static function urgencyLevels(): array
+    {
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
+        $db = Database::connection();
+        $parents = [];
+        foreach ($db->query('SELECT id, parent_id FROM projects')->fetchAll() as $r) {
+            $parents[(int) $r['id']] = $r['parent_id'] !== null ? (int) $r['parent_id'] : null;
+        }
+        $rows = $db->query(
+            'SELECT t.project_id, MIN(t.due_date) AS due FROM tasks t
+             JOIN task_statuses ts ON ts.id = t.status_id AND ts.is_closed = 0
+             WHERE t.due_date IS NOT NULL GROUP BY t.project_id'
+        )->fetchAll();
+        $cache = [];
+        foreach ($rows as $r) {
+            $level = \App\Core\View::urgencyLevel($r['due']);
+            $id = (int) $r['project_id'];
+            $seen = [];
+            while ($id && !isset($seen[$id])) { // піднімаємось до кореня; $seen — захист від циклу
+                $seen[$id] = true;
+                $cache[$id] = max($cache[$id] ?? 0, $level);
+                $id = $parents[$id] ?? 0;
+            }
+        }
+        return $cache;
+    }
+
+    /** CSS-клас пастельної підсвітки проєкту за терміновістю його задач ('' — без підсвітки). */
+    public static function urgencyClass(int $projectId): string
+    {
+        $l = self::urgencyLevels()[$projectId] ?? 0;
+        return $l > 0 ? 'project-urgency-' . $l : '';
+    }
+
     /** Самі прострочені етапи конкретного проєкту — для попередження на сторінці проєкту. */
     public static function overdueMilestonesFor(int $projectId): array
     {

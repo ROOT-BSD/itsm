@@ -328,6 +328,12 @@ if [ -n "$WEB_USER" ] && [ "$CURRENT_OWNER" != "${WEB_USER}:${WEB_GROUP}" ]; the
     [ "$CHECK_ONLY" -eq 0 ] && [ "$SKIP_PERMS" -eq 0 ] && info "Буде виправлено нижче (розділ 12)"
 fi
 
+if command -v soffice >/dev/null 2>&1 || command -v libreoffice >/dev/null 2>&1; then
+    ok "LibreOffice знайдено — документи Word/Excel у бібліотеці переглядаються як PDF"
+else
+    info "LibreOffice не встановлено (необов'язково): DOCX і XLSX у бібліотеці переглядаються вбудованим конвертером (простіше оформлення). Для точнішого результату й ODT/PPTX: sudo apt-get install -y libreoffice-writer libreoffice-calc libreoffice-impress"
+fi
+
 UPLOAD_DIR="${SCRIPT_DIR}/storage/uploads"
 if [ ! -d "$UPLOAD_DIR" ]; then
     if [ "$CHECK_ONLY" -eq 0 ]; then
@@ -337,6 +343,16 @@ if [ ! -d "$UPLOAD_DIR" ]; then
     fi
 else
     ok "Директорія storage/uploads існує"
+fi
+
+WIKI_DIR="${SCRIPT_DIR}/storage/wiki"
+if [ ! -d "$WIKI_DIR" ] && [ "$CHECK_ONLY" -eq 0 ]; then
+    mkdir -p "$WIKI_DIR" && ok "Створено директорію storage/wiki (текст сторінок вікі)"
+fi
+
+BACKUP_DIR="${SCRIPT_DIR}/storage/backups"
+if [ ! -d "$BACKUP_DIR" ] && [ "$CHECK_ONLY" -eq 0 ]; then
+    mkdir -p "$BACKUP_DIR" && ok "Створено директорію storage/backups (резервні копії)"
 fi
 
 if [ -d "$UPLOAD_DIR" ] && [ -w "$UPLOAD_DIR" ]; then
@@ -481,6 +497,8 @@ DB_USERNAME=${DB_USER}
 DB_PASSWORD=${DB_PASS}
 APP_ENV=production
 APP_URL=http://localhost
+# Часовий пояс застосунку (PHP і сесія БД). Без цього PHP працює в UTC і час відстає від серверного.
+APP_TIMEZONE=Europe/Kyiv
 
 # --- Email-to-ticket (необов'язково) ---
 # Підключення до поштової скриньки підтримки (IMAP): листи з неї автоматично стають тікетами.
@@ -605,6 +623,14 @@ else
             chmod -R 770 "${SCRIPT_DIR}/storage/uploads"
             ok "storage/uploads: права 770 (читання/запис для веб-сервера)"
         fi
+        if [ -d "${SCRIPT_DIR}/storage/backups" ]; then
+            chmod -R u+rwX,g+rwX "${SCRIPT_DIR}/storage/backups"
+            ok "storage/backups: доступна для запису веб-серверу"
+        fi
+        if [ -d "${SCRIPT_DIR}/storage/wiki" ]; then
+            chmod -R u+rwX,g+rwX "${SCRIPT_DIR}/storage/wiki"
+            ok "storage/wiki: доступна для запису веб-серверу"
+        fi
 
         # Кеш метрик шрифтів для PDF-звітів (не обов'язково, але прискорює
         # генерацію — без права запису tFPDF просто рахує метрики щоразу).
@@ -652,7 +678,7 @@ fi
 
 section "Інсталяцію завершено"
 
-cat <<FINAL
+printf '%b\n' "$(cat <<FINAL
 
   ${BOLD}Наступні кроки:${NC}
 
@@ -676,5 +702,6 @@ cat <<FINAL
      ${YELLOW}Обов'язково змініть пароль після першого входу!${NC}
 
 FINAL
+)"
 
 exit 0

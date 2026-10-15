@@ -146,11 +146,36 @@ class Ticket
     }
 
     /**
+     * Умова видимості тікета для НЕ-адміністратора: заявник, призначений оператор, (якщо дозволено) непризначені тікети та, для
+     * адміністратора підрозділу, тікети людей його підрозділу. Єдине джерело правди для списку, пошуку тощо.
+     *
+     * @return array{0: string, 1: array<string, mixed>} [SQL у дужках, іменовані параметри]
+     */
+    public static function visibilityCondition(string $alias, int $userId, bool $canSeeUnassigned): array
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias)) {
+            throw new \InvalidArgumentException('Недопустимий псевдонім таблиці');
+        }
+        $params = ['uid1' => $userId, 'uid2' => $userId];
+        $extra = '';
+        // Адміністратор підрозділу додатково бачить тікети, де заявник або оператор — з його AD OU.
+        foreach ([["{$alias}.requester_user_id", 'tua'], ["{$alias}.assigned_operator_id", 'tub']] as [$col, $pfx]) {
+            if (($c = Unit::userCondition($col, $pfx, $userId)) !== null) {
+                $extra .= ' OR ' . $c[0];
+                $params += $c[1];
+            }
+        }
+        $sql = "({$alias}.requester_user_id = :uid1 OR {$alias}.assigned_operator_id = :uid2"
+            . ($canSeeUnassigned ? " OR {$alias}.assigned_operator_id IS NULL" : '')
+            . $extra . ')';
+        return [$sql, $params];
+    }
+
+    /**
      * Тікети, видимі конкретному користувачу: адміністратор бачить усі,
      * решта — лише ті, де вони заявник (requester_user_id) або призначений
      * оператор (assigned_operator_id).
-     */
-    /**
+     *
      * @param bool $canSeeUnassigned Оператори служби підтримки й керівники ІТ-підрозділу додатково бачать
      *                                непризначені тікети (без оператора) — щоб було що брати в роботу,
      *                                а не лише свої вже призначені. Для адміна не має значення — він бачить усе.
@@ -161,25 +186,15 @@ class Ticket
             return self::all();
         }
 
-        $params = ['uid1' => $userId, 'uid2' => $userId];
-        $extra = '';
-        // Адміністратор підрозділу додатково бачить тікети, де заявник або оператор — з його AD OU.
-        foreach ([['t.requester_user_id', 'tua'], ['t.assigned_operator_id', 'tub']] as [$col, $pfx]) {
-            if (($c = Unit::userCondition($col, $pfx, $userId)) !== null) {
-                $extra .= ' OR ' . $c[0];
-                $params += $c[1];
-            }
-        }
+        [$where, $params] = self::visibilityCondition('t', $userId, $canSeeUnassigned);
 
         $sql = "SELECT t.*, q.name AS queue_name, op.full_name AS operator_name, p.name AS project_name
              FROM tickets t
              JOIN ticket_queues q ON q.id = t.queue_id
              LEFT JOIN users op ON op.id = t.assigned_operator_id
              LEFT JOIN projects p ON p.id = t.project_id
-             WHERE t.requester_user_id = :uid1 OR t.assigned_operator_id = :uid2"
-            . ($canSeeUnassigned ? ' OR t.assigned_operator_id IS NULL' : '')
-            . $extra
-            . ' ORDER BY t.created_at DESC';
+             WHERE {$where}
+             ORDER BY t.created_at DESC";
 
         $stmt = Database::connection()->prepare($sql);
         $stmt->execute($params);
@@ -457,7 +472,7 @@ class Ticket
         NotificationService::ticketStatusChanged($id, $status, $actingUserId);
     }
 
-    public static function addComment(int $ticketId, string $authorType, ?int $authorId, string $body): void
+    public static function addComment(int $ticketId, string $authorType, ?int $authorId, string $body): int
     {
         $stmt = Database::connection()->prepare(
             'INSERT INTO ticket_comments (ticket_id, author_type, author_id, body)
@@ -480,6 +495,7 @@ class Ticket
 
         NotificationService::ticketCommentAdded($ticketId, $authorType, $authorId);
         \App\Services\WebhookService::emitTicketComment($ticketId, $commentId, $authorId);
+        return $commentId;
     }
 
     public static function comments(int $ticketId): array

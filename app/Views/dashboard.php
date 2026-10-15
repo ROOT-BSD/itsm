@@ -28,7 +28,7 @@
     <?php if (empty($myOpenTasks)): ?>
         <tr><td colspan="7" class="text-center text-muted">Немає призначених відкритих задач</td></tr>
     <?php else: foreach ($myOpenTasks as $t): ?>
-        <tr>
+        <tr class="<?= \App\Core\View::urgencyClass($t['due_date'] ?? null) ?>">
             <td><a href="/tasks/<?= (int)$t['id'] ?>">#<?= (int)$t['id'] ?></a></td>
             <td><?= \App\Core\View::e($t['title']) ?></td>
             <td><?= \App\Core\View::e($t['project_name']) ?></td>

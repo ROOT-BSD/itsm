@@ -121,6 +121,45 @@ final class Unit
         return (bool) $stmt->fetchColumn();
     }
 
+    /** Ефективний підрозділ (OU) будь-якого активного користувача або null, якщо його не задано. */
+    public static function userOu(int $userId): ?string
+    {
+        $stmt = Database::connection()->prepare('SELECT ' . self::ouExpr('u') . ' AS ou, u.is_active FROM users u WHERE u.id = :id');
+        $stmt->execute(['id' => $userId]);
+        $row = $stmt->fetch();
+        return $row && (int) $row['is_active'] === 1 && trim((string) $row['ou']) !== '' ? trim((string) $row['ou']) : null;
+    }
+
+    /**
+     * SQL-умова «підрозділ $ou (значення, позиційний параметр ?, передається ЧОТИРИ рази) входить у підрозділ зі стовпця $unitCol
+     * (напр. "d.unit_ou")», тобто $ou дорівнює йому або вкладений у нього. Регістр не враховується.
+     *
+     * @param string $unitCol лише внутрішній SQL-вираз (стовпець), не ввід користувача
+     */
+    public static function withinColumnSql(string $unitCol): string
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $unitCol)) {
+            throw new \InvalidArgumentException('Недопустимий SQL-вираз');
+        }
+        return "({$unitCol} IS NOT NULL AND {$unitCol} <> '' AND (LOWER(?) = LOWER({$unitCol}) "
+            . "OR (LOWER(RIGHT(?, CHAR_LENGTH({$unitCol}) + 1)) = LOWER(CONCAT(',', {$unitCol})) "
+            . "AND SUBSTRING(?, CHAR_LENGTH(?) - CHAR_LENGTH({$unitCol}) - 1, 1) <> '\\\\')))";
+    }
+
+    /**
+     * Протилежна до withinColumnSql: підрозділ зі стовпця $unitCol дорівнює $ou (позиційний ?, передається ЧОТИРИ рази) або вкладений
+     * у нього. Потрібна адміністратору підрозділу, щоб бачити документи вкладених підрозділів.
+     */
+    public static function columnWithinSql(string $unitCol): string
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $unitCol)) {
+            throw new \InvalidArgumentException('Недопустимий SQL-вираз');
+        }
+        return "({$unitCol} IS NOT NULL AND {$unitCol} <> '' AND (LOWER({$unitCol}) = LOWER(?) "
+            . "OR (LOWER(RIGHT({$unitCol}, CHAR_LENGTH(?) + 1)) = LOWER(CONCAT(',', ?)) "
+            . "AND SUBSTRING({$unitCol}, CHAR_LENGTH({$unitCol}) - CHAR_LENGTH(?) - 1, 1) <> '\\\\')))";
+    }
+
     /** Користувачі підрозділу (для сторінки «Мій підрозділ»), крім самого адміністратора. */
     public static function users(int $adminId): array
     {

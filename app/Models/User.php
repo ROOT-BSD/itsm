@@ -74,6 +74,10 @@ class User
     {
         $stmt = Database::connection()->prepare('UPDATE users SET is_active = :active WHERE id = :id');
         $stmt->execute(['active' => $isActive ? 1 : 0, 'id' => $userId]);
+        if (!$isActive) {
+            // Вимкнений обліковий запис не має лишатися з відкритими сесіями.
+            UserSession::revokeAllFor($userId, 'deactivated', null);
+        }
     }
 
     /** Реєструє невдалу спробу входу й повертає новий лічильник — блокування прив'язане саме до цього користувача. */

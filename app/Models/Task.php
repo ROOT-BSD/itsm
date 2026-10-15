@@ -21,7 +21,7 @@ class Task
     public static function spanningVisibleTo(string $rangeStart, string $rangeEnd, int $userId, bool $isAdmin): array
     {
         $sql = "SELECT t.id, t.title, t.priority, t.start_date, t.due_date, ts.name AS status_name, ts.is_closed,
-                       p.id AS project_id, p.name AS project_name
+                       p.id AS project_id, p.name AS project_name" . TaskChecklist::progressSelect() . "
                 FROM tasks t
                 JOIN task_statuses ts ON ts.id = t.status_id
                 JOIN projects p ON p.id = t.project_id
@@ -56,7 +56,7 @@ class Task
     {
         $stmt = Database::connection()->prepare(
             'SELECT t.*, ts.name AS status_name, ts.code AS status_code, ts.is_closed, tt.name AS type_name,
-                    au.full_name AS author_name, asg.full_name AS assignee_name
+                    au.full_name AS author_name, asg.full_name AS assignee_name' . TaskChecklist::progressSelect() . '
              FROM tasks t
              JOIN task_statuses ts ON ts.id = t.status_id
              JOIN task_types tt ON tt.id = t.type_id
@@ -87,7 +87,7 @@ class Task
     {
         $sql = "SELECT t.*, ts.name AS status_name, tt.name AS type_name, p.name AS project_name,
                        asg.full_name AS assignee_name,
-                       DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted
+                       DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted" . TaskChecklist::progressSelect() . "
                 FROM tasks t
                 JOIN task_statuses ts ON ts.id = t.status_id
                 JOIN task_types tt ON tt.id = t.type_id
@@ -102,7 +102,7 @@ class Task
             $params = array_merge($params ?? [], $accessParams);
         }
 
-        $sql .= ' ORDER BY p.name ASC, t.due_date IS NULL, t.due_date ASC';
+        $sql .= ' ORDER BY t.due_date IS NULL, t.due_date ASC, p.name ASC, t.id ASC';
 
         $stmt = Database::connection()->prepare($sql);
         $stmt->execute($params);
@@ -114,7 +114,7 @@ class Task
     {
         $sql = "SELECT t.*, ts.name AS status_name, tt.name AS type_name, p.name AS project_name,
                        asg.full_name AS assignee_name,
-                       DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted
+                       DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted" . TaskChecklist::progressSelect() . "
                 FROM tasks t
                 JOIN task_statuses ts ON ts.id = t.status_id
                 JOIN task_types tt ON tt.id = t.type_id
@@ -158,11 +158,12 @@ class Task
 
     public static function create(array $data): int
     {
+        $parentId = !empty($data['parent_task_id']) ? (int) $data['parent_task_id'] : null;
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tasks (project_id, type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date, milestone_id)
-             VALUES (:project_id, :type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date, :milestone_id)'
+            'INSERT INTO tasks (project_id, ' . ($parentId !== null ? 'parent_task_id, ' : '') . 'type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date, milestone_id)
+             VALUES (:project_id, ' . ($parentId !== null ? ':parent_task_id, ' : '') . ':type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date, :milestone_id)'
         );
-        $stmt->execute([
+        $params = [
             'project_id' => $data['project_id'],
             'type_id' => $data['type_id'],
             'status_id' => $data['status_id'], // за замовчуванням "new" визначається контролером
@@ -174,10 +175,14 @@ class Task
             'start_date' => $data['start_date'] ?: null,
             'due_date' => $data['due_date'] ?: null,
             'milestone_id' => $data['milestone_id'] ?? null,
-        ]);
+        ];
+        if ($parentId !== null) {
+            $params['parent_task_id'] = $parentId;
+        }
+        $stmt->execute($params);
 
         $taskId = (int) Database::connection()->lastInsertId();
-        Audit::log('task', $taskId, 'created', $data['author_id']);
+        Audit::log('task', $taskId, 'created', $data['author_id'], $parentId !== null ? ['parent_task_id' => $parentId] : null);
         NotificationService::taskCreated($taskId, $data['assignee_id'] ?: null, (int) $data['author_id']);
         return $taskId;
     }
@@ -280,7 +285,7 @@ class Task
     public static function forProjectMilestones(int $projectId): array
     {
         $stmt = Database::connection()->prepare(
-            "SELECT t.id, t.title, t.priority, t.milestone_id, ts.name AS status_name, ts.is_closed, asg.full_name AS assignee_name
+            "SELECT t.id, t.title, t.priority, t.milestone_id, ts.name AS status_name, ts.is_closed, asg.full_name AS assignee_name" . TaskChecklist::progressSelect() . "
              FROM tasks t
              JOIN task_statuses ts ON ts.id = t.status_id
              LEFT JOIN users asg ON asg.id = t.assignee_id
@@ -818,6 +823,27 @@ class Task
             fn($r) => ['period_label' => $r['period_label'], 'project_id' => $r['project_id'], 'project_name' => $r['project_name'], 'total_hours' => $r['total_hours']],
             array_values($aggregated)
         );
+    }
+
+    /** Чи є статус «закритим» (is_closed). */
+    public static function statusIsClosed(int $statusId): bool
+    {
+        foreach (self::statuses() as $s) {
+            if ((int) $s['id'] === $statusId) {
+                return !empty($s['is_closed']);
+            }
+        }
+        return false;
+    }
+
+    /** Текст помилки, якщо задачу не можна перевести в цей статус (закрити, поки є незакриті підзадачі); інакше null. */
+    public static function statusChangeProblem(int $taskId, int $statusId): ?string
+    {
+        if (!TaskChecklist::ready() || !self::statusIsClosed($statusId)) {
+            return null;
+        }
+        $open = TaskChecklist::openSubtaskCount($taskId);
+        return $open > 0 ? 'Не можна закрити задачу, поки не закрито підзадачі (незакритих: ' . $open . ')' : null;
     }
 
     public static function types(): array

@@ -60,7 +60,7 @@ $tid = (int) $topic['id'];
             <div class="card-body border-top py-2">
                 <div class="small text-muted mb-1">Прикріплені файли:</div>
                 <div class="d-flex flex-wrap gap-3 align-items-start">
-                    <?php foreach ($p['attachments'] as $a): $isImg = in_array($a['mime_type'], ['image/jpeg', 'image/png'], true); ?>
+                    <?php foreach ($p['attachments'] as $a): $isImg = in_array($a['mime_type'], \App\Services\AttachmentService::IMAGE_MIMES, true); ?>
                         <div class="small">
                             <?php if ($isImg): ?>
                                 <a href="/forum/files/<?= (int) $a['id'] ?>" target="_blank" rel="noopener noreferrer"><img src="/forum/files/<?= (int) $a['id'] ?>?thumb=1" alt="<?= $e($a['original_name']) ?>" loading="lazy" style="max-width:120px;max-height:120px" class="img-thumbnail d-block mb-1"></a>

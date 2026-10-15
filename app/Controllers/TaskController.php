@@ -133,6 +133,10 @@ class TaskController
             'timeLogs' => Task::timeLogsForTask($task['id']),
             'projects' => Project::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
             'attachments' => \App\Models\Attachment::forOwner('task', (int) $task['id']),
+            'checklistReady' => \App\Models\TaskChecklist::ready(),
+            'checklist' => \App\Models\TaskChecklist::ready() ? \App\Models\TaskChecklist::forTask((int) $task['id']) : [],
+            'subtasks' => \App\Models\TaskChecklist::ready() ? \App\Models\TaskChecklist::subtasks((int) $task['id']) : [],
+            'parentTask' => \App\Models\TaskChecklist::ready() && !empty($task['parent_task_id']) ? Task::find((int) $task['parent_task_id']) : null,
         ]);
     }
 
@@ -144,6 +148,11 @@ class TaskController
         $statusId = (int) ($_POST['status_id'] ?? 0);
         if (!$this->statusExists($statusId)) {
             header('Location: /tasks/' . $params['id'] . '?error=' . urlencode('Некоректний статус'));
+            exit;
+        }
+
+        if (($problem = Task::statusChangeProblem((int) $params['id'], $statusId)) !== null) {
+            header('Location: /tasks/' . $params['id'] . '?error=' . urlencode($problem));
             exit;
         }
 
@@ -215,8 +224,156 @@ class TaskController
             exit;
         }
 
+        if (!empty($task['parent_task_id'])) {
+            header('Location: /tasks/' . $params['id'] . '?error=' . urlencode('Підзадачу не можна переносити окремо: перенесіть батьківську задачу або спершу відв\'яжіть підзадачу'));
+            exit;
+        }
+
         Task::updateProject((int) $params['id'], $newProjectId, Auth::id());
+        // Підзадачі переїжджають разом із батьківською задачею (вони завжди в одному проєкті).
+        if (\App\Models\TaskChecklist::ready()) {
+            foreach (\App\Models\TaskChecklist::subtasks((int) $params['id']) as $sub) {
+                Task::updateProject((int) $sub['id'], $newProjectId, Auth::id());
+            }
+        }
         header('Location: /tasks/' . $params['id']);
+        exit;
+    }
+
+    // ------------------------------------------------------------------ підзадачі
+
+    /** Нова підзадача: успадковує проєкт, тип, пріоритет і етап батьківської задачі; глибина вкладеності — один рівень. */
+    public function storeSubtask(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $this->requireChecklistReady((int) $task['id']);
+
+        if (!empty($task['parent_task_id'])) {
+            $this->back($task['id'], 'error', 'Підзадача не може мати власних підзадач — додайте її до батьківської задачі');
+        }
+        $title = trim((string) ($_POST['title'] ?? ''));
+        if ($title === '' || mb_strlen($title) > 255) {
+            $this->back($task['id'], 'error', 'Вкажіть назву підзадачі (до 255 символів)');
+        }
+        $due = !empty($_POST['due_date']) ? (string) $_POST['due_date'] : null;
+        if ($due !== null && !$this->isValidDate($due)) {
+            $this->back($task['id'], 'error', 'Некоректний термін виконання');
+        }
+        $assignee = !empty($_POST['assignee_id']) ? (int) $_POST['assignee_id'] : null;
+        if ($assignee !== null && !User::findById($assignee)) {
+            $this->back($task['id'], 'error', 'Виконавця не знайдено');
+        }
+
+        $id = Task::create([
+            'project_id' => (int) $task['project_id'],
+            'parent_task_id' => (int) $task['id'],
+            'type_id' => (int) $task['type_id'],
+            'status_id' => $this->statusIdByCode('new'),
+            'title' => $title,
+            'priority' => $task['priority'],
+            'author_id' => Auth::id(),
+            'assignee_id' => $assignee,
+            'due_date' => $due,
+            'milestone_id' => $task['milestone_id'] ?: null,
+        ]);
+        \App\Models\Audit::log('task', (int) $task['id'], 'subtask_added', Auth::id(), ['related_task_id' => $id]);
+        $this->back($task['id'], 'success', 'Підзадачу додано', '#subtasks');
+    }
+
+    /** Робить підзадачу самостійною задачею. */
+    public function detachSubtask(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $this->requireChecklistReady((int) $task['id']);
+        if (!empty($task['parent_task_id'])) {
+            \App\Core\Database::connection()->prepare('UPDATE tasks SET parent_task_id = NULL WHERE id = :id')->execute(['id' => $task['id']]);
+            \App\Models\Audit::log('task', (int) $task['id'], 'subtask_detached', Auth::id(), ['related_task_id' => (int) $task['parent_task_id']]);
+        }
+        $this->back($task['id'], 'success', 'Підзадачу відв\'язано — тепер це самостійна задача');
+    }
+
+    // ------------------------------------------------------------------ чек-лист
+
+    /** Додає пункти: кожен непорожній рядок поля — окремий пункт (можна вставити кілька разів списком). */
+    public function addChecklist(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $this->requireChecklistReady((int) $task['id']);
+
+        $lines = preg_split('/\R/u', (string) ($_POST['items'] ?? '')) ?: [];
+        $added = 0;
+        $room = \App\Models\TaskChecklist::MAX_ITEMS - \App\Models\TaskChecklist::count((int) $task['id']);
+        foreach ($lines as $line) {
+            $line = trim((string) preg_replace('/^\s*(?:[-*•]|\[[ xX]?\]|\d+[.)])\s+/u', '', $line));
+            if ($line === '') {
+                continue;
+            }
+            if ($room <= 0) {
+                $this->back($task['id'], 'error', 'У чек-листі може бути не більше ' . \App\Models\TaskChecklist::MAX_ITEMS . ' пунктів' . ($added ? ' (додано: ' . $added . ')' : ''), '#checklist');
+            }
+            \App\Models\TaskChecklist::add((int) $task['id'], mb_substr($line, 0, \App\Models\TaskChecklist::MAX_LENGTH), Auth::id());
+            $added++;
+            $room--;
+        }
+        if ($added === 0) {
+            $this->back($task['id'], 'error', 'Введіть текст пункту', '#checklist');
+        }
+        \App\Models\Audit::log('task', (int) $task['id'], 'checklist_added', Auth::id(), ['items' => $added]);
+        $this->back($task['id'], 'success', $added === 1 ? 'Пункт додано' : 'Пунктів додано: ' . $added, '#checklist');
+    }
+
+    public function toggleChecklist(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $this->requireChecklistReady((int) $task['id']);
+        $item = $this->checklistItemOrFail((int) $params['item'], (int) $task['id']);
+
+        \App\Models\TaskChecklist::setDone((int) $item['id'], !$item['is_done'], Auth::id());
+        $this->back($task['id'], null, null, '#checklist');
+    }
+
+    public function deleteChecklist(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $this->requireChecklistReady((int) $task['id']);
+
+        if (($params['item'] ?? '') === 'done') {
+            $n = \App\Models\TaskChecklist::deleteDone((int) $task['id']);
+            $this->back($task['id'], 'success', 'Видалено виконаних пунктів: ' . $n, '#checklist');
+        }
+        $item = $this->checklistItemOrFail((int) $params['item'], (int) $task['id']);
+        \App\Models\TaskChecklist::delete((int) $item['id']);
+        $this->back($task['id'], null, null, '#checklist');
+    }
+
+    private function checklistItemOrFail(int $itemId, int $taskId): array
+    {
+        $item = \App\Models\TaskChecklist::find($itemId);
+        // Пункт має належати саме цій задачі, до якої користувач має доступ, — інакше можна було б чіпати чужі чек-листи за id.
+        if (!$item || (int) $item['task_id'] !== $taskId) {
+            http_response_code(404);
+            echo 'Пункт не знайдено.';
+            exit;
+        }
+        return $item;
+    }
+
+    private function requireChecklistReady(int $taskId): void
+    {
+        if (!\App\Models\TaskChecklist::ready()) {
+            $this->back($taskId, 'error', 'Підзадачі й чек-листи потребують міграції 038 — зверніться до адміністратора (update.sh)');
+        }
+    }
+
+    private function back(int|string $taskId, ?string $kind, ?string $message, string $anchor = ''): never
+    {
+        $q = $kind !== null && $message !== null ? '?' . $kind . '=' . urlencode($message) : '';
+        header('Location: /tasks/' . (int) $taskId . $q . $anchor);
         exit;
     }
 

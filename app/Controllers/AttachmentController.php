@@ -38,7 +38,7 @@ class AttachmentController
             fn(array $f): bool => $f['error'] !== UPLOAD_ERR_NO_FILE
         ));
         if (!$files) {
-            $this->redirect($ownerType, $ownerId, 'error', 'Оберіть файл для прикріплення (JPG, PNG або PDF).');
+            $this->redirect($ownerType, $ownerId, 'error', $ownerType === 'task' && AttachmentService::officeReady() ? 'Оберіть файл для прикріплення (JPG, PNG, GIF, WebP, PDF або документ Office).' : 'Оберіть файл для прикріплення (JPG, PNG, GIF, WebP або PDF).');
         }
 
         $maxPerRequest = (int) Config::get('attachments.max_per_request', 10);
@@ -50,7 +50,8 @@ class AttachmentController
             $this->redirect($ownerType, $ownerId, 'error', "До одного запису можна прикріпити не більше {$maxPerOwner} файлів.");
         }
 
-        $result = AttachmentService::attachUploads($ownerType, $ownerId, $files, Auth::id(), 'web');
+        // Документи Office приймаються лише у задачах; тікети (їх бачать і заявники, і пошта) лишаються з JPG, PNG, PDF.
+        $result = AttachmentService::attachUploads($ownerType, $ownerId, $files, Auth::id(), 'web', $ownerType === 'task' ? ['office' => true] : []);
         $added = $result['added'];
         $errors = $result['errors'];
 
@@ -82,8 +83,15 @@ class AttachmentController
     {
         $path = AttachmentService::path($attachment['stored_name']);
         if ($path === null || !is_file($path)) {
-            http_response_code(404);
-            echo 'Файл не знайдено на сервері (можливо, його видалено з диска). Зверніться до адміністратора.';
+            $why = AttachmentService::diagnose((string) $attachment['stored_name']);
+            error_log('[itsm] вкладення #' . (int) $attachment['id'] . ' не віддано (' . $why . '): ' . ($path ?? '(некоректне ім\'я)'));
+            if ($why === 'permissions') {
+                http_response_code(500);
+                echo 'Файл є на сервері, але веб-сервер не має до нього доступу (права на каталог чи файл). Зверніться до адміністратора: він має виконати update.sh або chown -R на storage/uploads.';
+            } else {
+                http_response_code(404);
+                echo 'Файл не знайдено на сервері (можливо, його видалено з диска). Зверніться до адміністратора.';
+            }
             exit;
         }
 
@@ -92,10 +100,28 @@ class AttachmentController
         $servePath = $path;
         if (isset($_GET['thumb']) && !isset($_GET['download']) && str_starts_with($attachment['mime_type'], 'image/')) {
             $servePath = AttachmentService::thumbnailFor($attachment['stored_name'], $attachment['mime_type']) ?? $path;
+            $thumbServed = $servePath !== $path;
         }
 
-        // Зображення та PDF показуємо у браузері; ?download=1 — примусове завантаження.
-        $disposition = isset($_GET['download']) ? 'attachment' : 'inline';
+        // ?preview=1 — PDF-копія документа Office (LibreOffice або вбудований конвертер); інакше документи Office лише завантажуються.
+        $mime = $attachment['mime_type'];
+        if (!empty($thumbServed)) {
+            $mime = AttachmentService::thumbMime($mime); // мініатюра GIF/WebP — це PNG
+        }
+        if (isset($_GET['preview']) && AttachmentService::isOfficeMime($mime)) {
+            $result = \App\Services\LibraryPreview::ensure($attachment['stored_name'], $attachment['original_name']);
+            if (!$result['ok']) {
+                http_response_code(503);
+                echo $result['error'];
+                exit;
+            }
+            $servePath = $result['path'];
+            $mime = 'application/pdf';
+            $attachment['original_name'] = pathinfo($attachment['original_name'], PATHINFO_FILENAME) . '.pdf';
+        }
+
+        // Зображення та PDF показуємо у браузері; ?download=1 — примусове завантаження; документи Office — лише завантаження.
+        $disposition = isset($_GET['download']) || AttachmentService::isOfficeMime($mime) ? 'attachment' : 'inline';
         $name = $attachment['original_name'];
         $asciiName = preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?: 'file';
 
@@ -106,7 +132,7 @@ class AttachmentController
             ob_end_clean();
         }
 
-        header('Content-Type: ' . $attachment['mime_type']);
+        header('Content-Type: ' . $mime);
         header('Content-Length: ' . filesize($servePath));
         header('Content-Disposition: ' . $disposition . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');

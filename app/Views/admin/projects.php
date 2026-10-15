@@ -28,7 +28,7 @@
     $statusColors = ['active' => 'success', 'archived' => 'secondary', 'closed' => 'dark'];
     ?>
     <?php foreach ($projects as $p): ?>
-        <tr>
+        <tr class="<?= \App\Models\Project::urgencyClass((int)$p['id']) ?>">
             <td>
                 <a href="/projects/<?= (int)$p['id'] ?>"><?= \App\Core\View::e($p['name']) ?></a>
                 <?php if (!empty($p['parent_id'])): ?>

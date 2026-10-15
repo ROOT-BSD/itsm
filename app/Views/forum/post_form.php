@@ -16,7 +16,7 @@
     <?php if (!empty($attachments)): ?>
         <div class="mb-3">
             <div class="form-label">Прикріплені файли</div>
-            <?php foreach (array_values($attachments) as $i => $a): $isImg = in_array($a['mime_type'], ['image/jpeg', 'image/png'], true); $label = trim(str_replace(['[', ']', "\n", '\\'], ' ', pathinfo($a['original_name'], PATHINFO_FILENAME))) ?: 'файл'; ?>
+            <?php foreach (array_values($attachments) as $i => $a): $isImg = in_array($a['mime_type'], \App\Services\AttachmentService::IMAGE_MIMES, true); $label = trim(str_replace(['[', ']', "\n", '\\'], ' ', pathinfo($a['original_name'], PATHINFO_FILENAME))) ?: 'файл'; ?>
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" name="remove_attachments[]" value="<?= (int) $a['id'] ?>" id="rm-<?= (int) $a['id'] ?>">
                     <label class="form-check-label" for="rm-<?= (int) $a['id'] ?>">

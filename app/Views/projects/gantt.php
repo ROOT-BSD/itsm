@@ -134,10 +134,18 @@
         <?php foreach ($tasks as $t): ?>
         {
             id: "<?= (int)$t['id'] ?>",
-            name: <?= json_encode('#' . $t['id'] . ' ' . $t['title']) ?>,
+            name: <?= json_encode('#' . $t['id'] . ' ' . $t['title'] . (($pt = \App\Core\View::progressText($t)) !== '' ? '  ' . $pt : '')) ?>,
             start: <?= json_encode($t['start_date'] ?: date('Y-m-d', strtotime($t['created_at']))) ?>,
             end: <?= json_encode($t['due_date'] ?: date('Y-m-d', strtotime(($t['start_date'] ?: $t['created_at']) . ' +1 day'))) ?>,
-            progress: PROGRESS_BY_STATUS[<?= json_encode($t['status_code']) ?>] ?? 0,
+            progress: <?php
+                // Закрита задача — 100%; з підзадачами/чек-листом — частка виконаного; інакше — за статусом.
+                $parts = (int) ($t['subtasks_total'] ?? 0) + (int) ($t['checklist_total'] ?? 0);
+                if (!$t['is_closed'] && $parts > 0) {
+                    echo (int) round(((int) $t['subtasks_done'] + (int) $t['checklist_done']) / $parts * 100);
+                } else {
+                    echo 'PROGRESS_BY_STATUS[' . json_encode($t['status_code']) . '] ?? 0';
+                }
+            ?>,
             dependencies: (dependenciesByTask[<?= (int)$t['id'] ?>] || []).join(','),
             custom_class: <?= json_encode($t['is_closed'] ? 'gantt-task-closed' : 'gantt-task-' . $t['priority']) ?>
         },

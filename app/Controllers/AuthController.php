@@ -15,6 +15,10 @@ class AuthController
             exit;
         }
         $error = $_GET['error'] ?? null;
+        if ($error === null && !empty($_SESSION['flash_logged_out'])) {
+            unset($_SESSION['flash_logged_out']);
+            $error = 'Ваш сеанс завершено (вихід з іншого пристрою, адміністратором або після зміни пароля). Увійдіть знову.';
+        }
         if ($error === null && ($_GET['sso'] ?? '') === 'failed') {
             // Веб-сервер перенаправляє сюди, якщо браузер не пройшов Kerberos-автентифікацію (ErrorDocument 401).
             $error = 'Автоматичний вхід через Windows не вдався (браузер не передав квиток Kerberos). Увійдіть паролем.';

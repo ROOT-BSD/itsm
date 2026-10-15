@@ -218,6 +218,53 @@ CREATE TABLE IF NOT EXISTS tasks (
     FULLTEXT KEY ft_title_description (title, description)
 ) ENGINE=InnoDB;
 
+-- Пункти чек-листа задачі (міграція 038)
+CREATE TABLE IF NOT EXISTS task_checklist_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    body VARCHAR(255) NOT NULL,
+    is_done TINYINT(1) NOT NULL DEFAULT 0,
+    done_by INT NULL,
+    done_at DATETIME NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_checklist_task (task_id, id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (done_by) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Шаблони проєктів і задач (міграція 039)
+CREATE TABLE IF NOT EXISTS templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    kind ENUM('project','task') NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    description VARCHAR(500) NULL,
+    project_description TEXT NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_templates_kind (kind, name),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS template_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    template_id INT NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NULL,
+    type_id INT NULL,
+    priority ENUM('low','normal','high','critical') NOT NULL DEFAULT 'normal',
+    start_offset INT NULL,
+    due_offset INT NULL,
+    checklist TEXT NULL,
+    subtasks TEXT NULL,
+    KEY idx_template_items (template_id, position),
+    FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE,
+    FOREIGN KEY (type_id) REFERENCES task_types(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS task_relations (
     id INT AUTO_INCREMENT PRIMARY KEY,
     task_id INT NOT NULL,
@@ -340,7 +387,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     task_id INT NULL,
     original_name VARCHAR(255) NOT NULL,
     stored_name CHAR(32) NOT NULL UNIQUE,
-    mime_type VARCHAR(50) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
     size_bytes INT UNSIGNED NOT NULL,
     uploaded_by INT NULL,
     source VARCHAR(10) NOT NULL DEFAULT 'web',  -- звідки файл: web / portal (анонімний портал) / email (вхідний лист)
@@ -456,6 +503,7 @@ CREATE TABLE IF NOT EXISTS library_documents (
     title VARCHAR(200) NOT NULL,
     description TEXT NULL,
     visibility VARCHAR(10) NOT NULL DEFAULT 'all',
+    unit_ou VARCHAR(500) NULL,
     created_by INT NULL,
     updated_by INT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -464,6 +512,7 @@ CREATE TABLE IF NOT EXISTS library_documents (
     CONSTRAINT fk_library_documents_created FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_library_documents_updated FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_library_documents_category (category_id),
+    INDEX idx_library_documents_creator (created_by),
     INDEX idx_library_documents_title (title)
 ) ENGINE=InnoDB;
 
@@ -602,3 +651,87 @@ CREATE TABLE IF NOT EXISTS wiki_attachments (
     CONSTRAINT fk_wiki_attachments_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_wiki_attachments_page (page_id)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    session_hash CHAR(64) NOT NULL,
+    ip VARCHAR(64) NULL,
+    user_agent VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME NULL,
+    ended_reason VARCHAR(20) NULL,
+    ended_by INT NULL,
+    UNIQUE KEY uq_user_sessions_hash (session_hash),
+    KEY idx_user_sessions_user (user_id, ended_at, last_seen_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (ended_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS login_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NULL,
+    login VARCHAR(190) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    success TINYINT(1) NOT NULL,
+    reason VARCHAR(30) NULL,
+    ip VARCHAR(64) NULL,
+    user_agent VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_login_log_created (created_at),
+    KEY idx_login_log_user (user_id, created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (041+) накочує update.sh.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(20) NOT NULL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    checksum CHAR(40) NULL,
+    applied_via VARCHAR(10) NOT NULL DEFAULT 'run',
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
+('001', 'add_project_responsible', 'baseline'),
+('002', 'fix_utf8_double_encoding', 'baseline'),
+('003', 'add_task_start_date', 'baseline'),
+('004', 'add_milestones', 'baseline'),
+('005', 'add_time_logs_date_index', 'baseline'),
+('006', 'add_audit_log_date_index', 'baseline'),
+('007', 'add_login_lockout', 'baseline'),
+('008', 'add_ticket_project_link', 'baseline'),
+('009', 'add_ticket_access_token', 'baseline'),
+('010', 'add_sla_policies_unique_queue', 'baseline'),
+('011', 'add_email_to_ticket', 'baseline'),
+('012', 'add_email_autoreply_setting', 'baseline'),
+('013', 'add_email_notifications', 'baseline'),
+('014', 'add_granular_notification_settings', 'baseline'),
+('015', 'add_queue_default_operator', 'baseline'),
+('016', 'add_active_directory', 'baseline'),
+('017', 'add_user_ad_ou', 'baseline'),
+('018', 'add_attachments', 'baseline'),
+('019', 'add_attachment_source', 'baseline'),
+('020', 'add_wiki', 'baseline'),
+('021', 'add_project_members', 'baseline'),
+('022', 'add_api_and_webhooks', 'baseline'),
+('023', 'add_rate_limits', 'baseline'),
+('024', 'add_document_library', 'baseline'),
+('025', 'add_forum', 'baseline'),
+('026', 'add_wiki_hierarchy_and_attachments', 'baseline'),
+('027', 'add_ad_manual_overrides', 'baseline'),
+('028', 'add_ad_guid', 'baseline'),
+('029', 'add_unit_admin_role', 'baseline'),
+('030', 'add_local_user_unit', 'baseline'),
+('031', 'add_forum_board_subscriptions', 'baseline'),
+('032', 'drop_project_visibility', 'baseline'),
+('033', 'add_forum_unread', 'baseline'),
+('034', 'add_forum_attachments', 'baseline'),
+('035', 'add_forum_topic_mutes', 'baseline'),
+('036', 'add_library_personal_documents', 'baseline'),
+('037', 'widen_attachment_mime', 'baseline'),
+('038', 'add_subtasks_and_checklists', 'baseline'),
+('039', 'add_templates', 'baseline'),
+('040', 'add_sessions_and_login_log', 'baseline');

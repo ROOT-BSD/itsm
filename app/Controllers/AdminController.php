@@ -42,6 +42,17 @@ class AdminController
         View::render('admin/hub', ['section' => 'manage']);
     }
 
+    /** «Стан системи»: версії, схема БД, права на каталоги, cron, черга вебхуків — лише читання. */
+    public function status(): void
+    {
+        $sections = \App\Services\SystemStatus::collect(!empty($_GET['sizes']));
+        View::render('admin/status', [
+            'sections' => $sections,
+            'overall' => \App\Services\SystemStatus::overall($sections),
+            'withSizes' => !empty($_GET['sizes']),
+        ]);
+    }
+
     public function settings(): void
     {
         View::render('admin/hub', ['section' => 'settings']);
@@ -316,6 +327,7 @@ class AdminController
             return;
         }
 
+        \App\Models\UserSession::revokeAllFor($userId, 'password', Auth::id());
         Audit::log('user', $userId, 'password_changed_by_admin', Auth::id());
         $this->redirectUsers('success', 'Пароль користувача оновлено');
     }

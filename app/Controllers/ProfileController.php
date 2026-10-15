@@ -59,6 +59,8 @@ class ProfileController
         }
 
         User::updatePassword($userId, $newPassword);
+        // Після зміни пароля інші пристрої розлогінюються (поточна сесія лишається).
+        \App\Models\UserSession::revokeAllFor($userId, 'password', $userId, session_id());
         Audit::log('user', $userId, 'password_changed_self', $userId);
 
         $this->redirect('success', 'Пароль успішно змінено');

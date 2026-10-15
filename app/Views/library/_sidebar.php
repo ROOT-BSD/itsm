@@ -6,16 +6,27 @@ $e = static fn($v) => \App\Core\View::e($v);
     <?php if (($currentCategory ?? null) !== null && $currentCategory !== ''): ?>
         <input type="hidden" name="category" value="<?= $e($currentCategory) ?>">
     <?php endif; ?>
+    <?php if (($scope ?? '') !== ''): ?>
+        <input type="hidden" name="scope" value="<?= $e($scope) ?>">
+    <?php endif; ?>
     <div class="input-group">
         <input type="search" name="q" class="form-control" maxlength="100" placeholder="Пошук документів…" value="<?= $e($query ?? '') ?>" aria-label="Пошук документів">
         <button type="submit" class="btn btn-outline-secondary">Знайти</button>
     </div>
 </form>
 
+<?php if (!empty($canCreate)): ?>
+    <div class="btn-group btn-group-sm w-100 mb-3" role="group" aria-label="Чиї документи">
+        <a href="/library" class="btn btn-outline-secondary<?= ($scope ?? '') === '' ? ' active' : '' ?>">Усі</a>
+        <a href="/library?scope=mine" class="btn btn-outline-secondary<?= ($scope ?? '') === 'mine' ? ' active' : '' ?>">Мої</a>
+        <a href="/library?scope=unit" class="btn btn-outline-secondary<?= ($scope ?? '') === 'unit' ? ' active' : '' ?>">Підрозділу</a>
+    </div>
+<?php endif; ?>
+
 <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span class="fw-semibold">Розділи</span>
-        <?php if (!empty($canEdit)): ?>
+        <?php if (!empty($canCreate)): ?>
             <a href="/library/new<?= is_numeric($currentCategory ?? null) ? '?category=' . (int) $currentCategory : '' ?>" class="btn btn-sm btn-primary">+ Документ</a>
         <?php endif; ?>
     </div>

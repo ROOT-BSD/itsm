@@ -63,6 +63,12 @@ class Database
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
                 ]);
+                // Сесія БД — у тому ж часовому поясі, що й PHP: NOW() і CURRENT_TIMESTAMP збігаються з date() у PHP.
+                try {
+                    self::$instance->exec("SET time_zone = '" . Timezone::offset() . "'");
+                } catch (PDOException) {
+                    // не критично: далі діє пояс сервера БД
+                }
             } catch (PDOException $e) {
                 // У production-режимі деталі помилки БД користувачу не показуємо
                 if (Config::get('app.env', 'local') === 'production') {

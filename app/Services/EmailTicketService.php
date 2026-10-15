@@ -218,7 +218,7 @@ class EmailTicketService
         try {
             $ticket = self::findTicketForReply($m);
             if ($ticket !== null) {
-                self::addReplyComment($ticket, $m);
+                $commentId = self::addReplyComment($ticket, $m);
                 $ticketId = (int) $ticket['id'];
                 $outcome = ['action' => 'comment_added', 'ticket_id' => $ticketId, 'note' => 'Коментар до тікета #' . $ticketId];
             } else {
@@ -226,9 +226,12 @@ class EmailTicketService
                 $outcome = ['action' => 'ticket_created', 'ticket_id' => $ticketId, 'note' => 'Створено тікет #' . $ticketId];
             }
 
-            $savedImages = self::storeImages($ticketId, $images, $storedFiles);
+            $attachmentIds = self::storeImages($ticketId, $images, $storedFiles);
+            $savedImages = count($attachmentIds);
             if ($savedImages > 0) {
                 $outcome['note'] .= '; збережено зображень: ' . $savedImages;
+                // Зменшені копії зображень показуються прямо в тексті тікета/коментаря (мітки [[img:N]], див. View::richText).
+                self::appendImageTokens($commentId ?? null, $ticketId, $attachmentIds);
             }
             if ($skippedTiny > 0) {
                 $outcome['note'] .= '; пропущено дрібних вбудованих зображень (логотипи в підписах): ' . $skippedTiny;
@@ -318,10 +321,11 @@ class EmailTicketService
      *
      * @param array<int, array{name: string, mime: string, bytes: string}> $images
      * @param string[] $storedFiles заповнюється іменами записаних файлів (для прибирання при відкаті)
+     * @return int[] id створених вкладень
      */
-    private static function storeImages(int $ticketId, array $images, array &$storedFiles): int
+    private static function storeImages(int $ticketId, array $images, array &$storedFiles): array
     {
-        $saved = 0;
+        $saved = [];
         $room = (int) Config::get('attachments.max_per_entity', 30) - Attachment::countForOwner('ticket', $ticketId);
 
         foreach ($images as $img) {
@@ -337,12 +341,28 @@ class EmailTicketService
             $storedFiles[] = $written['stored_name'];
             AttachmentService::createThumbnail($written['stored_name'], $img['mime']);
             $size = strlen($img['bytes']);
-            Attachment::create('ticket', $ticketId, $img['name'], $written['stored_name'], $img['mime'], $size, null, 'email');
+            $saved[] = Attachment::create('ticket', $ticketId, $img['name'], $written['stored_name'], $img['mime'], $size, null, 'email');
             Audit::log('ticket', $ticketId, 'attachment_from_email', null, ['file' => $img['name'], 'size_kb' => (int) ceil($size / 1024)]);
-            $saved++;
             $room--;
         }
         return $saved;
+    }
+
+    /**
+     * Дописує в кінець тексту (опису нового тікета або коментаря-відповіді) мітки [[img:ID]] для щойно збережених
+     * зображень. Мітки займають кілька байтів, а ліміт тексту (MAX_BODY_BYTES) має запас під примітки.
+     *
+     * @param int[] $attachmentIds
+     */
+    private static function appendImageTokens(?int $commentId, int $ticketId, array $attachmentIds): void
+    {
+        $tokens = "\n\n" . implode(' ', array_map(fn($id) => '[[img:' . $id . ']]', $attachmentIds));
+        $pdo = Database::connection();
+        if ($commentId !== null) {
+            $pdo->prepare('UPDATE ticket_comments SET body = CONCAT(body, :t) WHERE id = :id')->execute(['t' => $tokens, 'id' => $commentId]);
+        } else {
+            $pdo->prepare('UPDATE tickets SET description = CONCAT(COALESCE(description, \'\'), :t) WHERE id = :id')->execute(['t' => $tokens, 'id' => $ticketId]);
+        }
     }
 
     /** Автовідповідь заявнику з посиланням для відстеження — лише при СТВОРЕННІ тікета, не на кожен коментар у гілці. */
@@ -461,7 +481,7 @@ class EmailTicketService
         return null;
     }
 
-    private static function addReplyComment(array $ticket, array $m): void
+    private static function addReplyComment(array $ticket, array $m): int
     {
         $user = self::activeUserByEmail($m['from_email']);
 
@@ -480,8 +500,9 @@ class EmailTicketService
 
         // Завжди 'requester', навіть якщо адреса збігається з оператором: From легко підробити,
         // а коментар оператора зачіпає SLA (first_response_at).
-        Ticket::addComment((int) $ticket['id'], 'requester', $user ? (int) $user['id'] : null, $body);
+        $commentId = Ticket::addComment((int) $ticket['id'], 'requester', $user ? (int) $user['id'] : null, $body);
         Audit::log('ticket', (int) $ticket['id'], 'comment_from_email', null, ['from' => $m['from_email']]);
+        return $commentId;
     }
 
     private static function createTicket(array $m): int

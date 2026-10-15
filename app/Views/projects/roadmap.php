@@ -78,7 +78,7 @@ $statusColors = ['planned' => 'secondary', 'in_progress' => 'primary', 'complete
                                 <li>
                                     <a href="/tasks/<?= (int)$t['id'] ?>" class="<?= $t['is_closed'] ? 'text-decoration-line-through text-muted' : 'text-decoration-none' ?>">
                                         #<?= (int)$t['id'] ?> <?= \App\Core\View::e($t['title']) ?>
-                                    </a>
+                                    </a> <?= \App\Core\View::progress($t) ?>
                                     <span class="text-muted">— <?= \App\Core\View::e($t['status_name']) ?></span>
                                 </li>
                             <?php endforeach; ?>

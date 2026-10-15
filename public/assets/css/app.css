@@ -257,3 +257,21 @@
 .wiki-content img.wiki-image { max-width: 100%; height: auto; border: 1px solid #dee2e6; border-radius: 4px; margin: .25rem 0; }
 .library-thumb { width: 56px; height: 56px; object-fit: cover; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa; }
 .library-thumb-lg { width: 96px; height: 96px; }
+
+/* Пошук у меню: вузьке поле, що розсувається при фокусі */
+[data-search-box] { transition: width .15s; }
+[data-search-box]:focus { width: 220px !important; }
+@media (max-width: 991.98px) { [data-search-box] { width: 100% !important; } }
+
+/* Дашборд: підсвітка задач за близькістю терміну (чим ближче/прострочено — тим червоніше) */
+.table > tbody > tr.task-urgency-1 > * { background-color: #fdecec; }
+.table > tbody > tr.task-urgency-2 > * { background-color: #f9d0d0; }
+.table > tbody > tr.task-urgency-3 > * { background-color: #f3a9a9; }
+.table > tbody > tr.task-urgency-4 > * { background-color: #e57373; color: #4a0000; }
+
+/* Проєкти зі задачами, що спливають: пастельна підсвітка картки/рядка (прострочено → рожевий, ≤1 д → персиковий, ≤3 д → жовтуватий, ≤7 д → блакитний) */
+.card.project-urgency-4, tr.project-urgency-4 > * { background-color: #fadadd !important; }
+.card.project-urgency-3, tr.project-urgency-3 > * { background-color: #fde5d2 !important; }
+.card.project-urgency-2, tr.project-urgency-2 > * { background-color: #fff6cc !important; }
+.card.project-urgency-1, tr.project-urgency-1 > * { background-color: #e1f0fa !important; }
+[class*="project-urgency-"] > .card-footer { background-color: transparent !important; border-top-color: rgba(0,0,0,.08); }

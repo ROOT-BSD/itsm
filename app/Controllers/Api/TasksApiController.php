@@ -151,6 +151,10 @@ class TasksApiController extends ApiController
         if ($milestoneId !== null && !$this->milestoneInProject($milestoneId, (int) $task['project_id'])) {
             $errors['milestone_id'] = 'Етап має належати проєкту цієї задачі.';
         }
+        if ($newStatusId !== null && !isset($errors['status']) && !isset($errors['status_id'])
+            && ($problem = Task::statusChangeProblem((int) $task['id'], $newStatusId)) !== null) {
+            $errors['status'] = $problem . '.';
+        }
         if ($errors) {
             $this->validationFailed($errors);
         }
