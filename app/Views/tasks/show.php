@@ -16,6 +16,14 @@
 <div class="card mb-4">
     <div class="card-body">
         <h3><?= \App\Core\View::e($task['title']) ?> <small class="text-muted">#<?= (int)$task['id'] ?></small></h3>
+        <details class="mb-3">
+            <summary class="text-muted small">✏️ Змінити назву</summary>
+            <form method="post" action="/tasks/<?= (int)$task['id'] ?>/title" class="d-flex gap-2 mt-2">
+                <?= \App\Core\Csrf::field() ?>
+                <input type="text" name="title" class="form-control" maxlength="255" required value="<?= \App\Core\View::e($task['title']) ?>">
+                <button class="btn btn-sm btn-outline-primary text-nowrap" type="submit">Зберегти назву</button>
+            </form>
+        </details>
 
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/description" class="mb-3">
             <?= \App\Core\Csrf::field() ?>
@@ -199,7 +207,7 @@ $stPct = $stTotal > 0 ? (int) round($stDone / $stTotal * 100) : 0;
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small mb-1">Виконавець</label>
-                    <select name="assignee_id" class="form-select form-select-sm">
+                    <select name="assignee_id" class="form-select form-select-sm user-select">
                         <option value="">— не призначено —</option>
                         <?php foreach ($users as $u): ?>
                             <option value="<?= (int)$u['id'] ?>"><?= \App\Core\View::e($u['full_name']) ?></option>

@@ -274,6 +274,45 @@ class AttachmentService
     }
 
     /**
+     * Перевірка вмісту документа (PDF або Office) з листа без запису на диск. Розширення береться з назви й має
+     * відповідати вмісту; для Office перевіряються структура й відсутність макросів (LibraryService::contentProblem).
+     *
+     * @return array{ok: true, name: string, mime: string, size: int}|array{ok: false, error: string}
+     */
+    public static function inspectDocumentBytes(string $name, string $bytes): array
+    {
+        $size = strlen($bytes);
+        if ($size === 0) {
+            return ['ok' => false, 'error' => 'файл порожній'];
+        }
+        $max = (int) Config::get('attachments.max_bytes', 10485760);
+        if ($size > $max) {
+            return ['ok' => false, 'error' => 'файл завеликий (' . UploadLimits::human($size) . '), максимум — ' . UploadLimits::human($max)];
+        }
+        $clean = self::sanitizeName($name);
+        $ext = strtolower(pathinfo($clean, PATHINFO_EXTENSION));
+        $isOffice = in_array($ext, self::OFFICE_EXTENSIONS, true);
+        if ($ext !== 'pdf' && !$isOffice) {
+            return ['ok' => false, 'error' => 'непідтримуваний тип файлу'];
+        }
+        if ($isOffice && !self::officeReady()) {
+            return ['ok' => false, 'error' => 'документи Office поки не підтримуються (не застосовано міграцію 037)'];
+        }
+        $tmp = tempnam(sys_get_temp_dir(), 'eml');
+        if ($tmp === false || @file_put_contents($tmp, $bytes) === false) {
+            return ['ok' => false, 'error' => 'не вдалося перевірити файл'];
+        }
+        try {
+            $problem = LibraryService::contentProblem($tmp, $ext);
+        } finally {
+            @unlink($tmp);
+        }
+        return $problem === null
+            ? ['ok' => true, 'name' => $clean, 'mime' => LibraryService::TYPES[$ext], 'size' => $size]
+            : ['ok' => false, 'error' => $problem];
+    }
+
+    /**
      * Зберігає вже ПЕРЕВІРЕНИЙ inspectBytes() вміст у сховище.
      *
      * @return array{ok: true, stored_name: string}|array{ok: false, error: string}

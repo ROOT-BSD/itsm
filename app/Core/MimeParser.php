@@ -339,10 +339,14 @@ class MimeParser
                 'disposition' => $disposition,
                 'content_id' => trim($headers['content-id'][0] ?? '', " <>\t"),
             ];
-            if (self::isImageCandidate($type, $filename)) {
+            $isDoc = !self::isImageCandidate($type, $filename) && self::isDocumentCandidate($type, $filename);
+            if ($isDoc || self::isImageCandidate($type, $filename)) {
                 $data = self::decodeTransfer($body, $encoding);
                 if ($data !== '' && strlen($data) <= self::MAX_IMAGE_BYTES) {
                     $entry['data'] = $data;
+                    if ($isDoc) {
+                        $entry['kind'] = 'document';
+                    }
                 }
             }
             $attachments[] = $entry;
@@ -372,6 +376,19 @@ class MimeParser
         }
         return $type === 'application/octet-stream'
             && in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['png', 'jpg', 'jpeg', 'gif', 'webp'], true);
+    }
+
+    /**
+     * Чи варто декодувати частину як можливий документ (PDF або Office): за розширенням у назві (клієнти шлють
+     * їх і як application/octet-stream, і з довільним типом) або за типом application/pdf. Остаточне рішення —
+     * за вмістом (AttachmentService::inspectDocumentBytes).
+     */
+    private static function isDocumentCandidate(string $type, string $filename): bool
+    {
+        if ($type === 'application/pdf') {
+            return true;
+        }
+        return in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['pdf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'], true);
     }
 
     /** @return string[] тіла (разом із заголовками) частин multipart */

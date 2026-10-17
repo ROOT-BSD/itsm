@@ -14,6 +14,8 @@ use App\Services\BackupService;
  */
 class BackupController
 {
+    public const CONFIRM_WORD = 'ВІДНОВИТИ';
+
     public function __construct()
     {
         Auth::requireLogin();
@@ -36,7 +38,13 @@ class BackupController
             'free' => $free === false ? null : $free,
             'lastRun' => Setting::get('backup_last_run'),
             'lastSummary' => Setting::get('backup_last_summary'),
+            'lastCheck' => Setting::get('backup_last_check'),
+            'encryptionOn' => BackupService::password() !== '',
+            'remoteDir' => (string) \App\Core\Config::get('backup.remote_dir', ''),
+            'remoteScp' => (string) \App\Core\Config::get('backup.remote_scp', ''),
             'root' => dirname(__DIR__, 2),
+            'uploadMax' => \App\Core\UploadLimits::human(\App\Core\UploadLimits::effectiveFileMax(PHP_INT_MAX)),
+            'restoreWord' => self::CONFIRM_WORD,
             'success' => $_GET['success'] ?? null,
             'error' => $_GET['error'] ?? null,
         ]);
@@ -51,11 +59,13 @@ class BackupController
             Setting::set('backup_last_summary', mb_substr('Помилка: ' . $e->getMessage(), 0, 250));
             $this->redirect('error', 'Копію не створено: ' . $e->getMessage());
         }
-        $summary = sprintf('%s, %s; таблиць: %d, рядків: %d, файлів: %d%s; %d с', $r['file'], BackupService::human((float) $r['size']), $r['tables'], $r['rows'], $r['files'], $r['skipped'] ? ", пропущено: {$r['skipped']}" : '', $r['seconds']);
+        $post = BackupService::afterCreate($r);
+        $summary = BackupService::summary($r, $post);
         Setting::set('backup_last_run', date('Y-m-d H:i:s'));
         Setting::set('backup_last_summary', mb_substr($summary, 0, 250));
         Audit::log('backup', 0, 'created', (int) Auth::id(), ['file' => $r['file'], 'size_kb' => (int) round($r['size'] / 1024)]);
-        $this->redirect('success', 'Копію створено: ' . $summary . ($removed ? '. Видалено старі: ' . count($removed) : '') . ($r['skipped'] ? '. Деякі файли пропущено (нечитні або задовгі імена).' : ''));
+        $bad = !$post['verify']['ok'] || array_filter($post['transfer'], fn($t) => !$t['ok']);
+        $this->redirect($bad ? 'error' : 'success', 'Копію створено: ' . $summary . ($removed ? '. Видалено старі: ' . count($removed) : '') . ($r['skipped'] ? '. Деякі файли пропущено (нечитні або задовгі імена).' : ''));
     }
 
     public function download(array $params): void
@@ -72,7 +82,7 @@ class BackupController
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
-        header('Content-Type: application/gzip');
+        header('Content-Type: ' . (BackupService::isEncrypted($name) ? 'application/octet-stream' : 'application/gzip'));
         header('Content-Disposition: attachment; filename="' . $name . '"');
         header('Content-Length: ' . filesize($path));
         header('X-Content-Type-Options: nosniff');
@@ -85,6 +95,16 @@ class BackupController
         exit;
     }
 
+    /** «Перевірити копію»: цілісність архіву без розпакування на диск (зашифровані — паролем з .env). */
+    public function verify(array $params): void
+    {
+        $name = BackupService::nameForStamp((string) ($params['stamp'] ?? '')) ?? '';
+        @set_time_limit(0);
+        $r = BackupService::verify($name);
+        Audit::log('backup', 0, 'verified', (int) Auth::id(), ['file' => $name, 'ok' => $r['ok'] ? 'так' : 'ні']);
+        $this->redirect($r['ok'] ? 'success' : 'error', $name . ': ' . $r['message']);
+    }
+
     public function delete(array $params): void
     {
         $name = BackupService::nameForStamp((string) ($params['stamp'] ?? '')) ?? '';
@@ -93,6 +113,81 @@ class BackupController
         }
         Audit::log('backup', 0, 'deleted', (int) Auth::id(), ['file' => $name]);
         $this->redirect('success', 'Копію ' . $name . ' видалено.');
+    }
+
+    /**
+     * «Відновити з копії»: джерело — наявна копія зі сховища (source=existing, stamp) або файл з ПК (source=upload).
+     * ПЕРЕЗАПИСУЄ базу даних і файли. Потрібно ввести слово-підтвердження; перед відновленням створюється страхувальна копія.
+     */
+    public function restore(): void
+    {
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+        if (trim((string) ($_POST['confirm'] ?? '')) !== self::CONFIRM_WORD) {
+            $this->redirect('error', 'Відновлення не виконано: введіть слово «' . self::CONFIRM_WORD . '» для підтвердження.');
+        }
+        $source = (string) ($_POST['source'] ?? '');
+        $tmp = null;
+        $label = '';
+        if ($source === 'existing') {
+            $name = BackupService::nameForStamp((string) ($_POST['stamp'] ?? '')) ?? '';
+            $file = BackupService::path($name);
+            if ($file === null) {
+                $this->redirect('error', 'Оберіть копію зі списку.');
+            }
+            $label = $name;
+        } elseif ($source === 'upload') {
+            $f = $_FILES['backup_file'] ?? null;
+            if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $code = $f['error'] ?? UPLOAD_ERR_NO_FILE;
+                $this->redirect('error', match ($code) {
+                    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Файл завеликий для завантаження (ліміт сервера: ' . \App\Core\UploadLimits::human(\App\Core\UploadLimits::effectiveFileMax(PHP_INT_MAX)) . '). Покладіть його в каталог копій на сервері або скористайтесь bin/restore.php.',
+                    UPLOAD_ERR_NO_FILE => 'Оберіть файл копії на комп’ютері.',
+                    default => 'Файл не завантажився (код ' . $code . ').',
+                });
+            }
+            $orig = basename((string) ($f['name'] ?? ''));
+            if (!preg_match('/\.tar\.gz(\.enc)?$/i', $orig)) {
+                $this->redirect('error', 'Потрібен файл копії: .tar.gz або .tar.gz.enc.');
+            }
+            $dir = BackupService::dir();
+            $tmp = (is_dir($dir) && is_writable($dir) ? $dir : sys_get_temp_dir()) . '/.upload-' . bin2hex(random_bytes(6));
+            if (!move_uploaded_file($f['tmp_name'], $tmp)) {
+                $this->redirect('error', 'Не вдалося прийняти завантажений файл.');
+            }
+            $file = $tmp;
+            $label = $orig . ' (з комп’ютера)';
+        } else {
+            $this->redirect('error', 'Оберіть джерело копії.');
+        }
+
+        $safety = !empty($_POST['safety']);
+        $uid = (int) Auth::id();
+        Audit::log('backup', 0, 'restore_started', $uid, ['source' => $label, 'safety' => $safety ? 'так' : 'ні']);
+        $lines = [];
+        try {
+            $r = BackupService::restore($file, ['apply' => true, 'safety' => $safety, 'password' => (string) ($_POST['password'] ?? '')], static function (string $m) use (&$lines): void { $lines[] = $m; });
+        } catch (\RuntimeException $e) {
+            $this->finishRestore($tmp);
+            $this->redirect('error', 'Відновлення не виконано: ' . $e->getMessage());
+        } finally {
+            if ($tmp !== null) {
+                @unlink($tmp);
+            }
+        }
+        // База щойно замінена: користувача з поточної сесії в ній може не бути — журнал не повинен ламати відповідь.
+        try {
+            Audit::log('backup', 0, 'restored', $uid, ['source' => $label, 'safety_copy' => $r['safety'] ?? '—']);
+        } catch (\Throwable) {
+        }
+        $this->redirect('success', 'Відновлено з ' . $label . '. ' . ($r['safety'] ? 'Страхувальна копія попереднього стану: ' . $r['safety'] . '. ' : '') . 'Виконайте sudo bash update.sh (права, схема) і перевірте «Стан системи». Якщо вас розлогінило — увійдіть знову.');
+    }
+
+    private function finishRestore(?string $tmp): void
+    {
+        if ($tmp !== null) {
+            @unlink($tmp);
+        }
     }
 
     public function settings(): void

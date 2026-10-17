@@ -38,7 +38,7 @@ $shortenName = function (string $text): string {
         </div>
         <div class="col-md-3">
             <label class="form-label small mb-1">Хто виконав</label>
-            <select name="user_id" class="form-select form-select-sm">
+            <select name="user_id" class="form-select form-select-sm user-select">
                 <option value="">— усі —</option>
                 <?php foreach ($users as $u): ?>
                     <option value="<?= (int)$u['id'] ?>" <?= (int)($filters['user_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
@@ -93,7 +93,13 @@ $entityLinks = ['task' => '/tasks/', 'project' => '/projects/', 'ticket' => '/ti
                         #<?= $id ?><?= $shortName !== null ? ' ' . \App\Core\View::e($shortName) : '' ?>
                     <?php endif; ?>
                 </td>
-                <td><?= \App\Core\View::e($entry['action']) ?></td>
+                <td><?php
+                    $actionText = (string) $entry['action'];
+                    if ($type === 'ticket' && str_starts_with($actionText, 'status_changed_to_')) {
+                        $actionText = 'Статус змінено на «' . \App\Models\Ticket::statusLabel(substr($actionText, 18)) . '»';
+                    }
+                    echo \App\Core\View::e($actionText);
+                ?></td>
                 <td><?= \App\Core\View::e($entry['user_name'] ?? '— система —') ?></td>
                 <td class="small text-muted">
                     <?php if (!empty($entry['changes'])): ?>

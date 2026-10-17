@@ -25,7 +25,8 @@ class Template
     /** @return array<int, array<string, mixed>> */
     public static function all(?string $kind = null): array
     {
-        $sql = 'SELECT t.*, u.full_name AS author_name, (SELECT COUNT(*) FROM template_items i WHERE i.template_id = t.id) AS items_count
+        $sql = 'SELECT t.*, u.full_name AS author_name, (SELECT COUNT(*) FROM template_items i WHERE i.template_id = t.id) AS items_count,
+                (SELECT i2.title FROM template_items i2 WHERE i2.template_id = t.id ORDER BY i2.position, i2.id LIMIT 1) AS first_title
                 FROM templates t LEFT JOIN users u ON u.id = t.created_by';
         $params = [];
         if ($kind !== null) {

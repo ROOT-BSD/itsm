@@ -159,6 +159,11 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                         <label class="form-check-label" for="notify_reminders_enabled">Нагадування про термін задачі — за 2 дні, за 1 день, у день настання</label>
                         <div class="form-text">Потребує окремого запису в cron (див. нижче) — самої галочки недостатньо.</div>
                     </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="notify_status_enabled" id="notify_status_enabled" value="1" <?= $notifyStatusEnabled ? 'checked' : '' ?> <?= $smtpConfigured ? '' : 'disabled' ?>>
+                        <label class="form-check-label" for="notify_status_enabled">Сповіщати адміністраторів системи про проблеми зі сторінки «Стан системи»</label>
+                        <div class="form-text">Лист — коли з'являються нові проблеми або всі усунуто (нагадування — раз на 7 днів). Потребує окремого запису в cron (див. нижче).</div>
+                    </div>
                     <?php if (!$smtpConfigured): ?>
                         <div class="form-text text-warning mb-3">Усі сповіщення вище вимкнені, доки не налаштовано надсилання пошти (SMTP) ліворуч.</div>
                     <?php endif; ?>
@@ -194,6 +199,10 @@ MAIL_SMTP_FROM_NAME=Служба підтримки</pre>
                 <?php if ($notifyRemindersEnabled): ?>
                 <p class="small mb-1 mt-3">Для нагадувань про термін задачі (раз на день зранку):</p>
 <pre class="bg-light border rounded p-2 small mb-0">0 8 * * *  www-data  php <?= \App\Core\View::e($remindersScriptPath) ?> >> /var/log/itsm-reminders.log 2>&1</pre>
+                <?php endif; ?>
+                <?php if ($notifyStatusEnabled): ?>
+                <p class="small mb-1 mt-3">Для сповіщень про стан системи (щогодини):</p>
+<pre class="bg-light border rounded p-2 small mb-0">15 * * * *  www-data  php <?= \App\Core\View::e($statusScriptPath) ?> >> /var/log/itsm-status.log 2>&1</pre>
                 <?php endif; ?>
             </div>
         </div>

@@ -59,6 +59,8 @@ class EmailController
             'notifyForumEnabled' => Setting::get('email_notify_forum_enabled', '0') === '1',
             'notifyRemindersEnabled' => Setting::get('email_notify_reminders_enabled', '0') === '1',
             'remindersScriptPath' => dirname(__DIR__, 2) . '/bin/send-reminders.php',
+            'notifyStatusEnabled' => Setting::get('email_notify_status_enabled', '0') === '1',
+            'statusScriptPath' => dirname(__DIR__, 2) . '/bin/check-status.php',
             'queueId' => (int) Setting::get('email_ticket_queue_id', '0'),
             'queues' => Ticket::queues(),
             'lastRunAt' => Setting::get('email_last_run_at'),
@@ -101,6 +103,7 @@ class EmailController
         $notifyTasks = !empty($_POST['notify_tasks_enabled']);
         $notifyForum = !empty($_POST['notify_forum_enabled']);
         $notifyReminders = !empty($_POST['notify_reminders_enabled']);
+        $notifyStatus = !empty($_POST['notify_status_enabled']);
         $queueId = (int) ($_POST['queue_id'] ?? 0);
 
         if ($queueId !== 0 && !in_array($queueId, array_map(fn($q) => (int) $q['id'], Ticket::queues()), true)) {
@@ -109,7 +112,7 @@ class EmailController
         // Не даємо ввімкнути автовідповідь/сповіщення без налаштованого SMTP — інакше кожна дія
         // (коментар, зміна статусу тощо) мовчки «намагалась» би надіслати лист і щоразу писала
         // б помилку в журнал аудиту.
-        $anyNotification = $autoreplyEnabled || $notifyTickets || $notifyProjects || $notifyTasks || $notifyForum || $notifyReminders;
+        $anyNotification = $autoreplyEnabled || $notifyTickets || $notifyProjects || $notifyTasks || $notifyForum || $notifyReminders || $notifyStatus;
         if ($anyNotification && !MailerService::isConfigured()) {
             $this->redirect('error', 'Спершу налаштуйте надсилання пошти (SMTP) — заповніть MAIL_SMTP_* у .env.');
         }
@@ -121,6 +124,7 @@ class EmailController
         Setting::set('email_notify_tasks_enabled', $notifyTasks ? '1' : '0');
         Setting::set('email_notify_forum_enabled', $notifyForum ? '1' : '0');
         Setting::set('email_notify_reminders_enabled', $notifyReminders ? '1' : '0');
+        Setting::set('email_notify_status_enabled', $notifyStatus ? '1' : '0');
         Setting::set('email_ticket_queue_id', (string) $queueId);
         Audit::log('app_settings', 0, 'email_settings_changed', Auth::id(), [
             'email_ticket_enabled' => $enabled ? 'так' : 'ні',
@@ -130,6 +134,7 @@ class EmailController
             'email_notify_tasks_enabled' => $notifyTasks ? 'так' : 'ні',
             'email_notify_forum_enabled' => $notifyForum ? 'так' : 'ні',
             'email_notify_reminders_enabled' => $notifyReminders ? 'так' : 'ні',
+            'email_notify_status_enabled' => $notifyStatus ? 'так' : 'ні',
             'email_ticket_queue_id' => (string) $queueId,
         ]);
 

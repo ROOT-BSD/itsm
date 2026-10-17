@@ -195,6 +195,24 @@ class TaskController
         exit;
     }
 
+    /** Зміна назви задачі прямо на її сторінці. */
+    public function updateTitle(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+
+        $title = trim((string) ($_POST['title'] ?? ''));
+        if ($title === '' || mb_strlen($title) > 255) {
+            header('Location: /tasks/' . $params['id'] . '?error=' . urlencode('Назва задачі — від 1 до 255 символів'));
+            exit;
+        }
+        if ($title !== $task['title']) {
+            Task::updateTitle((int) $params['id'], $title, (string) $task['title'], Auth::id());
+        }
+        header('Location: /tasks/' . $params['id'] . '?success=' . urlencode('Назву змінено'));
+        exit;
+    }
+
     public function updateDescription(array $params): void
     {
         Auth::requireLogin();

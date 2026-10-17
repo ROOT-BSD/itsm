@@ -40,7 +40,7 @@ class ExportController
             $sla = Ticket::slaStatus($t, $policies);
             $rows[] = [
                 (int) $t['id'], $t['subject'], $t['queue_name'], $t['project_name'] ?? '',
-                $t['requester_name'], $t['operator_name'] ?? '', $t['status'],
+                $t['requester_name'], $t['operator_name'] ?? '', \App\Models\Ticket::statusLabel((string) $t['status']),
                 !$sla['has_policy'] ? '' : (($sla['response_overdue'] || $sla['resolution_overdue']) ? 'Прострочено' : 'У нормі'),
                 $t['created_at'], $t['first_response_at'] ?? '', $t['resolved_at'] ?? '',
                 $t['csat_score'] !== null ? (int) $t['csat_score'] : '',

@@ -136,6 +136,13 @@ return (function (): array {
         // Резервні копії (App\Services\BackupService): архіви tar.gz у storage/backups — поза веб-коренем.
         'backup' => [
             'dir' => $env('BACKUP_DIR', __DIR__ . '/../storage/backups'),
+            // Шифрування (AES-256-CBC, PBKDF2) паролем з .env: нові копії зберігаються як .tar.gz.enc. Порожньо — без шифрування.
+            'password' => $env('BACKUP_PASSWORD'),
+            // Перенесення готової копії: у каталог (змонтований мережевий диск, NFS/SMB/sshfs) і/або через scp (SFTP-сервер).
+            'remote_dir' => $env('BACKUP_REMOTE_DIR'),
+            'remote_scp' => $env('BACKUP_REMOTE_SCP'),   // користувач@хост:/каталог/
+            'scp_key' => $env('BACKUP_SCP_KEY'),         // шлях до приватного ключа (без пароля), доступного користувачу веб-сервера
+            'scp_port' => $env('BACKUP_SCP_PORT'),
         ],
         // Вкладення до тікетів і задач (App\Services\AttachmentService). Файли зберігаються
         // у storage/uploads — поза веб-коренем (public/), тож віддаються лише через контролер

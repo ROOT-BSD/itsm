@@ -174,16 +174,20 @@ $eMember = static fn($v) => \App\Core\View::e($v);
     <summary class="text-muted">Додати задачі за шаблоном</summary>
     <form method="post" action="/projects/<?= (int)$project['id'] ?>/apply-template" class="row g-2 align-items-end mt-1">
         <?= \App\Core\Csrf::field() ?>
-        <div class="col-md-5">
+        <div class="col-md-4">
             <label class="form-label small mb-1">Шаблон</label>
-            <select name="template_id" class="form-select form-select-sm" required>
+            <select name="template_id" id="apply-template-select" class="form-select form-select-sm" required>
                 <option value="">— оберіть —</option>
                 <?php foreach ($applicable as $t): ?>
-                    <option value="<?= (int)$t['id'] ?>"><?= $t['kind'] === 'project' ? 'Проєкт' : 'Задача' ?>: <?= \App\Core\View::e($t['name']) ?></option>
+                    <option value="<?= (int)$t['id'] ?>" data-kind="<?= \App\Core\View::e($t['kind']) ?>" data-title="<?= \App\Core\View::e($t['kind'] === 'task' ? ($t['first_title'] ?? $t['name']) : '') ?>"><?= $t['kind'] === 'project' ? 'Проєкт' : 'Задача' ?>: <?= \App\Core\View::e($t['name']) ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-3 d-none" id="apply-template-title-box">
+            <label class="form-label small mb-1">Назва задачі</label>
+            <input type="text" name="task_title" id="apply-template-title" class="form-control form-control-sm" maxlength="255" placeholder="за шаблоном">
+        </div>
+        <div class="col-md-2">
             <label class="form-label small mb-1">Дата старту</label>
             <input type="date" name="start_date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>">
         </div>

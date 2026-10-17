@@ -113,8 +113,7 @@ class NotificationService
                 return;
             }
 
-            $labels = ['new' => 'Новий', 'in_progress' => 'В роботі', 'waiting_customer' => 'Очікує відповіді заявника', 'resolved' => 'Вирішено', 'closed' => 'Закрито'];
-            $statusLabel = $labels[$newStatus] ?? $newStatus;
+            $statusLabel = \App\Models\Ticket::statusLabel((string) $newStatus);
             $subject = "Змінено статус звернення «{$ticket['subject']}» [#{$ticketId}]";
             $body = "Новий статус звернення: {$statusLabel}.";
 
@@ -434,5 +433,81 @@ class NotificationService
             }
         }
         return $sent;
+    }
+
+    // ---------- Стан системи ----------
+
+    /** Скільки днів не повторювати нагадування про ті самі, не усунуті проблеми. */
+    private const STATUS_REPEAT_DAYS = 7;
+
+    /** Рядки «Стану системи», що залежать від запиту/PHP-FPM і в консольному запуску недостовірні. */
+    private const STATUS_SKIP_LABELS = ['Запит надійшов через HTTPS', 'Opcache'];
+
+    /**
+     * Лист адміністраторам про проблеми зі сторінки «Стан системи» (рівні warn/fail). Викликається з cron
+     * (bin/check-status.php). Щоб не засипати поштою, лист іде лише коли НАБІР проблем змінився; якщо проблеми
+     * лишаються, нагадування — раз на STATUS_REPEAT_DAYS днів; коли все усунуто — один лист «проблем немає».
+     *
+     * @return array{sent: int, problems: int, skipped_reason: ?string}
+     */
+    public static function sendStatusAlerts(): array
+    {
+        if (Setting::get('email_notify_status_enabled', '0') !== '1' || !MailerService::isConfigured()) {
+            return ['sent' => 0, 'problems' => 0, 'skipped_reason' => 'Сповіщення про стан системи вимкнені або SMTP не налаштовано'];
+        }
+
+        $problems = [];
+        foreach (SystemStatus::collect(false) as $section) {
+            foreach ($section['rows'] as $r) {
+                if (in_array($r['level'], ['warn', 'fail'], true) && !in_array($r['label'], self::STATUS_SKIP_LABELS, true)) {
+                    $problems[] = ['section' => $section['title']] + $r;
+                }
+            }
+        }
+
+        $keys = array_map(fn($p) => $p['section'] . '|' . $p['label'] . '|' . $p['level'], $problems);
+        sort($keys);
+        $hash = $keys ? sha1(implode("\n", $keys)) : '';
+        $prevHash = (string) Setting::get('status_alert_hash', '');
+        $sentAt = (string) Setting::get('status_alert_sent_at', '');
+        $stale = $sentAt === '' || strtotime($sentAt) < time() - self::STATUS_REPEAT_DAYS * 86400;
+
+        if ($hash === $prevHash && !($hash !== '' && $stale)) {
+            return ['sent' => 0, 'problems' => count($problems), 'skipped_reason' => null]; // нічого нового
+        }
+
+        $url = Setting::appUrl() . '/admin/status';
+        if ($problems) {
+            $worst = in_array('fail', array_column($problems, 'level'), true) ? 'КРИТИЧНО' : 'Попередження';
+            $subject = "ITSM: проблеми зі станом системи ({$worst}, " . count($problems) . ')';
+            $lines = [];
+            foreach ($problems as $p) {
+                $lines[] = ($p['level'] === 'fail' ? '[ПОМИЛКА] ' : '[УВАГА] ') . $p['section'] . ' — ' . $p['label'] . ': ' . $p['value']
+                    . (!empty($p['hint']) ? "\n    Що робити: " . $p['hint'] : '');
+            }
+            $body = "Перевірка «Стан системи» виявила проблеми:\n\n" . implode("\n\n", $lines)
+                . "\n\nДетально: {$url}\n\nПеревірка виконується з консолі (PHP CLI): версія PHP і розширення можуть відрізнятися від PHP-FPM веб-сервера. Це автоматичний лист.";
+        } else {
+            $subject = 'ITSM: проблем зі станом системи більше немає';
+            $body = "Усі проблеми, про які повідомлялось раніше, усунено.\n\nПеревірити: {$url}\n\nЦе автоматичний лист.";
+        }
+
+        $sent = 0;
+        $admins = \App\Core\Database::connection()->query(
+            "SELECT u.full_name, u.email FROM users u JOIN roles r ON r.id = u.role_id WHERE r.code = 'admin' AND u.is_active = 1 AND u.email <> ''"
+        )->fetchAll();
+        foreach ($admins as $a) {
+            $result = MailerService::send($a['email'], $a['full_name'], $subject, $body);
+            if ($result['ok']) {
+                $sent++;
+            } else {
+                Audit::log('app_settings', 0, 'status_alert_failed', null, ['to' => $a['email'], 'error' => mb_substr($result['message'], 0, 200)]);
+            }
+        }
+        if ($sent > 0) { // не запам'ятовуємо набір, якщо жоден лист не пішов, — спробуємо знову наступного запуску
+            Setting::set('status_alert_hash', $hash);
+            Setting::set('status_alert_sent_at', date('Y-m-d H:i:s'));
+        }
+        return ['sent' => $sent, 'problems' => count($problems), 'skipped_reason' => null];
     }
 }

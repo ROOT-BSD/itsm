@@ -18,7 +18,8 @@ use App\Models\Setting;
  */
 class BackupService
 {
-    public const NAME_PATTERN = '/^backup-\d{8}-\d{6}\.tar\.gz$/';
+    public const NAME_PATTERN = '/^backup-\d{8}-\d{6}\.tar\.gz(\.enc)?$/';
+    public const OPENSSL_ARGS = ['-aes-256-cbc', '-pbkdf2', '-iter', '200000', '-md', 'sha256', '-salt'];
     public const DEFAULT_KEEP = 7;
 
     public static function dir(): string
@@ -34,7 +35,25 @@ class BackupService
     /** Мітка часу копії («20261014-081253») — з неї будуються адреси без крапок: backup-<мітка>.tar.gz. */
     public static function nameForStamp(string $stamp): ?string
     {
-        return preg_match('/^\d{8}-\d{6}$/', $stamp) ? 'backup-' . $stamp . '.tar.gz' : null;
+        if (!preg_match('/^\d{8}-\d{6}$/', $stamp)) {
+            return null;
+        }
+        foreach (['.tar.gz.enc', '.tar.gz'] as $ext) {
+            if (is_file(self::dir() . '/backup-' . $stamp . $ext)) {
+                return 'backup-' . $stamp . $ext;
+            }
+        }
+        return 'backup-' . $stamp . '.tar.gz';
+    }
+
+    public static function isEncrypted(string $name): bool
+    {
+        return str_ends_with($name, '.enc');
+    }
+
+    public static function password(): string
+    {
+        return (string) Config::get('backup.password', '');
     }
 
     public static function stampOf(string $name): string
@@ -57,17 +76,17 @@ class BackupService
         return is_file($path) ? $path : null;
     }
 
-    /** @return array<int, array{name: string, size: int, mtime: int}> нові першими */
+    /** @return array<int, array{name: string, size: int, mtime: int, encrypted: bool}> нові першими */
     public static function all(): array
     {
         $out = [];
-        foreach (glob(self::dir() . '/backup-*.tar.gz') ?: [] as $f) {
+        foreach (glob(self::dir() . '/backup-*.tar.gz*') ?: [] as $f) {
             $name = basename($f);
             if (self::validName($name) && is_file($f)) {
-                $out[] = ['name' => $name, 'size' => (int) filesize($f), 'mtime' => (int) filemtime($f)];
+                $out[] = ['name' => $name, 'size' => (int) filesize($f), 'mtime' => (int) filemtime($f), 'encrypted' => self::isEncrypted($name)];
             }
         }
-        usort($out, fn($a, $b) => strcmp($b['name'], $a['name']));
+        usort($out, fn($a, $b) => strcmp(self::stampOf($b['name']), self::stampOf($a['name'])));
         return $out;
     }
 
@@ -93,7 +112,7 @@ class BackupService
     /**
      * Створює копію. Виняток RuntimeException з читабельним повідомленням — якщо не вийшло (диск, права, БД).
      *
-     * @return array{file: string, size: int, seconds: int, tables: int, rows: int, files: int, skipped: int}
+     * @return array{file: string, size: int, seconds: int, tables: int, rows: int, files: int, skipped: int, encrypted: bool}
      */
     public static function create(): array
     {
@@ -127,7 +146,8 @@ class BackupService
                 }
             }
             $free = @disk_free_space($dir);
-            if ($free !== false && $free < $bytes * 1.02 + 10485760) {
+            $encrypt = self::password() !== '';
+            if ($free !== false && $free < $bytes * ($encrypt ? 2.05 : 1.02) + 10485760) {
                 throw new \RuntimeException('Замало вільного місця для копії: потрібно орієнтовно до ' . self::human($bytes) . ', вільно ' . self::human((float) $free) . '.');
             }
 
@@ -161,10 +181,22 @@ class BackupService
             if (!@rename($tmp, $dir . '/' . $name)) {
                 throw new \RuntimeException('Не вдалося зберегти готовий архів.');
             }
+            if ($encrypt) {
+                $enc = $dir . '/' . $name . '.enc';
+                $err = self::openssl(['-in', $dir . '/' . $name, '-out', $enc], self::password(), false);
+                if ($err !== null || !is_file($enc) || filesize($enc) < 16) {
+                    @unlink($enc);
+                    @unlink($dir . '/' . $name);
+                    throw new \RuntimeException('Не вдалося зашифрувати копію: ' . ($err ?? 'порожній результат') . '. Копію не збережено.');
+                }
+                @unlink($dir . '/' . $name); // незашифрований архів не лишаємо
+                $name .= '.enc';
+            }
             @chmod($dir . '/' . $name, 0660);
             return [
                 'file' => $name, 'size' => (int) filesize($dir . '/' . $name), 'seconds' => time() - $started,
                 'tables' => $tables, 'rows' => $rows, 'files' => count($files) - $skipped, 'skipped' => $skipped,
+                'encrypted' => $encrypt,
             ];
         } finally {
             @unlink($sql);
@@ -172,6 +204,402 @@ class BackupService
             flock($lock, LOCK_UN);
             fclose($lock);
         }
+    }
+
+
+    // ---------- шифрування ----------
+
+    /**
+     * openssl enc (-d — розшифрувати). Пароль передається змінною середовища, а не аргументом (не видно в `ps`).
+     * Повертає текст помилки або null.
+     */
+    private static function openssl(array $io, string $password, bool $decrypt): ?string
+    {
+        $cmd = array_merge(['openssl', 'enc'], $decrypt ? ['-d'] : [], self::OPENSSL_ARGS, ['-pass', 'env:ITSM_BACKUP_PASS'], $io);
+        $p = @proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['ITSM_BACKUP_PASS' => $password, 'PATH' => (string) getenv('PATH')]);
+        if (!is_resource($p)) {
+            return 'не вдалося запустити openssl (встановіть пакет openssl)';
+        }
+        stream_get_contents($pipes[1]);
+        $stderr = trim((string) stream_get_contents($pipes[2]));
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $code = proc_close($p);
+        return $code === 0 ? null : ($decrypt && str_contains($stderr, 'bad decrypt') ? 'невірний пароль або пошкоджений файл' : mb_substr($stderr !== '' ? $stderr : 'код ' . $code, 0, 200));
+    }
+
+    /** Розшифровує .enc у $dest. Повертає текст помилки або null. */
+    public static function decryptTo(string $src, string $dest, string $password): ?string
+    {
+        if ($password === '') {
+            return 'потрібен пароль шифрування (BACKUP_PASSWORD у .env)';
+        }
+        $err = self::openssl(['-in', $src, '-out', $dest], $password, true);
+        if ($err !== null) {
+            @unlink($dest);
+        }
+        return $err;
+    }
+
+    // ---------- відновлення ----------
+
+    /** Виконує зовнішню команду; повертає [код, stderr]. */
+    private static function run(array $cmd, ?array $env = null, $stdin = null): array
+    {
+        $spec = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        if ($stdin !== null) {
+            $spec[0] = $stdin;
+        }
+        $p = @proc_open($cmd, $spec, $pipes, null, $env);
+        if (!is_resource($p)) {
+            return [127, 'не вдалося запустити ' . $cmd[0]];
+        }
+        stream_get_contents($pipes[1]);
+        $err = trim((string) stream_get_contents($pipes[2]));
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        return [proc_close($p), $err];
+    }
+
+    /** Файл зашифрований openssl enc (за сигнатурою «Salted__», а не за назвою)? */
+    public static function looksEncrypted(string $file): bool
+    {
+        $fh = @fopen($file, 'rb');
+        $head = $fh ? (string) fread($fh, 8) : '';
+        if ($fh) {
+            fclose($fh);
+        }
+        return $head === 'Salted__';
+    }
+
+    /**
+     * Розшифровує (за потреби), перевіряє, розпаковує й — з apply — ВІДНОВЛЮЄ БД та storage/uploads, storage/wiki цього застосунку.
+     * Спільна логіка bin/restore.php і веб-кнопки «Відновити». Перед відновленням (safety) створює страхувальну копію поточного стану.
+     *
+     * @param array{extract?: ?string, apply?: bool, safety?: bool, password?: ?string} $o
+     * @return array{extract: string, safety: ?string, message: string}
+     * @throws \RuntimeException з українським поясненням
+     */
+    public static function restore(string $file, array $o = [], ?callable $log = null): array
+    {
+        $log ??= static function (string $m): void {};
+        $apply = !empty($o['apply']);
+        $safety = $o['safety'] ?? true;
+        if (!is_file($file)) {
+            throw new \RuntimeException('файл не знайдено');
+        }
+        $own = empty($o['extract']);
+        $extract = $own ? self::dir() . '/.restore-' . bin2hex(random_bytes(6)) : (string) $o['extract'];
+        if (!is_dir($extract) && !@mkdir($extract, 0700, true)) {
+            throw new \RuntimeException("не вдалося створити теку $extract");
+        }
+        $extract = rtrim(realpath($extract) ?: $extract, '/');
+        try {
+            if (glob($extract . '/*')) {
+                throw new \RuntimeException("тека $extract не порожня");
+            }
+            $archive = $file;
+            if (self::looksEncrypted($file)) {
+                $archive = $extract . '/.decrypted.tar.gz';
+                $err = self::decryptTo($file, $archive, (string) ($o['password'] ?? '') !== '' ? (string) $o['password'] : self::password());
+                if ($err !== null) {
+                    throw new \RuntimeException('розшифровка не вдалася: ' . $err);
+                }
+                $log('Розшифровано.');
+            }
+            $v = self::verifyArchive($archive);
+            if (!$v['ok']) {
+                throw new \RuntimeException('копія не пройшла перевірку: ' . $v['message']);
+            }
+            $log($v['message']);
+            [$code, $err] = self::run(['tar', '-xzf', $archive, '-C', $extract]);
+            if ($code !== 0) {
+                throw new \RuntimeException('tar: ' . $err);
+            }
+            @unlink($extract . '/.decrypted.tar.gz');
+            $log("Розпаковано в $extract (database.sql, storage/uploads, storage/wiki, MANIFEST.json, RESTORE.txt).");
+            if (!$apply) {
+                return ['extract' => $extract, 'safety' => null, 'message' => 'Нічого не змінено в системі.'];
+            }
+
+            $safetyFile = null;
+            if ($safety) {
+                try {
+                    $safetyFile = self::create()['file'];
+                } catch (\Throwable $e) {
+                    throw new \RuntimeException('не вдалося створити страхувальну копію (' . $e->getMessage() . ')');
+                }
+                $log('Страхувальну копію поточного стану створено: ' . $safetyFile);
+            }
+
+            $db = \App\Core\Config::get('db');
+            $sql = @fopen($extract . '/database.sql', 'rb');
+            if ($sql === false) {
+                throw new \RuntimeException('у копії немає database.sql');
+            }
+            [$code, $err] = self::run(
+                ['mysql', '-h', (string) $db['host'], '-P', (string) $db['port'], '-u', (string) $db['username'], '--default-character-set=utf8mb4', (string) $db['database']],
+                ['MYSQL_PWD' => (string) $db['password'], 'PATH' => (string) getenv('PATH')],
+                $sql
+            );
+            fclose($sql);
+            if ($code !== 0) {
+                throw new \RuntimeException('імпорт бази не вдався: ' . $err . ($safetyFile ? " (страхувальна копія: $safetyFile)" : ''));
+            }
+            $log('База даних відновлена.');
+
+            $root = dirname(__DIR__, 2);
+            foreach (['uploads', 'wiki'] as $part) {
+                $src = "$extract/storage/$part";
+                if (!is_dir($src)) {
+                    continue;
+                }
+                $dst = "$root/storage/$part";
+                @mkdir($dst, 0770, true);
+                [$code, $err] = self::run(['cp', '-a', $src . '/.', $dst . '/']);
+                if ($code !== 0) {
+                    throw new \RuntimeException("копіювання storage/$part не вдалося: $err");
+                }
+                $log("Файли storage/$part відновлено.");
+            }
+            return ['extract' => $extract, 'safety' => $safetyFile, 'message' => 'Базу даних і файли відновлено.'];
+        } finally {
+            if ($own && is_dir($extract)) {
+                self::run(['rm', '-rf', $extract]);
+            }
+        }
+    }
+
+    // ---------- перевірка копії ----------
+
+    /**
+     * Перевіряє копію без розпакування на диск: розшифровка (за потреби) у тимчасовий файл, прохід по tar із перевіркою
+     * контрольних сум заголовків і CRC gzip, наявність MANIFEST.json і database.sql, відповідність кількості файлів.
+     *
+     * @return array{ok: bool, message: string, entries?: int, tables?: int, rows?: int, created_at?: string}
+     */
+    public static function verify(string $name, ?string $password = null): array
+    {
+        $path = self::path($name);
+        if ($path === null) {
+            return ['ok' => false, 'message' => 'Копію не знайдено.'];
+        }
+        $tmp = null;
+        try {
+            $read = $path;
+            if (self::isEncrypted($name)) {
+                $tmp = self::dir() . '/.verify-' . bin2hex(random_bytes(6)) . '.tar.gz';
+                $err = self::decryptTo($path, $tmp, $password ?? self::password());
+                if ($err !== null) {
+                    return ['ok' => false, 'message' => 'Не вдалося розшифрувати: ' . $err];
+                }
+                $read = $tmp;
+            }
+            return self::verifyArchive($read);
+        } finally {
+            if ($tmp !== null) {
+                @unlink($tmp);
+            }
+        }
+    }
+
+    public static function verifyArchive(string $file): array
+    {
+        $gz = @gzopen($file, 'rb');
+        if ($gz === false) {
+            return ['ok' => false, 'message' => 'Не вдалося відкрити архів.'];
+        }
+        $fail = static function (string $m) use ($gz): array {
+            gzclose($gz);
+            return ['ok' => false, 'message' => $m];
+        };
+        $names = [];
+        $manifest = null;
+        $dbHead = '';
+        $ended = false;
+        while (true) {
+            $h = (string) @gzread($gz, 512);
+            if (strlen($h) < 512) {
+                return $fail('Архів обірваний або пошкоджений (немає кінцевої мітки tar).');
+            }
+            if (trim($h, "\0") === '') {
+                $ended = true;
+                break;
+            }
+            $sum = 0;
+            for ($i = 0; $i < 512; $i++) {
+                $sum += ($i >= 148 && $i < 156) ? 32 : ord($h[$i]);
+            }
+            if ((int) octdec(trim(substr($h, 148, 8), "\0 ")) !== $sum) {
+                return $fail('Пошкоджений заголовок запису в архіві (не збігається контрольна сума).');
+            }
+            $entry = rtrim(substr($h, 0, 100), "\0");
+            $prefix = rtrim(substr($h, 345, 155), "\0");
+            $entry = $prefix !== '' ? $prefix . '/' . $entry : $entry;
+            $size = (int) octdec(trim(substr($h, 124, 12), "\0 "));
+            $names[] = $entry;
+            $left = $size + (512 - $size % 512) % 512;
+            $captured = '';
+            $capture = $entry === 'MANIFEST.json' ? 65536 : ($entry === 'database.sql' ? 2048 : 0);
+            $got = 0;
+            while ($left > 0) {
+                $chunk = @gzread($gz, min(1048576, $left));
+                if ($chunk === false || $chunk === '') {
+                    return $fail('Архів обірваний усередині запису «' . $entry . '».');
+                }
+                if ($capture > 0 && $got < $capture) {
+                    $captured .= substr($chunk, 0, $capture - $got);
+                }
+                $got += strlen($chunk);
+                $left -= strlen($chunk);
+            }
+            if ($entry === 'MANIFEST.json') {
+                $manifest = json_decode(substr($captured, 0, $size), true);
+            } elseif ($entry === 'database.sql') {
+                $dbHead = $captured;
+            }
+        }
+        // дочитуємо до кінця потоку: так zlib перевіряє CRC усього архіву
+        while (!gzeof($gz)) {
+            if (@gzread($gz, 65536) === false) {
+                return $fail('Не збігається контрольна сума gzip — архів пошкоджено.');
+            }
+        }
+        gzclose($gz);
+        if (!$ended || !is_array($manifest)) {
+            return ['ok' => false, 'message' => 'У копії немає коректного MANIFEST.json.'];
+        }
+        if (!in_array('database.sql', $names, true) || !str_contains($dbHead, 'ITSM System')) {
+            return ['ok' => false, 'message' => 'У копії немає дампа бази даних.'];
+        }
+        $files = count($names) - 3;
+        if ($files > (int) ($manifest['files'] ?? 0)) {
+            return ['ok' => false, 'message' => 'Кількість файлів в архіві перевищує вказану в MANIFEST.'];
+        }
+        return [
+            'ok' => true,
+            'message' => 'Копію перевірено: цілісність gzip і tar, дамп БД (таблиць: ' . (int) ($manifest['tables'] ?? 0) . '), файлів: ' . $files . '.',
+            'entries' => count($names), 'tables' => (int) ($manifest['tables'] ?? 0), 'rows' => (int) ($manifest['rows'] ?? 0),
+            'created_at' => (string) ($manifest['created_at'] ?? ''),
+        ];
+    }
+
+    // ---------- перенесення на інший носій / сервер ----------
+
+    /** Чи налаштоване перенесення (каталог і/або scp). */
+    public static function remoteConfigured(): bool
+    {
+        return (string) Config::get('backup.remote_dir', '') !== '' || (string) Config::get('backup.remote_scp', '') !== '';
+    }
+
+    /**
+     * Копіює готовий архів на налаштовані носії. Помилка перенесення не скасовує локальну копію — повертається в результаті.
+     *
+     * @return array<int, array{target: string, ok: bool, message: string}>
+     */
+    public static function transfer(string $name): array
+    {
+        $path = self::path($name);
+        $results = [];
+        if ($path === null) {
+            return [['target' => '—', 'ok' => false, 'message' => 'Копію не знайдено.']];
+        }
+        $dirTarget = rtrim((string) Config::get('backup.remote_dir', ''), '/');
+        if ($dirTarget !== '') {
+            $results[] = ['target' => $dirTarget] + self::copyToDir($path, $name, $dirTarget);
+        }
+        $scp = (string) Config::get('backup.remote_scp', '');
+        if ($scp !== '') {
+            $results[] = ['target' => $scp] + self::copyViaScp($path, $scp);
+        }
+        return $results;
+    }
+
+    private static function copyToDir(string $path, string $name, string $target): array
+    {
+        if (!is_dir($target) || !is_writable($target)) {
+            return ['ok' => false, 'message' => 'Каталог недоступний для запису (змонтований диск відсутній?).'];
+        }
+        $part = $target . '/.' . $name . '.part';
+        if (!@copy($path, $part) || filesize($part) !== filesize($path)) {
+            @unlink($part);
+            return ['ok' => false, 'message' => 'Не вдалося скопіювати файл (місце, права чи обрив зв\'язку).'];
+        }
+        if (!@rename($part, $target . '/' . $name)) {
+            @unlink($part);
+            return ['ok' => false, 'message' => 'Не вдалося завершити запис файлу.'];
+        }
+        // на віддаленому носії тримаємо стільки ж копій, скільки й локально
+        $remote = glob($target . '/backup-*.tar.gz*') ?: [];
+        $remote = array_filter($remote, fn($f) => self::validName(basename($f)));
+        usort($remote, fn($a, $b) => strcmp(self::stampOf(basename($b)), self::stampOf(basename($a))));
+        $removed = 0;
+        foreach (array_slice($remote, self::keep()) as $old) {
+            $removed += @unlink($old) ? 1 : 0;
+        }
+        return ['ok' => true, 'message' => 'Скопійовано' . ($removed ? '; видалено старих на носії: ' . $removed : '')];
+    }
+
+    private static function copyViaScp(string $path, string $target): array
+    {
+        if (!preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[A-Za-z0-9_.\/~-]*$/', $target)) {
+            return ['ok' => false, 'message' => 'BACKUP_REMOTE_SCP має вигляд користувач@хост:/каталог/'];
+        }
+        $cmd = ['scp', '-q', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'StrictHostKeyChecking=yes'];
+        $key = (string) Config::get('backup.scp_key', '');
+        if ($key !== '') {
+            array_push($cmd, '-i', $key, '-o', 'IdentitiesOnly=yes');
+        }
+        $port = (string) Config::get('backup.scp_port', '');
+        if ($port !== '' && ctype_digit($port)) {
+            array_push($cmd, '-P', $port);
+        }
+        array_push($cmd, '--', $path, $target);
+        $p = @proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['PATH' => (string) getenv('PATH'), 'HOME' => (string) (getenv('HOME') ?: '')]);
+        if (!is_resource($p)) {
+            return ['ok' => false, 'message' => 'Не вдалося запустити scp (встановіть openssh-client).'];
+        }
+        stream_get_contents($pipes[1]);
+        $err = trim((string) stream_get_contents($pipes[2]));
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $code = proc_close($p);
+        return $code === 0
+            ? ['ok' => true, 'message' => 'Надіслано через scp (старі копії на сервері не видаляються — очищайте самостійно)']
+            : ['ok' => false, 'message' => mb_substr($err !== '' ? $err : 'scp завершився з кодом ' . $code, 0, 250)];
+    }
+
+    /**
+     * Дії після створення: перевірка цілісності й перенесення. Результат записується у налаштування для сторінки копій
+     * і «Стану системи».
+     *
+     * @return array{verify: array, transfer: array}
+     */
+    public static function afterCreate(array $created): array
+    {
+        $verify = self::verify($created['file']);
+        $transfer = self::remoteConfigured() && $verify['ok'] ? self::transfer($created['file']) : [];
+        $problems = [];
+        if (!$verify['ok']) {
+            $problems[] = 'перевірка: ' . $verify['message'];
+        }
+        foreach ($transfer as $t) {
+            if (!$t['ok']) {
+                $problems[] = $t['target'] . ': ' . $t['message'];
+            }
+        }
+        Setting::set('backup_last_check', $problems ? 'ПРОБЛЕМА — ' . mb_substr(implode('; ', $problems), 0, 400) : 'ok');
+        return ['verify' => $verify, 'transfer' => $transfer];
+    }
+
+    public static function summary(array $r, array $post): string
+    {
+        $s = sprintf('%s, %s%s; таблиць: %d, рядків: %d, файлів: %d%s; %d с', $r['file'], self::human((float) $r['size']), !empty($r['encrypted']) ? ', зашифровано' : '', $r['tables'], $r['rows'], $r['files'], $r['skipped'] ? ", пропущено: {$r['skipped']}" : '', $r['seconds']);
+        $s .= $post['verify']['ok'] ? '; перевірено' : '; ПЕРЕВІРКА НЕ ПРОЙДЕНА';
+        foreach ($post['transfer'] as $t) {
+            $s .= '; ' . ($t['ok'] ? 'перенесено' : 'НЕ перенесено') . ' → ' . $t['target'];
+        }
+        return $s;
     }
 
     // ---------- дамп БД ----------
@@ -321,6 +749,10 @@ class BackupService
         return <<<TXT
 Відновлення з цієї резервної копії (ITSM System)
 ================================================
+
+Найпростіше: php bin/restore.php <файл> --extract=<тека>   (розшифрує, перевірить і розпакує; --apply --yes відновить БД і файли).
+Вручну (якщо файл зашифрований, .tar.gz.enc, спершу розшифруйте):
+     openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -in backup-….tar.gz.enc -out backup-….tar.gz
 
 1. Розпакуйте архів у тимчасову теку:
      mkdir restore && tar -xzf backup-РРРРММДД-ГГММСС.tar.gz -C restore

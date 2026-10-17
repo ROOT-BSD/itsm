@@ -215,6 +215,12 @@ class Task
         Audit::log('task', $id, 'milestone_changed', $actingUserId, ['milestone_id' => $milestoneId]);
     }
 
+    public static function updateTitle(int $id, string $title, string $oldTitle, int $actingUserId): void
+    {
+        Database::connection()->prepare('UPDATE tasks SET title = :t WHERE id = :id')->execute(['t' => $title, 'id' => $id]);
+        Audit::log('task', $id, 'title_changed', $actingUserId, ['from' => mb_substr($oldTitle, 0, 255), 'to' => $title]);
+    }
+
     public static function updateDescription(int $id, ?string $description, int $actingUserId): void
     {
         $stmt = Database::connection()->prepare('UPDATE tasks SET description = :description WHERE id = :id');

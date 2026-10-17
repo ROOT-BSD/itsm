@@ -122,6 +122,7 @@ $router->post('/tasks/{id}/milestone', fn($p) => $tasks->updateMilestone($p));
 $router->post('/tasks/{id}/assignee', fn($p) => $tasks->updateAssignee($p));
 $router->post('/tasks/{id}/comments', fn($p) => $tasks->addComment($p));
 $router->post('/tasks/{id}/time', fn($p) => $tasks->logTime($p));
+$router->post('/tasks/{id}/title', fn($p) => $tasks->updateTitle($p));
 $router->post('/tasks/{id}/description', fn($p) => $tasks->updateDescription($p));
 $router->post('/tasks/{id}/project', fn($p) => $tasks->updateProject($p));
 $router->post('/tasks/{id}/delete', fn($p) => $tasks->delete($p));
@@ -153,6 +154,8 @@ $router->get('/tickets/{id}', fn($p) => $tickets->show($p));
 $router->get('/archive', fn() => (new ArchiveController())->index());
 $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
+$router->post('/tickets/{id}/links', fn($p) => $tickets->addLink($p));
+$router->post('/tickets/{id}/links/{link}/delete', fn($p) => $tickets->removeLink($p));
 $router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
 $router->post('/tickets/{id}/csat', fn($p) => $tickets->submitCsat($p));
 
@@ -253,7 +256,9 @@ $router->get('/admin/time', function () {
 $router->get('/admin/backup', fn() => (new \App\Controllers\BackupController())->index());
 $router->post('/admin/backup', fn() => (new \App\Controllers\BackupController())->create());
 $router->post('/admin/backup/settings', fn() => (new \App\Controllers\BackupController())->settings());
+$router->post('/admin/backup/restore', fn() => (new \App\Controllers\BackupController())->restore());
 $router->get('/admin/backup/{stamp}/download', fn($p) => (new \App\Controllers\BackupController())->download($p));
+$router->post('/admin/backup/{stamp}/verify', fn($p) => (new \App\Controllers\BackupController())->verify($p));
 $router->post('/admin/backup/{stamp}/delete', fn($p) => (new \App\Controllers\BackupController())->delete($p));
 $router->get('/admin/status', fn() => (new AdminController())->status());
 $router->get('/admin/audit/export', fn() => (new \App\Controllers\ExportController())->audit());

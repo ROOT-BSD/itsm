@@ -50,7 +50,7 @@ final class WebhookService
         $map = [
             'ticket' => ['created' => 'ticket.created', 'operator_assigned' => 'ticket.assigned', 'auto_assigned_operator' => 'ticket.assigned', 'csat_submitted' => 'ticket.rated'],
             'task' => ['created' => 'task.created', 'status_changed' => 'task.status_changed', 'assignee_changed' => 'task.assigned',
-                       'description_changed' => 'task.updated', 'dates_changed' => 'task.updated', 'project_changed' => 'task.updated', 'milestone_changed' => 'task.updated',
+                       'description_changed' => 'task.updated', 'title_changed' => 'task.updated', 'dates_changed' => 'task.updated', 'project_changed' => 'task.updated', 'milestone_changed' => 'task.updated',
                        'deleted' => 'task.deleted'],
             'project' => ['created' => 'project.created', 'responsible_changed' => 'project.responsible_changed', 'member_added' => 'project.member_added',
                           'member_removed' => 'project.member_removed', 'member_left' => 'project.member_removed', 'deleted' => 'project.deleted'],

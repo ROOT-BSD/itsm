@@ -135,7 +135,7 @@
 
     <div class="mb-3">
         <label class="form-label">Користувач</label>
-        <select name="user_id" class="form-select">
+        <select name="user_id" class="form-select user-select">
             <option value="">— усі користувачі —</option>
             <?php foreach ($users as $u): ?>
                 <option value="<?= (int)$u['id'] ?>"><?= \App\Core\View::e($u['full_name']) ?></option>

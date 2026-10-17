@@ -35,7 +35,7 @@ class TemplateService
      *
      * @return array{tasks: int, subtasks: int, first_task_id: ?int}
      */
-    public static function apply(int $templateId, int $projectId, ?string $baseDate, int $userId): array
+    public static function apply(int $templateId, int $projectId, ?string $baseDate, int $userId, ?string $titleOverride = null): array
     {
         $items = Template::items($templateId);
         $statusId = self::newStatusId();
@@ -54,7 +54,7 @@ class TemplateService
                 $type = (int) ($it['type_id'] ?: $defaultType);
                 $taskId = Task::create([
                     'project_id' => $projectId, 'type_id' => $type, 'status_id' => $statusId,
-                    'title' => $it['title'], 'description' => $it['body'], 'priority' => $it['priority'],
+                    'title' => ($titleOverride !== null && $titleOverride !== '' && $tasks === 0) ? $titleOverride : $it['title'], 'description' => $it['body'], 'priority' => $it['priority'],
                     'author_id' => $userId, 'assignee_id' => null,
                     'start_date' => self::shift($baseDate, $it['start_offset']),
                     'due_date' => self::shift($baseDate, $it['due_offset']),

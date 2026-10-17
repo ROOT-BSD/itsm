@@ -212,6 +212,8 @@ class EmailTicketService
         // мають лишитись лише справді не збережені файли, а підробки/завеликі не повинні потрапити на диск.
         [$images, $m['attachments'], $skippedTiny] = self::partitionImages($m['attachments']);
 
+        [$documents, $m['attachments']] = self::partitionDocuments($m['attachments']);
+
         $pdo = Database::connection();
         $pdo->beginTransaction();
         $storedFiles = []; // файли на диску, записані цим листом — щоб прибрати їх, якщо транзакцію відкотить
@@ -232,6 +234,10 @@ class EmailTicketService
                 $outcome['note'] .= '; збережено зображень: ' . $savedImages;
                 // Зменшені копії зображень показуються прямо в тексті тікета/коментаря (мітки [[img:N]], див. View::richText).
                 self::appendImageTokens($commentId ?? null, $ticketId, $attachmentIds);
+            }
+            $savedDocs = count(self::storeImages($ticketId, $documents, $storedFiles, false));
+            if ($savedDocs > 0) {
+                $outcome['note'] .= '; збережено документів: ' . $savedDocs;
             }
             if ($skippedTiny > 0) {
                 $outcome['note'] .= '; пропущено дрібних вбудованих зображень (логотипи в підписах): ' . $skippedTiny;
@@ -281,7 +287,7 @@ class EmailTicketService
         $skippedTiny = 0;
 
         foreach ($attachments as $a) {
-            if (!isset($a['data'])) {
+            if (!isset($a['data']) || ($a['kind'] ?? '') === 'document') {
                 $rest[] = $a; // не кандидат у зображення (PDF, документ…) або завелике — лише в примітку
                 continue;
             }
@@ -316,6 +322,41 @@ class EmailTicketService
     }
 
     /**
+     * Відділяє документи (PDF, Office) від решти вкладень: зберігаємо лише ті, чий вміст справді відповідає
+     * розширенню (Office — без макросів). Решта (не пройшли перевірку, завеликі, інші типи) лишається для примітки.
+     *
+     * @param array<int, array<string, mixed>> $attachments
+     * @return array{0: array<int, array{name: string, mime: string, bytes: string}>, 1: array<int, array<string, mixed>>}
+     */
+    private static function partitionDocuments(array $attachments): array
+    {
+        $docs = [];
+        $rest = [];
+        $seen = [];
+        foreach ($attachments as $a) {
+            if (!isset($a['data']) || ($a['kind'] ?? '') !== 'document') {
+                unset($a['data']);
+                $rest[] = $a;
+                continue;
+            }
+            $bytes = $a['data'];
+            unset($a['data']);
+            $hash = sha1($bytes);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+            $check = AttachmentService::inspectDocumentBytes((string) $a['name'], $bytes);
+            if (!$check['ok']) {
+                $rest[] = $a;
+                continue;
+            }
+            $seen[$hash] = true;
+            $docs[] = ['name' => $check['name'], 'mime' => $check['mime'], 'bytes' => $bytes];
+        }
+        return [$docs, $rest];
+    }
+
+    /**
      * Записує перевірені зображення листа як вкладення тікета (рядок у БД — у транзакції ingest()).
      * Збій запису одного файлу не скасовує решту й тим більше сам тікет — лише фіксується в журналі аудиту.
      *
@@ -323,7 +364,7 @@ class EmailTicketService
      * @param string[] $storedFiles заповнюється іменами записаних файлів (для прибирання при відкаті)
      * @return int[] id створених вкладень
      */
-    private static function storeImages(int $ticketId, array $images, array &$storedFiles): array
+    private static function storeImages(int $ticketId, array $images, array &$storedFiles, bool $thumbs = true): array
     {
         $saved = [];
         $room = (int) Config::get('attachments.max_per_entity', 30) - Attachment::countForOwner('ticket', $ticketId);
@@ -339,7 +380,9 @@ class EmailTicketService
                 continue;
             }
             $storedFiles[] = $written['stored_name'];
-            AttachmentService::createThumbnail($written['stored_name'], $img['mime']);
+            if ($thumbs) {
+                AttachmentService::createThumbnail($written['stored_name'], $img['mime']);
+            }
             $size = strlen($img['bytes']);
             $saved[] = Attachment::create('ticket', $ticketId, $img['name'], $written['stored_name'], $img['mime'], $size, null, 'email');
             Audit::log('ticket', $ticketId, 'attachment_from_email', null, ['file' => $img['name'], 'size_kb' => (int) ceil($size / 1024)]);
@@ -559,7 +602,7 @@ class EmailTicketService
         return $cut . "\n\n[… текст листа скорочено]";
     }
 
-    /** Вкладення, які НЕ збережено (не зображення PNG/JPG, завеликі чи не пройшли перевірку), — чесно називаємо їх у тексті. */
+    /** Вкладення, які НЕ збережено (не зображення й не PDF/Office, завеликі чи не пройшли перевірку), — чесно називаємо їх у тексті. */
     private static function attachmentsNote(array $attachments): string
     {
         if (!$attachments) {

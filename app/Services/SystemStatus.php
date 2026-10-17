@@ -44,6 +44,7 @@ class SystemStatus
             '038' => ['Підзадачі та чек-листи', fn() => \App\Models\TaskChecklist::ready()],
             '039' => ['Шаблони проєктів і задач', $table('template_items')],
             '040' => ['Активні сесії та журнал входів', fn() => \App\Models\UserSession::ready()],
+            '041' => ["Пов'язані та дубльовані тікети", $table('ticket_links')],
         ];
     }
 
@@ -297,6 +298,7 @@ class SystemStatus
             ['webhooks_worker_last_run', 'Вебхуки (bin/deliver-webhooks.php)', $hooks, 10, '* * * * *  php bin/deliver-webhooks.php'],
             ['ad_last_sync_at', 'Синхронізація з AD (bin/sync-ad-users.php)', $adOn, 26 * 60, '0 * * * *  php bin/sync-ad-users.php'],
             ['reminders_last_run', 'Нагадування про терміни (bin/send-reminders.php)', null, 26 * 60, '0 8 * * *  php bin/send-reminders.php'],
+            ['status_alert_last_run', 'Сповіщення про стан системи (bin/check-status.php)', Setting::get('email_notify_status_enabled', '0') === '1', 3 * 60, '15 * * * *  php bin/check-status.php'],
         ];
         foreach ($jobs as [$key, $name, $needed, $maxMin, $cron]) {
             $last = Setting::get($key);
@@ -319,7 +321,16 @@ class SystemStatus
         } elseif ($ageDays > 8) {
             $rows[] = self::row('Резервна копія (bin/backup.php)', 'остання — ' . $lastBackup . ' (' . (int) $ageDays . ' дн. тому)', 'warn', 'Давно немає свіжої копії. Додайте в cron: 30 2 * * *  php bin/backup.php');
         } else {
-            $rows[] = self::row('Резервна копія (bin/backup.php)', 'остання — ' . date('d.m.Y H:i', strtotime($lastBackup)) . ($summary ? '; ' . $summary : ''), 'ok');
+            $check = (string) Setting::get('backup_last_check');
+            $bad = $check !== '' && $check !== 'ok';
+            $rows[] = self::row('Резервна копія (bin/backup.php)', 'остання — ' . date('d.m.Y H:i', strtotime($lastBackup)) . ($summary ? '; ' . $summary : ''), $bad ? 'warn' : 'ok',
+                $bad ? 'Остання копія не пройшла перевірку цілісності або не перенесена на інший носій: ' . $check : '');
+            if (\App\Services\BackupService::password() === '') {
+                $rows[] = self::row('Шифрування резервних копій', 'вимкнено', 'info', 'Копія містить хеші паролів і токени. Задайте BACKUP_PASSWORD у .env, щоб шифрувати нові копії.');
+            }
+            if (!\App\Services\BackupService::remoteConfigured()) {
+                $rows[] = self::row('Перенесення копій на інший носій', 'не налаштовано', 'info', 'Копії лежать лише на цьому сервері. Задайте BACKUP_REMOTE_DIR або BACKUP_REMOTE_SCP у .env.');
+            }
         }
         if (self::tableExists('webhook_deliveries')) {
             $pending = (int) self::scalar("SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'pending'");

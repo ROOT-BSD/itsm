@@ -60,18 +60,75 @@
             <label class="form-label mb-0">Статус:</label>
             <select name="status" class="form-select w-auto">
                 <?php
-                $statusLabels = [
-                    'new' => 'Новий', 'in_progress' => 'В роботі', 'waiting_customer' => 'Очікує відповіді заявника',
-                    'resolved' => 'Вирішено', 'closed' => 'Закрито',
-                ];
+                $statusLabels = \App\Models\Ticket::STATUS_LABELS;
                 foreach ($statusLabels as $code => $label): ?>
                     <option value="<?= $code ?>" <?= $ticket['status'] === $code ? 'selected' : '' ?>><?= $label ?></option>
                 <?php endforeach; ?>
             </select>
+            <?php if (!empty($links['duplicates']) && \App\Core\Access::canAssignTicketOperator(\App\Core\Auth::role())): ?>
+                <div class="form-check mb-0 ms-2">
+                    <input class="form-check-input" type="checkbox" name="with_duplicates" id="with_duplicates" value="1">
+                    <label class="form-check-label small" for="with_duplicates">і для дублів (<?= count($links['duplicates']) ?>)</label>
+                </div>
+            <?php endif; ?>
             <button class="btn btn-sm btn-outline-primary" type="submit">Оновити</button>
         </form>
     </div>
 </div>
+
+<?php
+$linksReady = \App\Models\TicketLink::ready();
+$canLink = $linksReady && \App\Core\Access::canAssignTicketOperator(\App\Core\Auth::role());
+$hasLinks = !empty($links['original']) || !empty($links['duplicates']) || !empty($links['related']) || !empty($links['hidden']);
+$renderLink = function (array $row, ?string $note = null) use ($ticket, $canLink): void { ?>
+    <li class="list-group-item d-flex align-items-center gap-2">
+        <a href="/tickets/<?= (int)$row['id'] ?>">#<?= (int)$row['id'] ?> <?= \App\Core\View::e($row['subject']) ?></a>
+        <span class="badge bg-secondary"><?= \App\Core\View::e(\App\Models\Ticket::statusLabel((string)$row['status'])) ?></span>
+        <?php if ($note): ?><span class="text-muted small"><?= \App\Core\View::e($note) ?></span><?php endif; ?>
+        <?php if ($canLink): ?>
+            <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/links/<?= (int)$row['link_id'] ?>/delete" class="ms-auto" data-confirm="Прибрати зв'язок із тікетом №<?= (int)$row['id'] ?>?">
+                <?= \App\Core\Csrf::field() ?>
+                <button class="btn btn-sm btn-outline-danger" type="submit">Прибрати</button>
+            </form>
+        <?php endif; ?>
+    </li>
+<?php }; ?>
+<?php if ($linksReady && ($hasLinks || $canLink)): ?>
+<div class="card mt-3">
+    <div class="card-header">Пов'язані та дубльовані тікети</div>
+    <?php if ($hasLinks): ?>
+    <ul class="list-group list-group-flush">
+        <?php if (!empty($links['original'])): ?><?php $renderLink($links['original'], 'це дубль цього тікета-оригіналу'); ?><?php endif; ?>
+        <?php foreach ($links['duplicates'] as $row): ?><?php $renderLink($row, 'дубль'); ?><?php endforeach; ?>
+        <?php foreach ($links['related'] as $row): ?><?php $renderLink($row, 'пов\'язаний'); ?><?php endforeach; ?>
+        <?php if (!empty($links['hidden'])): ?>
+            <li class="list-group-item text-muted small">Ще пов'язаних тікетів, до яких немає доступу: <?= (int)$links['hidden'] ?></li>
+        <?php endif; ?>
+    </ul>
+    <?php endif; ?>
+    <?php if ($canLink): ?>
+    <div class="card-body">
+        <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/links" class="row g-2 align-items-end">
+            <?= \App\Core\Csrf::field() ?>
+            <div class="col-md-5">
+                <label class="form-label small mb-1">Зв'язок</label>
+                <select name="kind" class="form-select form-select-sm">
+                    <option value="related">пов'язаний з тікетом</option>
+                    <option value="duplicate_of">цей тікет — дубль тікета</option>
+                    <option value="has_duplicate">тікет — дубль цього</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">№ тікета</label>
+                <input type="number" name="other_id" min="1" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Додати</button></div>
+        </form>
+        <div class="form-text">Масовий інцидент: відкрийте тікет-оригінал, додайте дублі й закрийте оригінал із галочкою «і для дублів».</div>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php
 $attachmentOwnerType = 'ticket';

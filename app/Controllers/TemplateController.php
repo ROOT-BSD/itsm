@@ -109,8 +109,16 @@ class TemplateController
         if ($base === false) {
             $this->flash($back, 'error', 'Некоректна дата старту');
         }
+        // Назву можна змінити лише для шаблону задачі (одна задача); для шаблону проєкту поле ігнорується.
+        $title = null;
+        if ($tpl['kind'] === 'task') {
+            $title = trim((string) ($_POST['task_title'] ?? ''));
+            if (mb_strlen($title) > 255) {
+                $this->flash($back, 'error', 'Назва задачі — до 255 символів');
+            }
+        }
         try {
-            $r = TemplateService::apply((int) $tpl['id'], (int) $project['id'], $base, Auth::id());
+            $r = TemplateService::apply((int) $tpl['id'], (int) $project['id'], $base, Auth::id(), $title);
         } catch (\Throwable $e) {
             $this->flash($back, 'error', 'Не вдалося застосувати шаблон: ' . $e->getMessage());
         }

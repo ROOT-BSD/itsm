@@ -140,7 +140,35 @@ class TicketController
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
             'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
+            'links' => $this->visibleLinks((int) $ticket['id']),
         ]);
+    }
+
+    /**
+     * Зв'язки тікета; тікети, до яких у користувача немає доступу, не показуємо (лише рахуємо), щоб не розкривати їхню тему.
+     *
+     * @return array{original: ?array, duplicates: array, related: array, hidden: int}
+     */
+    private function visibleLinks(int $ticketId): array
+    {
+        $links = \App\Models\TicketLink::forTicket($ticketId);
+        $hidden = 0;
+        $isAdmin = Auth::hasRole(['admin']);
+        $canUnassigned = $this->canSeeUnassigned();
+        $keep = function (array $row) use (&$hidden, $isAdmin, $canUnassigned): bool {
+            if (Ticket::isVisibleTo($row, Auth::id(), $isAdmin, $canUnassigned)) {
+                return true;
+            }
+            $hidden++;
+            return false;
+        };
+        $links['duplicates'] = array_values(array_filter($links['duplicates'], $keep));
+        $links['related'] = array_values(array_filter($links['related'], $keep));
+        if ($links['original'] !== null && !$keep($links['original'])) {
+            $links['original'] = null;
+        }
+        $links['hidden'] = $hidden;
+        return $links;
     }
 
     public function assignOperator(array $params): void
@@ -185,7 +213,80 @@ class TicketController
         }
 
         Ticket::updateStatus((int) $params['id'], $status, Auth::id());
-        header('Location: /tickets/' . $params['id']);
+
+        // «Застосувати до всіх дублів»: той самий статус отримують дублі цього тікета, які поточний користувач бачить.
+        $suffix = '';
+        if (!empty($_POST['with_duplicates']) && \App\Core\Access::canAssignTicketOperator(Auth::role())) {
+            $n = 0;
+            foreach (\App\Models\TicketLink::duplicateIds((int) $params['id']) as $dupId) {
+                $dup = Ticket::find($dupId);
+                if ($dup && Ticket::isVisibleTo($dup, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned()) && $dup['status'] !== $status) {
+                    Ticket::updateStatus($dupId, $status, Auth::id());
+                    $n++;
+                }
+            }
+            $suffix = '?success=' . urlencode('Статус застосовано і до дублів: ' . $n);
+        }
+        header('Location: /tickets/' . $params['id'] . $suffix);
+        exit;
+    }
+
+    /** Додати зв'язок «пов'язаний» / «дубль» між тікетами. Лише персонал; обидва тікети мають бути доступні користувачу. */
+    public function addLink(array $params): void
+    {
+        Auth::requireLogin();
+        $ticket = $this->findStaffTicketOrFail((int) $params['id']);
+        $back = '/tickets/' . (int) $ticket['id'];
+
+        $otherId = (int) ($_POST['other_id'] ?? 0);
+        $kind = (string) ($_POST['kind'] ?? '');
+        if (!in_array($kind, ['related', 'duplicate_of', 'has_duplicate'], true)) {
+            $this->linkRedirect($back, 'error', 'Оберіть вид зв\'язку');
+        }
+        $other = $otherId > 0 ? Ticket::find($otherId) : null;
+        if (!$other || !Ticket::isVisibleTo($other, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
+            $this->linkRedirect($back, 'error', 'Тікет №' . $otherId . ' не знайдено або немає доступу');
+        }
+        $error = \App\Models\TicketLink::add((int) $ticket['id'], $otherId, $kind, Auth::id());
+        $this->linkRedirect($back, $error === null ? 'success' : 'error', $error ?? 'Зв\'язок додано');
+    }
+
+    public function removeLink(array $params): void
+    {
+        Auth::requireLogin();
+        $ticket = $this->findStaffTicketOrFail((int) $params['id']);
+        $link = \App\Models\TicketLink::find((int) ($params['link'] ?? 0));
+        if (!$link || !in_array((int) $ticket['id'], [(int) $link['ticket_id'], (int) $link['linked_id']], true)) {
+            $this->linkRedirect('/tickets/' . (int) $ticket['id'], 'error', 'Зв\'язок не знайдено');
+        }
+        \App\Models\TicketLink::remove($link, Auth::id());
+        $this->linkRedirect('/tickets/' . (int) $ticket['id'], 'success', 'Зв\'язок видалено');
+    }
+
+    private function findStaffTicketOrFail(int $id): array
+    {
+        if (!\App\Core\Access::canAssignTicketOperator(Auth::role())) {
+            http_response_code(403);
+            echo 'Зв\'язувати тікети можуть лише персонал підтримки та адміністратори.';
+            exit;
+        }
+        $ticket = Ticket::find($id);
+        if (!$ticket) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            exit;
+        }
+        if (!Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
+            http_response_code(403);
+            echo 'Доступ до цього тікета обмежено.';
+            exit;
+        }
+        return $ticket;
+    }
+
+    private function linkRedirect(string $url, string $kind, string $message): never
+    {
+        header('Location: ' . $url . '?' . $kind . '=' . urlencode($message));
         exit;
     }
 

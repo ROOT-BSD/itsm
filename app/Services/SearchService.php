@@ -142,7 +142,7 @@ class SearchService
             $items[] = [
                 'url' => '/tickets/' . (int) $r['id'],
                 'title' => self::mark((string) $r['subject'], $q),
-                'meta' => 'Тікет #' . (int) $r['id'] . ' · ' . $r['queue_name'] . ' · ' . $r['status'] . ' · заявник: ' . $r['requester_name'],
+                'meta' => 'Тікет #' . (int) $r['id'] . ' · ' . $r['queue_name'] . ' · ' . \App\Models\Ticket::statusLabel((string) $r['status']) . ' · заявник: ' . $r['requester_name'],
                 'snippet' => $snippet,
             ];
         }

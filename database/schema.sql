@@ -684,8 +684,23 @@ CREATE TABLE IF NOT EXISTS login_log (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Пов'язані та дубльовані тікети (міграція 041)
+CREATE TABLE IF NOT EXISTS ticket_links (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id INT NOT NULL,
+    linked_id INT NOT NULL,
+    link_type ENUM('related','duplicate') NOT NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_ticket_links_pair (ticket_id, linked_id),
+    KEY idx_ticket_links_linked (linked_id),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    FOREIGN KEY (linked_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
--- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (041+) накочує update.sh.
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (042+) накочує update.sh.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(20) NOT NULL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -734,4 +749,5 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('037', 'widen_attachment_mime', 'baseline'),
 ('038', 'add_subtasks_and_checklists', 'baseline'),
 ('039', 'add_templates', 'baseline'),
-('040', 'add_sessions_and_login_log', 'baseline');
+('040', 'add_sessions_and_login_log', 'baseline'),
+('041', 'add_ticket_links', 'baseline');

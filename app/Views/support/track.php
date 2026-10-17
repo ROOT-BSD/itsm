@@ -56,11 +56,13 @@ $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true);
                                 <a href="<?= $url ?>" target="_blank" rel="noopener">
                                     <img src="<?= $url ?>?thumb=1" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
                                 </a>
+                            <?php elseif (\App\Services\AttachmentService::isOfficeMime($a['mime_type'])): ?>
+                                <span class="attachment-icon badge bg-primary align-self-start"><?= \App\Core\View::e(strtoupper(pathinfo($a['original_name'], PATHINFO_EXTENSION))) ?></span>
                             <?php else: ?>
                                 <span class="attachment-icon badge bg-danger align-self-start">PDF</span>
                             <?php endif; ?>
                             <div class="flex-grow-1">
-                                <a href="<?= $url ?>" target="_blank" rel="noopener"><?= \App\Core\View::e($a['original_name']) ?></a>
+                                <a href="<?= $url ?><?= \App\Services\AttachmentService::isOfficeMime($a['mime_type']) ? '?download=1' : '' ?>" target="_blank" rel="noopener"><?= \App\Core\View::e($a['original_name']) ?></a>
                                 <div class="small text-muted"><?= \App\Core\View::e(\App\Core\UploadLimits::human((int) $a['size_bytes'])) ?> · <?= \App\Core\View::e(date('d.m.Y H:i', strtotime($a['created_at']))) ?></div>
                             </div>
                             <a href="<?= $url ?>?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a>

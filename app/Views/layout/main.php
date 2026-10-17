@@ -86,6 +86,7 @@ document.addEventListener('change', function (e) {
 });
 </script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/user-select.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/template-apply.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/paste-images.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/wiki-editor.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/forum-editor.js')) ?>" defer></script>

@@ -17,6 +17,17 @@ class Ticket
     /** Допустимі статуси тікета (єдиний перелік для веб-форми, REST API й вебхуків). */
     public const STATUSES = ['new', 'in_progress', 'waiting_customer', 'resolved', 'closed'];
 
+    /** Українські назви статусів — єдине джерело для інтерфейсу, експорту й листів. */
+    public const STATUS_LABELS = [
+        'new' => 'Новий', 'in_progress' => 'В роботі', 'waiting_customer' => 'Очікує відповіді заявника',
+        'resolved' => 'Вирішено', 'closed' => 'Закрито',
+    ];
+
+    public static function statusLabel(string $status): string
+    {
+        return self::STATUS_LABELS[$status] ?? $status;
+    }
+
     public static function queues(): array
     {
         return Database::connection()->query('SELECT * FROM ticket_queues ORDER BY id')->fetchAll();
