@@ -45,6 +45,10 @@ class SystemStatus
             '039' => ['Шаблони проєктів і задач', $table('template_items')],
             '040' => ['Активні сесії та журнал входів', fn() => \App\Models\UserSession::ready()],
             '041' => ["Пов'язані та дубльовані тікети", $table('ticket_links')],
+            '042' => ['Звіти за розкладом', $table('report_schedules')],
+            '043' => ['Початкові терміни задач і їх історія', $table('task_date_changes')],
+            '044' => ['Облік часу по тікетах', $table('ticket_time_logs')],
+            '045' => ['Точність обліку часу по тікетах (хвилини)', $table('ticket_time_logs')],
         ];
     }
 
@@ -293,12 +297,14 @@ class SystemStatus
         $adOn = Setting::get('ad_sync_enabled', '0') === '1';
         $mailOn = Setting::get('email_ticket_enabled', '0') === '1';
         $hooks = self::tableExists('webhook_endpoints') && (int) self::scalar('SELECT COUNT(*) FROM webhook_endpoints WHERE is_active = 1') > 0;
+        $schedules = self::tableExists('report_schedules') && (int) self::scalar('SELECT COUNT(*) FROM report_schedules WHERE is_active = 1') > 0;
         $jobs = [
             ['email_last_run_at', 'Пошта → тікети (bin/fetch-mail.php)', $mailOn, 15, '* * * * *  php bin/fetch-mail.php'],
             ['webhooks_worker_last_run', 'Вебхуки (bin/deliver-webhooks.php)', $hooks, 10, '* * * * *  php bin/deliver-webhooks.php'],
             ['ad_last_sync_at', 'Синхронізація з AD (bin/sync-ad-users.php)', $adOn, 26 * 60, '0 * * * *  php bin/sync-ad-users.php'],
             ['reminders_last_run', 'Нагадування про терміни (bin/send-reminders.php)', null, 26 * 60, '0 8 * * *  php bin/send-reminders.php'],
             ['status_alert_last_run', 'Сповіщення про стан системи (bin/check-status.php)', Setting::get('email_notify_status_enabled', '0') === '1', 3 * 60, '15 * * * *  php bin/check-status.php'],
+            ['reports_last_run', 'Звіти за розкладом (bin/send-reports.php)', $schedules ? true : null, 3 * 60, '5 * * * *  php bin/send-reports.php'],
         ];
         foreach ($jobs as [$key, $name, $needed, $maxMin, $cron]) {
             $last = Setting::get($key);

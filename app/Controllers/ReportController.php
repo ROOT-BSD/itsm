@@ -3,7 +3,6 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
-use App\Core\PdfReport;
 use App\Core\View;
 use App\Models\Project;
 use App\Models\Task;
@@ -20,6 +19,7 @@ class ReportController
             'users' => User::allActive(),
             'categories' => Task::distinctCategoriesVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
             'error' => $_GET['error'] ?? null,
+            'canTicketReport' => Auth::hasRole(['admin']) || \App\Core\Access::isUnitAdmin(Auth::role()),
             'selectedProjectId' => !empty($_GET['project_id']) ? (int) $_GET['project_id'] : null,
             'currentYear' => (int) date('Y'),
             'currentWeek' => (int) date('W'),
@@ -40,6 +40,22 @@ class ReportController
         );
         if ($periodError !== null) {
             header('Location: /reports?error=' . urlencode($periodError));
+            exit;
+        }
+
+        // «Звіт по тікетах» — той самий звіт, що й у «Керуванні» (адміністратор системи — усі тікети, адміністратор підрозділу — тікети підрозділу).
+        if (($_GET['report_type'] ?? 'time') === 'tickets') {
+            $isUnit = \App\Core\Access::isUnitAdmin(Auth::role());
+            if (!$isAdmin && !$isUnit) {
+                header('Location: /reports?error=' . urlencode('Звіт по тікетах доступний адміністраторам системи й підрозділу.'));
+                exit;
+            }
+            $_GET['date_from'] = $dateFrom;
+            $_GET['date_to'] = $dateTo;
+            if (!in_array($_GET['format'] ?? '', ['pdf', 'xlsx', 'csv'], true)) {
+                $_GET['format'] = 'pdf';
+            }
+            (new ExportController())->sendTicketsReport($isAdmin ? null : (int) $viewerId);
             exit;
         }
 
@@ -68,12 +84,12 @@ class ReportController
             $userLabel = $logUser['full_name'] ?? ('#' . $logUserId);
         }
 
-        $rows = Task::timeLogsFilteredReport(
-            $dateFrom,
-            $dateTo,
-            ['project_id' => $projectId, 'log_user_id' => $logUserId, 'category' => $category],
-            $viewerId,
-            $isAdmin
+        $filters = ['project_id' => $projectId, 'log_user_id' => $logUserId, 'category' => $category];
+        $taskRows = Task::timeLogsFilteredReport($dateFrom, $dateTo, $filters, $viewerId, $isAdmin);
+        $withTickets = ($_GET['include_tickets'] ?? '1') !== '0';
+        $rows = \App\Services\ReportScheduleService::merge(
+            $taskRows,
+            $withTickets ? \App\Models\TicketTimeLog::reportRows($dateFrom, $dateTo, $filters, (int) $viewerId, Auth::role()) : []
         );
 
         $filterLines = [
@@ -84,61 +100,21 @@ class ReportController
         if ($category !== null) {
             $filterLines[] = "Категорія: {$category}";
         }
+        $filterLines[] = 'Час по тікетах: ' . ($withTickets ? 'враховано' : 'не враховано');
         $filterLines[] = 'Сформовано: ' . date('d.m.Y H:i');
 
-        $pdf = new PdfReport('Звіт з обліку часу', $filterLines);
-
-        if (empty($rows)) {
-            $pdf->line('Немає записів обліку часу за обраними фільтрами.');
-        } else {
-            // --- Діаграма розподілу годин по користувачах (у шапці звіту) ---
-            $hoursByUser = [];
-            foreach ($rows as $r) {
-                $name = $r['user_name'];
-                $hoursByUser[$name] = ($hoursByUser[$name] ?? 0.0) + (float) $r['hours'];
-            }
-            arsort($hoursByUser);
-            $chartData = [];
-            foreach ($hoursByUser as $name => $hours) {
-                $chartData[] = ['name' => $name, 'hours' => $hours];
-            }
-            $pdf->userChart($chartData);
-
-            // --- Таблиця, згрупована по проєктах, з підсумком на кожен ---
-            $columns = [
-                ['header' => 'Дата', 'width' => 22],
-                ['header' => 'Задача', 'width' => 60],
-                ['header' => 'Користувач', 'width' => 40],
-                ['header' => 'Категорія', 'width' => 33],
-                ['header' => 'Годин', 'width' => 25],
-            ];
-
-            $groupsByProject = [];
-            foreach ($rows as $r) {
-                $pid = (int) $r['project_id'];
-                if (!isset($groupsByProject[$pid])) {
-                    $groupsByProject[$pid] = ['project_name' => $r['project_name'], 'rows' => [], 'subtotal' => 0.0];
-                }
-                $groupsByProject[$pid]['rows'][] = [
-                    $r['log_date'],
-                    mb_strimwidth($r['task_title'], 0, 30, '…'),
-                    mb_strimwidth($r['user_name'], 0, 20, '…'),
-                    mb_strimwidth($r['activity_category'] ?? '—', 0, 16, '…'),
-                    number_format((float) $r['hours'], 2),
-                ];
-                $groupsByProject[$pid]['subtotal'] += (float) $r['hours'];
-            }
-            // Проєкти з найбільшими витратами часу — першими.
-            uasort($groupsByProject, fn($a, $b) => $b['subtotal'] <=> $a['subtotal']);
-
-            $pdf->groupedTable($columns, array_values($groupsByProject));
-
-            $totalHours = array_sum(array_column($rows, 'hours'));
-            $pdf->heading('Разом: ' . number_format($totalHours, 2) . ' год.');
+        $format = in_array($_GET['format'] ?? 'pdf', ['pdf', 'xlsx', 'csv'], true) ? (string) ($_GET['format'] ?? 'pdf') : 'pdf';
+        $file = \App\Services\ReportScheduleService::file($format, $rows, $filterLines, 'report_' . date('Ymd_His'));
+        while (ob_get_level() > 0) {
+            ob_end_clean();
         }
-
-        $filename = 'report_' . date('Ymd_His') . '.pdf';
-        $pdf->download($filename);
+        header('Content-Type: ' . $file['mime']);
+        header('Content-Disposition: attachment; filename="' . $file['name'] . '"');
+        header('Content-Length: ' . strlen($file['data']));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        echo $file['data'];
+        exit;
     }
 
     /**

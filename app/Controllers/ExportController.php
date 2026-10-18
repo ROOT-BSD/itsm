@@ -90,6 +90,94 @@ class ExportController
     }
 
     /** Журнал аудиту підрозділу: адміністратор підрозділу — лише записи свого підрозділу. */
+    /** Експорт «Звіту по тікетах» (XLSX/CSV) — список тікетів за період з часами реакції й вирішення. */
+    public function ticketsReport(): void
+    {
+        Auth::requireLogin();
+        if (!Auth::hasRole(['admin'])) {
+            http_response_code(403);
+            echo 'Доступно лише ролі «Адміністратор системи».';
+            exit;
+        }
+        $this->sendTicketsReport(null);
+    }
+
+    public function unitTicketsReport(): void
+    {
+        Auth::requireLogin();
+        if (!Access::isUnitAdmin(Auth::role())) {
+            http_response_code(403);
+            echo 'Ця сторінка доступна лише ролі «Адміністратор Підрозділу».';
+            exit;
+        }
+        $this->sendTicketsReport((int) Auth::id());
+    }
+
+    /** Віддає «Звіт по тікетах» у форматі з ?format= (pdf|xlsx|csv); фільтри — з AdminController::ticketsReportFilters(). Доступ перевіряє викликач. */
+    public function sendTicketsReport(?int $scope): void
+    {
+        $f = AdminController::ticketsReportFilters();
+        $fmt = static fn(?float $m) => $m === null ? '' : round($m / 60, 2);
+        $rows = [];
+        $src = Ticket::workReportRows($f, $scope, TableExport::MAX_ROWS);
+        if (($_GET['format'] ?? '') === 'pdf') {
+            $this->sendTicketsReportPdf($f, $src, $scope !== null);
+        }
+        foreach ($src as $t) {
+            $rows[] = [
+                (int) $t['id'], $t['subject'], $t['queue_name'], $t['requester_name'], $t['operator_name'] ?? '',
+                Ticket::statusLabel((string) $t['status']), $t['created_at'], $t['first_response_at'] ?? '', $t['resolved_at'] ?? '',
+                $fmt($t['response_min'] !== null ? (float) $t['response_min'] : null), $fmt($t['resolution_min'] !== null ? (float) $t['resolution_min'] : null),
+                round((float) $t['spent_hours'], 2),
+            ];
+        }
+        TableExport::send('tickets-report-' . $f['date_from'] . '_' . $f['date_to'], $_GET['format'] ?? '', [
+            '№', 'Тема', 'Черга', 'Заявник', 'Оператор', 'Статус', 'Створено', 'Перша відповідь', 'Вирішено',
+            'До першої відповіді, год', 'До вирішення, год', 'Витрачено, год',
+        ], $rows, 'Звіт по тікетах');
+    }
+
+    /** PDF «Звіту по тікетах»: підсумок, розбивки за чергами й операторами та список тікетів. */
+    private function sendTicketsReportPdf(array $f, array $src, bool $unit): never
+    {
+        $d = \App\Services\TicketWorkReport::build($src);
+        $dur = static fn(array $s) => $s['n'] > 0 ? \App\Services\TicketWorkReport::duration($s['avg']) . ' / ' . \App\Services\TicketWorkReport::duration($s['median']) : '—';
+        $lines = ['Період створення: ' . $f['date_from'] . ' — ' . $f['date_to']];
+        if ($unit) {
+            $lines[] = 'Лише тікети підрозділу';
+        }
+        $lines[] = 'Час календарний (без урахування вихідних і робочих годин). Сформовано: ' . date('d.m.Y H:i');
+        $pdf = new \App\Core\PdfReport('Звіт по тікетах', $lines);
+        $s = $d['summary'];
+        $pdf->line('Створено: ' . $s['total'] . '; вирішено/закрито: ' . $s['resolved'] . '; відкрито: ' . $s['open']);
+        $pdf->line('Витрачено годин (облік часу в тікетах): ' . number_format((float) $s['hours'], 2));
+        $pdf->line('До першої відповіді (середній / медіана): ' . $dur($s['response']));
+        $pdf->line('До вирішення (середній / медіана): ' . $dur($s['resolution']));
+        $cols = fn(string $first) => [
+            ['header' => $first, 'width' => 38], ['header' => 'Створено', 'width' => 17], ['header' => 'Вирішено', 'width' => 17],
+            ['header' => 'Відкрито', 'width' => 17], ['header' => 'Годин', 'width' => 14], ['header' => 'Перша відповідь', 'width' => 38], ['header' => 'Вирішення', 'width' => 38],
+        ];
+        $map = static fn(array $g) => array_map(static fn($r) => [$r['name'], $r['total'], $r['resolved'], $r['open'], number_format((float) $r['hours'], 2), $dur($r['response']), $dur($r['resolution'])], $g);
+        $pdf->table('По чергах (середній / медіана)', $cols('Черга'), $map($d['byQueue']));
+        $pdf->table('По операторах (середній / медіана)', $cols('Оператор'), $map($d['byOperator']));
+        $rows = [];
+        foreach ($src as $t) {
+            $rows[] = ['#' . $t['id'], $t['subject'], $t['operator_name'] ?? '—', Ticket::statusLabel((string) $t['status']), $t['created_at'],
+                \App\Services\TicketWorkReport::duration($t['response_min'] !== null ? (float) $t['response_min'] : null),
+                \App\Services\TicketWorkReport::duration($t['resolution_min'] !== null ? (float) $t['resolution_min'] : null),
+                number_format((float) $t['spent_hours'], 2)];
+        }
+        $pdf->table('Тікети за період (' . count($src) . ')', [
+            ['header' => '№', 'width' => 11], ['header' => 'Тема', 'width' => 36], ['header' => 'Оператор', 'width' => 26], ['header' => 'Статус', 'width' => 20],
+            ['header' => 'Створено', 'width' => 30], ['header' => 'До відповіді', 'width' => 20], ['header' => 'До вирішення', 'width' => 22], ['header' => 'Годин', 'width' => 15],
+        ], $rows);
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        $pdf->download('tickets-report-' . $f['date_from'] . '_' . $f['date_to'] . '.pdf');
+        exit;
+    }
+
     public function unitAudit(): void
     {
         Auth::requireLogin();

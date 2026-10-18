@@ -71,8 +71,12 @@
                     <label class="form-check-label small" for="with_duplicates">і для дублів (<?= count($links['duplicates']) ?>)</label>
                 </div>
             <?php endif; ?>
+            <?php if (!empty($canLogTime)): ?>
+                <input type="number" name="spent_minutes" min="0" max="1440" step="1" class="form-control form-control-sm w-auto" style="width:7rem" placeholder="хв" title="Витрачено часу, хв — записується при встановленні статусу «Вирішено» або «Закрито»" aria-label="Витрачено часу, хв">
+            <?php endif; ?>
             <button class="btn btn-sm btn-outline-primary" type="submit">Оновити</button>
         </form>
+        <?php if (!empty($canLogTime)): ?><div class="form-text">Поле «хв» — витрачений час; записується, коли статус змінюється на «Вирішено» або «Закрито».</div><?php endif; ?>
     </div>
 </div>
 
@@ -136,6 +140,60 @@ $attachmentOwnerId = (int) $ticket['id'];
 require __DIR__ . '/../attachments/_panel.php';
 ?>
 
+<?php if (!empty($canLogTime) || !empty($timeLogs)): ?>
+<?php $timeTotal = array_sum(array_map(fn($l) => (float) $l['hours'], $timeLogs)); ?>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between">
+        <span>Облік часу</span>
+        <span class="text-muted small">Разом: <?= \App\Core\View::e(\App\Services\TicketWorkReport::duration(round($timeTotal * 60))) ?> (<?= number_format($timeTotal, 2, ',', ' ') ?> год.)</span>
+    </div>
+    <?php if ($timeLogs): ?>
+    <ul class="list-group list-group-flush">
+        <?php foreach ($timeLogs as $l): ?>
+            <li class="list-group-item d-flex flex-wrap gap-2 align-items-center small">
+                <span class="text-nowrap"><?= \App\Core\View::e($l['log_date']) ?></span>
+                <strong><?= \App\Core\View::e(\App\Services\TicketWorkReport::duration(round((float) $l['hours'] * 60))) ?></strong>
+                <span><?= \App\Core\View::e($l['user_name']) ?></span>
+                <?php if (!empty($l['activity_category'])): ?><span class="badge text-bg-light"><?= \App\Core\View::e($l['activity_category']) ?></span><?php endif; ?>
+                <span class="text-muted"><?= \App\Core\View::e($l['comment'] ?? '') ?></span>
+                <?php if (!empty($canLogTime) && ((int) $l['user_id'] === (int) \App\Core\Auth::id() || \App\Core\Auth::hasRole(['admin']))): ?>
+                <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/time/<?= (int)$l['id'] ?>/delete" class="ms-auto" data-confirm="Видалити запис часу?">
+                    <?= \App\Core\Csrf::field() ?>
+                    <button class="btn btn-sm btn-outline-danger py-0" type="submit">Видалити</button>
+                </form>
+                <?php endif; ?>
+            </li>
+        <?php endforeach; ?>
+    </ul>
+    <?php endif; ?>
+    <?php if (!empty($canLogTime)): ?>
+    <div class="card-body">
+        <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/time" class="row g-2 align-items-end">
+            <?= \App\Core\Csrf::field() ?>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Годин</label>
+                <input type="number" name="hours" step="0.25" min="0.25" max="24" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small mb-1">Дата</label>
+                <input type="date" name="log_date" value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Категорія</label>
+                <input type="text" name="activity_category" maxlength="100" list="ticket-time-cats" class="form-control form-control-sm" placeholder="напр. діагностика">
+                <datalist id="ticket-time-cats"><?php foreach ($timeCategories as $c): ?><option value="<?= \App\Core\View::e($c) ?>"><?php endforeach; ?></datalist>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Коментар</label>
+                <input type="text" name="comment" maxlength="255" class="form-control form-control-sm">
+            </div>
+            <div class="col-12"><button class="btn btn-sm btn-outline-primary" type="submit">Записати час</button></div>
+        </form>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <div class="card-header">Листування</div>
     <ul class="list-group list-group-flush">
@@ -152,7 +210,15 @@ require __DIR__ . '/../attachments/_panel.php';
         <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/comments">
     <?= \App\Core\Csrf::field() ?>
             <textarea name="body" class="form-control mb-2" rows="2" placeholder="Написати відповідь..." required></textarea>
-            <button class="btn btn-sm btn-primary" type="submit">Надіслати</button>
+            <div class="d-flex flex-wrap gap-3 align-items-center">
+                <button class="btn btn-sm btn-primary" type="submit">Надіслати</button>
+                <?php if (!empty($canLogTime)): ?>
+                <label class="d-flex gap-2 align-items-center small mb-0">Витрачено, хв
+                    <input type="number" name="spent_minutes" value="5" min="0" max="1440" step="1" class="form-control form-control-sm" style="width:6rem">
+                </label>
+                <span class="text-muted small">0 — не записувати час</span>
+                <?php endif; ?>
+            </div>
         </form>
     </div>
 </div>

@@ -72,6 +72,11 @@ $router->get('/calendar', [$calendar, 'index']);
 $reports = new ReportController();
 $router->get('/reports', [$reports, 'index']);
 $router->get('/reports/pdf', [$reports, 'generatePdf']);
+$router->get('/reports/schedules', fn() => (new \App\Controllers\ReportScheduleController())->index());
+$router->post('/reports/schedules', fn() => (new \App\Controllers\ReportScheduleController())->create());
+$router->post('/reports/schedules/{id}/toggle', fn($p) => (new \App\Controllers\ReportScheduleController())->toggle($p));
+$router->post('/reports/schedules/{id}/delete', fn($p) => (new \App\Controllers\ReportScheduleController())->delete($p));
+$router->post('/reports/schedules/{id}/run', fn($p) => (new \App\Controllers\ReportScheduleController())->run($p));
 
 // --- Особистий кабінет ---
 $profile = new ProfileController();
@@ -118,6 +123,7 @@ $router->post('/projects/{project_id}/tasks', fn($p) => $tasks->store($p));
 $router->get('/tasks/{id}', fn($p) => $tasks->show($p));
 $router->post('/tasks/{id}/status', fn($p) => $tasks->updateStatus($p));
 $router->post('/tasks/{id}/dates', fn($p) => $tasks->updateDates($p));
+$router->post('/tasks/{id}/schedule', fn($p) => $tasks->updateSchedule($p));
 $router->post('/tasks/{id}/milestone', fn($p) => $tasks->updateMilestone($p));
 $router->post('/tasks/{id}/assignee', fn($p) => $tasks->updateAssignee($p));
 $router->post('/tasks/{id}/comments', fn($p) => $tasks->addComment($p));
@@ -156,6 +162,8 @@ $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
 $router->post('/tickets/{id}/links', fn($p) => $tickets->addLink($p));
 $router->post('/tickets/{id}/links/{link}/delete', fn($p) => $tickets->removeLink($p));
+$router->post('/tickets/{id}/time', fn($p) => $tickets->addTime($p));
+$router->post('/tickets/{id}/time/{log}/delete', fn($p) => $tickets->deleteTime($p));
 $router->post('/tickets/{id}/comments', fn($p) => $tickets->addComment($p));
 $router->post('/tickets/{id}/csat', fn($p) => $tickets->submitCsat($p));
 
@@ -265,6 +273,8 @@ $router->get('/admin/audit/export', fn() => (new \App\Controllers\ExportControll
 $router->get('/admin/audit', function () {
     (new AuditController())->index();
 });
+$router->get('/admin/tickets-report', fn() => (new AdminController())->ticketsReport());
+$router->get('/admin/tickets-report/export', fn() => (new \App\Controllers\ExportController())->ticketsReport());
 $router->get('/admin/csat', function () {
     (new AdminController())->csat();
 });
@@ -345,6 +355,8 @@ $router->get('/unit/time', function () {
 $router->get('/unit/queues', function () {
     (new \App\Controllers\UnitController())->queues();
 });
+$router->get('/unit/tickets-report', fn() => (new \App\Controllers\UnitController())->ticketsReport());
+$router->get('/unit/tickets-report/export', fn() => (new \App\Controllers\ExportController())->unitTicketsReport());
 $router->get('/unit/csat', function () {
     (new \App\Controllers\UnitController())->csat();
 });

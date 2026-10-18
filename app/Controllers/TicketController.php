@@ -141,6 +141,9 @@ class TicketController
             'success' => $_GET['success'] ?? null,
             'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
             'links' => $this->visibleLinks((int) $ticket['id']),
+            'timeLogs' => \App\Models\TicketTimeLog::forTicket((int) $ticket['id']),
+            'canLogTime' => \App\Core\Access::canAssignTicketOperator(Auth::role()) && \App\Models\TicketTimeLog::ready(),
+            'timeCategories' => \App\Models\Task::distinctCategoriesVisibleTo((int) Auth::id(), Auth::hasRole(['admin'])),
         ]);
     }
 
@@ -213,6 +216,10 @@ class TicketController
         }
 
         Ticket::updateStatus((int) $params['id'], $status, Auth::id());
+        $timeNote = '';
+        if (in_array($status, ['resolved', 'closed'], true) && $ticket['status'] !== $status) {
+            $timeNote = $this->logMinutes($ticket, $_POST['spent_minutes'] ?? 0, 'Вирішення тікета', 'Витрачено при встановленні статусу «' . Ticket::statusLabel($status) . '»');
+        }
 
         // «Застосувати до всіх дублів»: той самий статус отримують дублі цього тікета, які поточний користувач бачить.
         $suffix = '';
@@ -225,7 +232,9 @@ class TicketController
                     $n++;
                 }
             }
-            $suffix = '?success=' . urlencode('Статус застосовано і до дублів: ' . $n);
+            $suffix = '?success=' . urlencode('Статус застосовано і до дублів: ' . $n . '.' . $timeNote);
+        } elseif ($timeNote !== '') {
+            $suffix = '?success=' . urlencode('Статус оновлено.' . $timeNote);
         }
         header('Location: /tickets/' . $params['id'] . $suffix);
         exit;
@@ -263,11 +272,11 @@ class TicketController
         $this->linkRedirect('/tickets/' . (int) $ticket['id'], 'success', 'Зв\'язок видалено');
     }
 
-    private function findStaffTicketOrFail(int $id): array
+    private function findStaffTicketOrFail(int $id, string $deniedMessage = 'Зв\'язувати тікети можуть лише персонал підтримки та адміністратори.'): array
     {
         if (!\App\Core\Access::canAssignTicketOperator(Auth::role())) {
             http_response_code(403);
-            echo 'Зв\'язувати тікети можуть лише персонал підтримки та адміністратори.';
+            echo $deniedMessage;
             exit;
         }
         $ticket = Ticket::find($id);
@@ -288,6 +297,64 @@ class TicketController
     {
         header('Location: ' . $url . '?' . $kind . '=' . urlencode($message));
         exit;
+    }
+
+    /**
+     * Записує витрачений час (хвилини) з форми відповіді / зміни статусу. Порожнє чи 0 — нічого не записується.
+     * Лише для персоналу підтримки. @return string примітка для повідомлення ('' якщо нічого не записано)
+     */
+    private function logMinutes(array $ticket, mixed $raw, string $category, string $comment): string
+    {
+        if (!\App\Core\Access::canAssignTicketOperator(Auth::role()) || !\App\Models\TicketTimeLog::ready()) {
+            return '';
+        }
+        $minutes = (int) round((float) str_replace(',', '.', trim((string) $raw)));
+        if ($minutes <= 0) {
+            return '';
+        }
+        $minutes = min($minutes, 1440);
+        $id = \App\Models\TicketTimeLog::add((int) $ticket['id'], (int) Auth::id(), round($minutes / 60, 4), date('Y-m-d'), $category, $comment);
+        \App\Models\Audit::log('ticket', (int) $ticket['id'], 'time_logged', (int) Auth::id(), ['log' => $id, 'minutes' => $minutes, 'date' => date('Y-m-d')]);
+        return ' Записано часу: ' . $minutes . ' хв.';
+    }
+
+    /** Облік часу по тікету: запис додає персонал підтримки, який бачить тікет. */
+    public function addTime(array $params): void
+    {
+        Auth::requireLogin();
+        $ticket = $this->findStaffTicketOrFail((int) $params['id'], 'Облік часу по тікетах доступний лише персоналу підтримки та адміністраторам.');
+        $url = '/tickets/' . (int) $ticket['id'];
+        $hours = (float) str_replace(',', '.', (string) ($_POST['hours'] ?? ''));
+        $date = (string) ($_POST['log_date'] ?? '');
+        $d = \DateTime::createFromFormat('Y-m-d', $date);
+        if ($hours <= 0 || $hours > 24) {
+            $this->linkRedirect($url, 'error', 'Вкажіть кількість годин від 0,01 до 24.');
+        }
+        if (!$d || $d->format('Y-m-d') !== $date || $date > date('Y-m-d')) {
+            $this->linkRedirect($url, 'error', 'Вкажіть коректну дату (не з майбутнього).');
+        }
+        $category = mb_substr(trim((string) ($_POST['activity_category'] ?? '')), 0, 100);
+        $comment = mb_substr(trim((string) ($_POST['comment'] ?? '')), 0, 255);
+        $id = \App\Models\TicketTimeLog::add((int) $ticket['id'], (int) Auth::id(), round($hours, 2), $date, $category, $comment);
+        \App\Models\Audit::log('ticket', (int) $ticket['id'], 'time_logged', (int) Auth::id(), ['log' => $id, 'hours' => round($hours, 2), 'date' => $date]);
+        $this->linkRedirect($url, 'success', 'Час записано: ' . number_format($hours, 2, ',', '') . ' год.');
+    }
+
+    public function deleteTime(array $params): void
+    {
+        Auth::requireLogin();
+        $ticket = $this->findStaffTicketOrFail((int) $params['id'], 'Облік часу по тікетах доступний лише персоналу підтримки та адміністраторам.');
+        $url = '/tickets/' . (int) $ticket['id'];
+        $log = \App\Models\TicketTimeLog::find((int) $params['log']);
+        if (!$log || (int) $log['ticket_id'] !== (int) $ticket['id']) {
+            $this->linkRedirect($url, 'error', 'Запис не знайдено.');
+        }
+        if ((int) $log['user_id'] !== (int) Auth::id() && !Auth::hasRole(['admin'])) {
+            $this->linkRedirect($url, 'error', 'Видалити запис може його автор або адміністратор системи.');
+        }
+        \App\Models\TicketTimeLog::delete((int) $log['id']);
+        \App\Models\Audit::log('ticket', (int) $ticket['id'], 'time_deleted', (int) Auth::id(), ['log' => (int) $log['id'], 'hours' => (float) $log['hours']]);
+        $this->linkRedirect($url, 'success', 'Запис часу видалено.');
     }
 
     public function addComment(array $params): void
@@ -311,6 +378,11 @@ class TicketController
             // Оператор чи заявник — визначаємо за роллю поточного користувача.
             $authorType = \App\Core\Access::ticketCommentAuthorType(Auth::role());
             Ticket::addComment((int) $params['id'], $authorType, Auth::id(), $body);
+            $note = $this->logMinutes($ticket, $_POST['spent_minutes'] ?? 0, 'Відповідь на тікет', 'Відповідь у листуванні');
+            if ($note !== '') {
+                header('Location: /tickets/' . $params['id'] . '?success=' . urlencode('Відповідь надіслано.' . $note));
+                exit;
+            }
         }
         header('Location: /tickets/' . $params['id']);
         exit;

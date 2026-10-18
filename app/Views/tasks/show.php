@@ -40,10 +40,66 @@
             <tr><th>Тип</th><td><?= \App\Core\View::e($task['type_name']) ?></td></tr>
             <tr><th>Пріоритет</th><td><?= \App\Core\View::e($task['priority']) ?></td></tr>
             <tr><th>Автор</th><td><?= \App\Core\View::e($task['author_name']) ?></td></tr>
-            <tr><th>Дата початку</th><td><?= \App\Core\View::e($task['start_date'] ?? '—') ?></td></tr>
-            <tr><th>Термін</th><td><?= \App\Core\View::e($task['due_date'] ?? '—') ?></td></tr>
+            <?php
+            // Початкові значення (міграція 043) показуємо, лише коли поточні від них відрізняються.
+            $planned = static function (?string $orig, ?string $cur): string {
+                $orig = $orig ? substr($orig, 0, 10) : null;
+                $cur = $cur ? substr($cur, 0, 10) : null;
+                if ($orig === null || $orig === $cur) {
+                    return '';
+                }
+                $shift = '';
+                if ($cur !== null) {
+                    $days = (int) round((strtotime($cur) - strtotime($orig)) / 86400);
+                    $shift = ' <span class="badge ' . ($days > 0 ? 'bg-danger' : 'bg-success') . '">' . ($days > 0 ? '+' : '') . $days . ' дн.</span>';
+                }
+                return '<div class="small text-muted">початково: ' . \App\Core\View::e($orig) . $shift . '</div>';
+            };
+            ?>
+            <tr><th>Дата початку</th><td><?= \App\Core\View::e($task['start_date'] ?? '—') ?><?= $planned($task['planned_start_date'] ?? null, $task['start_date'] ?? null) ?></td></tr>
+            <tr><th>Термін</th><td><?= \App\Core\View::e($task['due_date'] ?? '—') ?><?= $planned($task['planned_due_date'] ?? null, $task['due_date'] ?? null) ?></td></tr>
             <tr><th>Витрачено годин</th><td><?= \App\Core\View::e((string)$task['actual_hours']) ?></td></tr>
         </table>
+
+        <details class="mb-3">
+            <summary class="text-muted small">📅 Змінити терміни</summary>
+            <form method="post" action="/tasks/<?= (int)$task['id'] ?>/schedule" class="row g-2 align-items-end mt-1">
+                <?= \App\Core\Csrf::field() ?>
+                <div class="col-auto">
+                    <label class="form-label small mb-1">Дата початку</label>
+                    <input type="date" name="start_date" class="form-control form-control-sm" value="<?= \App\Core\View::e(substr((string) ($task['start_date'] ?? ''), 0, 10)) ?>">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-1">Термін</label>
+                    <input type="date" name="due_date" class="form-control form-control-sm" value="<?= \App\Core\View::e(substr((string) ($task['due_date'] ?? ''), 0, 10)) ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Причина зміни (необов'язково)</label>
+                    <input type="text" name="reason" class="form-control form-control-sm" maxlength="255" placeholder="напр. чекаємо на обладнання">
+                </div>
+                <div class="col-auto"><button class="btn btn-sm btn-outline-primary" type="submit">Зберегти терміни</button></div>
+            </form>
+            <p class="text-muted small mt-1 mb-0">Початкові значення зберігаються й далі показуються поруч із поточними; кожна зміна потрапляє в історію.</p>
+        </details>
+        <?php if (!empty($dateChanges)): ?>
+            <details class="mb-3">
+                <summary class="text-muted small">🕘 Історія змін термінів (<?= count($dateChanges) ?>)</summary>
+                <table class="table table-sm mt-2 mb-0">
+                    <thead><tr><th>Коли</th><th>Хто</th><th>Початок</th><th>Термін</th><th>Причина</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($dateChanges as $c): ?>
+                        <tr>
+                            <td class="text-nowrap"><?= \App\Core\View::e(date('d.m.Y H:i', strtotime($c['created_at']))) ?></td>
+                            <td><?= \App\Core\View::e($c['user_name'] ?? '—') ?></td>
+                            <td class="text-nowrap"><?= \App\Core\View::e($c['old_start_date'] ?? '—') ?> → <?= \App\Core\View::e($c['new_start_date'] ?? '—') ?></td>
+                            <td class="text-nowrap"><?= \App\Core\View::e($c['old_due_date'] ?? '—') ?> → <?= \App\Core\View::e($c['new_due_date'] ?? '—') ?></td>
+                            <td><?= \App\Core\View::e($c['reason'] ?? '') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </details>
+        <?php endif; ?>
 
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/assignee" class="d-flex gap-2 align-items-center mb-2">
     <?= \App\Core\Csrf::field() ?>

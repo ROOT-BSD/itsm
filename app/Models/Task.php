@@ -159,9 +159,10 @@ class Task
     public static function create(array $data): int
     {
         $parentId = !empty($data['parent_task_id']) ? (int) $data['parent_task_id'] : null;
+        $tracked = self::datesTracked(); // міграція 043: початкові терміни = значення при створенні
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tasks (project_id, ' . ($parentId !== null ? 'parent_task_id, ' : '') . 'type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date, milestone_id)
-             VALUES (:project_id, ' . ($parentId !== null ? ':parent_task_id, ' : '') . ':type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date, :milestone_id)'
+            'INSERT INTO tasks (project_id, ' . ($parentId !== null ? 'parent_task_id, ' : '') . 'type_id, status_id, title, description, priority, author_id, assignee_id, start_date, due_date, ' . ($tracked ? 'planned_start_date, planned_due_date, ' : '') . 'milestone_id)
+             VALUES (:project_id, ' . ($parentId !== null ? ':parent_task_id, ' : '') . ':type_id, :status_id, :title, :description, :priority, :author_id, :assignee_id, :start_date, :due_date, ' . ($tracked ? ':planned_start_date, :planned_due_date, ' : '') . ':milestone_id)'
         );
         $params = [
             'project_id' => $data['project_id'],
@@ -178,6 +179,10 @@ class Task
         ];
         if ($parentId !== null) {
             $params['parent_task_id'] = $parentId;
+        }
+        if ($tracked) {
+            $params['planned_start_date'] = $params['start_date'];
+            $params['planned_due_date'] = $params['due_date'];
         }
         $stmt->execute($params);
 
@@ -303,17 +308,70 @@ class Task
     }
 
     /** Оновлення дати початку/завершення задачі — використовується діаграмою Ганта (drag/resize). */
-    public static function updateDates(int $id, ?string $startDate, ?string $dueDate, int $actingUserId): void
+    /** Чи застосована міграція 043 (початкові терміни й історія змін). */
+    public static function datesTracked(): bool
     {
-        $stmt = Database::connection()->prepare(
-            'UPDATE tasks SET start_date = :start_date, due_date = :due_date WHERE id = :id'
-        );
-        $stmt->execute(['start_date' => $startDate, 'due_date' => $dueDate, 'id' => $id]);
-        Audit::log('task', $id, 'dates_changed', $actingUserId, ['start_date' => $startDate, 'due_date' => $dueDate]);
+        static $ok = null;
+        if ($ok === null) {
+            $ok = (int) Database::connection()->query(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'task_date_changes'"
+            )->fetchColumn() > 0;
+        }
+        return $ok;
+    }
+
+    /**
+     * Єдине місце зміни дат (сторінка задачі, діаграма Ганта, API): записує історію, фіксує ПОЧАТКОВІ значення
+     * (якщо ще не було) і скидає нагадування про термін. Без змін — нічого не робить.
+     */
+    public static function updateDates(int $id, ?string $startDate, ?string $dueDate, int $actingUserId, ?string $reason = null): void
+    {
+        $db = Database::connection();
+        $stmt = $db->prepare('SELECT start_date, due_date FROM tasks WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $old = $stmt->fetch();
+        if (!$old) {
+            return;
+        }
+        if ($old['start_date'] === $startDate && $old['due_date'] === $dueDate) {
+            return;
+        }
+        $tracked = self::datesTracked();
+        $sql = 'UPDATE tasks SET start_date = :start_date, due_date = :due_date';
+        if ($tracked) {
+            $sql .= ', planned_start_date = COALESCE(planned_start_date, :new_ps), planned_due_date = COALESCE(planned_due_date, :new_pd)';
+        }
+        $params = ['start_date' => $startDate, 'due_date' => $dueDate, 'id' => $id];
+        if ($tracked) {
+            $params['new_ps'] = $startDate;
+            $params['new_pd'] = $dueDate;
+        }
+        $db->prepare($sql . ' WHERE id = :id')->execute($params);
+        if ($tracked) {
+            $reason = $reason !== null ? mb_substr(trim($reason), 0, 255) : null;
+            $db->prepare(
+                'INSERT INTO task_date_changes (task_id, user_id, old_start_date, old_due_date, new_start_date, new_due_date, reason)
+                 VALUES (:t, :u, :os, :od, :ns, :nd, :r)'
+            )->execute(['t' => $id, 'u' => $actingUserId ?: null, 'os' => $old['start_date'], 'od' => $old['due_date'], 'ns' => $startDate, 'nd' => $dueDate, 'r' => $reason !== '' ? $reason : null]);
+        }
+        Audit::log('task', $id, 'dates_changed', $actingUserId, ['start_date' => $startDate, 'due_date' => $dueDate, 'was_start' => $old['start_date'], 'was_due' => $old['due_date']]);
 
         // Термін переносять — старі нагадування (2 дні/1 день/настав термін) уже не відповідають
         // новій даті; прибираємо їх, щоб вони мали шанс спрацювати заново для нового терміну.
-        Database::connection()->prepare('DELETE FROM task_due_reminders WHERE task_id = :id')->execute(['id' => $id]);
+        $db->prepare('DELETE FROM task_due_reminders WHERE task_id = :id')->execute(['id' => $id]);
+    }
+
+    /** @return array<int, array<string, mixed>> історія змін дат, нові зверху */
+    public static function dateChanges(int $taskId): array
+    {
+        if (!self::datesTracked()) {
+            return [];
+        }
+        $stmt = Database::connection()->prepare(
+            'SELECT c.*, u.full_name AS user_name FROM task_date_changes c LEFT JOIN users u ON u.id = c.user_id WHERE c.task_id = :id ORDER BY c.id DESC'
+        );
+        $stmt->execute(['id' => $taskId]);
+        return $stmt->fetchAll();
     }
 
     /** Створення зв'язку залежності між двома задачами (для діаграми Ганта). */

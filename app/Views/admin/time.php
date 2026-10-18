@@ -1,17 +1,49 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <?php if (!empty($unitMode)) { require __DIR__ . '/../unit/_nav.php'; } else { require __DIR__ . '/_back.php'; } ?>
-        <h3 class="mb-0 mt-1">Облік часу — <?= !empty($unitMode) ? "проєкти підрозділу" : "усі проєкти" ?></h3>
+        <h3 class="mb-0 mt-1">Облік часу</h3>
+        <div class="text-muted small"><?= !empty($unitMode) ? 'Проєкти й тікети підрозділу' : 'Усі проєкти й тікети' ?></div>
     </div>
     <a href="/reports" class="btn btn-primary">📄 Сформувати звіт</a>
 </div>
 
-<div class="card mb-4">
-    <div class="card-body text-center">
+<?php
+$ticketHours = $ticketHours ?? [];
+$ticketTotal = array_sum(array_map(fn($t) => (float) $t['hours'], $ticketHours));
+?>
+<div class="row g-3 mb-4">
+    <div class="col-md-4"><div class="card h-100"><div class="card-body text-center">
+        <div class="display-6"><?= \App\Core\View::e(number_format((float)$totalHours + $ticketTotal, 2)) ?></div>
+        <div class="text-muted">годин усього<?= !empty($unitMode) ? ' (підрозділ)' : ' по всій системі' ?></div>
+    </div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body text-center">
         <div class="display-6"><?= \App\Core\View::e(number_format((float)$totalHours, 2)) ?></div>
-        <div class="text-muted">годин витрачено по всій системі</div>
-    </div>
+        <div class="text-muted">годин по задачах</div>
+    </div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body text-center">
+        <div class="display-6"><?= \App\Core\View::e(number_format($ticketTotal, 2)) ?></div>
+        <div class="text-muted">годин по тікетах</div>
+    </div></div></div>
 </div>
+
+<?php if ($ticketHours): ?>
+<div class="card mb-4">
+    <div class="card-header">Час по тікетах</div>
+    <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Тікет</th><th>Черга</th><th>Записів</th><th>Годин</th></tr></thead>
+        <tbody>
+        <?php foreach ($ticketHours as $t): ?>
+            <tr>
+                <td><a href="/tickets/<?= (int) $t['ticket_id'] ?>">#<?= (int) $t['ticket_id'] ?></a> <?= \App\Core\View::e($t['subject']) ?></td>
+                <td><?= \App\Core\View::e($t['queue_name']) ?></td>
+                <td><?= (int) $t['entries'] ?></td>
+                <td><?= \App\Core\View::e(number_format((float) $t['hours'], 2)) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($hoursByDay) || !empty($hoursByWeek) || !empty($hoursByMonth)): ?>
 <?php

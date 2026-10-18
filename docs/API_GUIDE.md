@@ -211,11 +211,11 @@ curl -X PATCH https://itsm.example.org/api/v1/tickets/2 \
 | `start_date`, `due_date` | ні | `РРРР-ММ-ДД`; початок не пізніше терміну |
 | `milestone_id` | ні | етап **цього ж** проєкту |
 
-Початковий статус — «Нова». Відповідь — `201` і задача (`project`, `type`, `status`, `priority`, `author`, `assignee`, `start_date`, `due_date`, `milestone`, `url`).
+Початковий статус — «Нова». Відповідь — `201` і задача (`project`, `type`, `status`, `priority`, `author`, `assignee`, `start_date`, `due_date`, `planned_start_date`, `planned_due_date` (початкові значення, лише читання), `milestone`, `url`).
 
 ### Зміна задачі — `PATCH /api/v1/tasks/{id}`
 
-Дозволені поля: `status` (код зі `/task-statuses`) **або** `status_id`, `assignee_id`, `description`, `start_date`, `due_date`, `milestone_id`. `null` знімає виконавця, етап чи дату. Назву, пріоритет, тип і проєкт через API змінити не можна (422). Правила атомарності й «без шуму» — ті самі, що й для тікетів. Дати перевіряються разом із поточними: новий `due_date` раніше за наявний `start_date` — 422.
+Дозволені поля: `status` (код зі `/task-statuses`) **або** `status_id`, `assignee_id`, `description`, `start_date`, `due_date`, `milestone_id`. `null` знімає виконавця, етап чи дату. Назву, пріоритет, тип і проєкт через API змінити не можна (422). Правила атомарності й «без шуму» — ті самі, що й для тікетів. Кожна зміна дат фіксується в історії задачі (початкові значення `planned_*` не змінюються). Дати перевіряються разом із поточними: новий `due_date` раніше за наявний `start_date` — 422.
 
 ---
 

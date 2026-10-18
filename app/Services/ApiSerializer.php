@@ -72,6 +72,8 @@ final class ApiSerializer
             'assignee' => self::ref(!empty($t['assignee_id']) ? (int) $t['assignee_id'] : null, $t['assignee_name'] ?? null, 'full_name'),
             'start_date' => !empty($t['start_date']) ? substr((string) $t['start_date'], 0, 10) : null,
             'due_date' => !empty($t['due_date']) ? substr((string) $t['due_date'], 0, 10) : null,
+            'planned_start_date' => !empty($t['planned_start_date']) ? substr((string) $t['planned_start_date'], 0, 10) : null,
+            'planned_due_date' => !empty($t['planned_due_date']) ? substr((string) $t['planned_due_date'], 0, 10) : null,
             'milestone' => !empty($t['milestone_id']) ? ['id' => (int) $t['milestone_id'], 'title' => $t['milestone_title'] ?? null] : null,
             'created_at' => self::iso($t['created_at'] ?? null),
             'updated_at' => self::iso($t['updated_at'] ?? null),

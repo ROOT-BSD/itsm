@@ -179,6 +179,7 @@ class UnitController
             'hoursByWeekProject' => \App\Models\Task::hoursByPeriodAndProjectAll('week', $id),
             'hoursByMonthProject' => \App\Models\Task::hoursByPeriodAndProjectAll('month', $id),
             'totalHours' => array_sum(array_column($logs, 'hours')),
+            'ticketHours' => \App\Models\TicketTimeLog::hoursByTicket($id),
         ]);
     }
 
@@ -190,6 +191,38 @@ class UnitController
             'ou' => $ou,
             'ouLabel' => $ou !== null ? LdapDn::ouLabel($ou) : '',
             'queues' => $ou !== null ? \App\Models\Ticket::queuesForUnit((int) Auth::id()) : [],
+        ]);
+    }
+
+    /** Фільтри звіту по тікетах із запиту: період створення (за замовчуванням — останні 30 днів), черга, оператор, статус. */
+    public static function ticketsReportFilters(): array
+    {
+        $valid = static fn($d) => is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d) !== false;
+        $to = $valid($_GET['date_to'] ?? null) ? $_GET['date_to'] : date('Y-m-d');
+        $from = $valid($_GET['date_from'] ?? null) ? $_GET['date_from'] : date('Y-m-d', strtotime('-30 days'));
+        return [
+            'date_from' => $from, 'date_to' => $to,
+            'queue_id' => !empty($_GET['queue_id']) ? (int) $_GET['queue_id'] : null,
+            'operator_id' => !empty($_GET['operator_id']) ? (int) $_GET['operator_id'] : null,
+            'status' => (string) ($_GET['status'] ?? ''),
+        ];
+    }
+
+    /** «Звіт по тікетах»: облік часу роботи з тікетами за період (лише тікети підрозділу). */
+    public function ticketsReport(): void
+    {
+        $scope = (int) Auth::id();
+        $f = self::ticketsReportFilters();
+        $rows = \App\Models\Ticket::workReportRows($f, $scope);
+        View::render('admin/tickets_report', [
+            'unitMode' => true,
+            'f' => $f,
+            'report' => \App\Services\TicketWorkReport::build($rows),
+            'rows' => array_slice($rows, 0, 200),
+            'rowCount' => count($rows),
+            'queues' => \App\Models\Ticket::queues(),
+            'operators' => \App\Models\Ticket::workReportOperators($scope),
+            'exportBase' => '/unit/tickets-report/export',
         ]);
     }
 

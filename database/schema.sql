@@ -203,6 +203,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     assignee_id INT NULL,
     start_date DATE NULL,                  -- дата початку (для діаграми Ганта)
     due_date DATE NULL,
+    planned_start_date DATE NULL,          -- початкова дата початку (не змінюється; міграція 043)
+    planned_due_date DATE NULL,            -- початковий термін (не змінюється; міграція 043)
     milestone_id INT NULL,                 -- прив'язка до етапу/контрольної точки (дорожня карта)
     estimated_hours DECIMAL(6,2) NULL,
     actual_hours DECIMAL(6,2) NOT NULL DEFAULT 0,
@@ -699,8 +701,64 @@ CREATE TABLE IF NOT EXISTS ticket_links (
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Звіти за розкладом (міграція 042)
+CREATE TABLE IF NOT EXISTS report_schedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    frequency ENUM('weekly','monthly') NOT NULL DEFAULT 'weekly',
+    weekday TINYINT NOT NULL DEFAULT 1,          -- 1 = понеділок … 7 = неділя (для weekly)
+    month_day TINYINT NOT NULL DEFAULT 1,        -- 1…28 (для monthly)
+    send_hour TINYINT NOT NULL DEFAULT 8,        -- 0…23, не раніше цієї години
+    format ENUM('pdf','xlsx','csv') NOT NULL DEFAULT 'pdf',
+    project_id INT NULL,
+    log_user_id INT NULL,
+    category VARCHAR(100) NULL,
+    extra_recipients TEXT NULL,                  -- email-и через кому (понад власника)
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    last_run_at DATETIME NULL,
+    last_status VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_report_schedules_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (log_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Облік часу по тікетах (міграція 044)
+CREATE TABLE IF NOT EXISTS ticket_time_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id INT NOT NULL,
+    user_id INT NOT NULL,
+    activity_category VARCHAR(100) NULL,
+    hours DECIMAL(8,4) NOT NULL   -- 4 знаки: 5 хв = 0,0833 год (міграція 045),
+    log_date DATE NOT NULL,
+    comment VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_ticket_time_logs_ticket (ticket_id),
+    KEY idx_ticket_time_logs_date (log_date),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+-- Історія змін термінів задач (міграція 043)
+CREATE TABLE IF NOT EXISTS task_date_changes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_id INT NOT NULL,
+    user_id INT NULL,
+    old_start_date DATE NULL,
+    old_due_date DATE NULL,
+    new_start_date DATE NULL,
+    new_due_date DATE NULL,
+    reason VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_task_date_changes_task (task_id, id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
--- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (042+) накочує update.sh.
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (046+) накочує update.sh.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(20) NOT NULL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -750,4 +808,8 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('038', 'add_subtasks_and_checklists', 'baseline'),
 ('039', 'add_templates', 'baseline'),
 ('040', 'add_sessions_and_login_log', 'baseline'),
-('041', 'add_ticket_links', 'baseline');
+('041', 'add_ticket_links', 'baseline'),
+('042', 'add_report_schedules', 'baseline'),
+('043', 'add_task_date_history', 'baseline'),
+('044', 'add_ticket_time_logs', 'baseline'),
+('045', 'ticket_time_minutes_precision', 'baseline');

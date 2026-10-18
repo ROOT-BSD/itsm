@@ -93,7 +93,7 @@ class PdfReport
         foreach ($groups as $group) {
             $this->pdf->SetFont('DejaVu', 'B', 10);
             $this->pdf->SetFillColor(210, 225, 245);
-            $this->pdf->Cell($totalWidth, 7, 'Проєкт: ' . $group['project_name'], 1, 1, 'L', true);
+            $this->pdf->Cell($totalWidth, 7, $group['title'] ?? ('Проєкт: ' . $group['project_name']), 1, 1, 'L', true);
 
             $this->pdf->SetFont('DejaVu', 'B', 9);
             $this->pdf->SetFillColor(230, 230, 230);
@@ -112,9 +112,35 @@ class PdfReport
 
             $this->pdf->SetFont('DejaVu', 'B', 9);
             $this->pdf->SetFillColor(245, 245, 245);
-            $this->pdf->Cell($restWidth, 6, 'Витрачено на опрацювання проєкту:', 1, 0, 'R', true);
+            $this->pdf->Cell($restWidth, 6, $group['subtotal_label'] ?? 'Витрачено на опрацювання проєкту:', 1, 0, 'R', true);
             $this->pdf->Cell($lastColWidth, 6, number_format($group['subtotal'], 2), 1, 1, 'L', true);
             $this->pdf->Ln(3);
+        }
+    }
+
+    /**
+     * Проста таблиця з заголовком (для звітів не по проєктах). Текст комірок обрізається до ширини колонки.
+     * @param array<array{header: string, width: float|int}> $columns
+     */
+    public function table(string $title, array $columns, array $rows): void
+    {
+        $this->heading($title);
+        $this->pdf->SetFont('DejaVu', 'B', 8);
+        $this->pdf->SetFillColor(230, 230, 230);
+        foreach ($columns as $col) {
+            $this->pdf->Cell($col['width'], 6, $col['header'], 1, 0, 'L', true);
+        }
+        $this->pdf->Ln();
+        $this->pdf->SetFont('DejaVu', '', 8);
+        foreach ($rows as $row) {
+            foreach ($columns as $i => $col) {
+                $max = max(3, (int) floor($col['width'] / 1.55));
+                $this->pdf->Cell($col['width'], 5.5, mb_strimwidth((string) ($row[$i] ?? ''), 0, $max, '…'), 1);
+            }
+            $this->pdf->Ln();
+        }
+        if (!$rows) {
+            $this->pdf->Cell(array_sum(array_column($columns, 'width')), 5.5, 'Немає даних', 1, 1);
         }
     }
 
@@ -129,6 +155,12 @@ class PdfReport
     {
         $this->pdf->SetFont('DejaVu', '', 11);
         $this->pdf->Cell(0, 6, $text, 0, 1);
+    }
+
+    /** Готовий PDF як рядок (для вкладення в лист). */
+    public function toString(): string
+    {
+        return $this->pdf->Output('S');
     }
 
     /** Віддає готовий PDF браузеру як файл для завантаження. */

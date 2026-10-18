@@ -131,6 +131,7 @@ class TaskController
             'users' => User::allActive(),
             'milestones' => Milestone::forProject((int) $task['project_id']),
             'timeLogs' => Task::timeLogsForTask($task['id']),
+            'dateChanges' => Task::dateChanges((int) $task['id']),
             'projects' => Project::allVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
             'attachments' => \App\Models\Attachment::forOwner('task', (int) $task['id']),
             'checklistReady' => \App\Models\TaskChecklist::ready(),
@@ -403,6 +404,38 @@ class TaskController
 
         Task::delete((int) $params['id'], $task['title'], Auth::id());
         header('Location: /projects/' . $projectId);
+        exit;
+    }
+
+    /** Зміна дати початку й терміну на сторінці задачі (з необов'язковою причиною); початкові значення зберігаються. */
+    public function updateSchedule(array $params): void
+    {
+        Auth::requireLogin();
+        $task = $this->findTaskOrFail((int) $params['id']);
+        $back = '/tasks/' . (int) $params['id'];
+
+        $start = trim((string) ($_POST['start_date'] ?? ''));
+        $due = trim((string) ($_POST['due_date'] ?? ''));
+        foreach ([[$start, 'початку'], [$due, 'терміну']] as [$v, $label]) {
+            if ($v !== '' && !$this->isValidDate($v)) {
+                header('Location: ' . $back . '?error=' . urlencode('Некоректна дата ' . $label));
+                exit;
+            }
+        }
+        $start = $start !== '' ? $start : null;
+        $due = $due !== '' ? $due : null;
+        if ($start !== null && $due !== null && $start > $due) {
+            header('Location: ' . $back . '?error=' . urlencode('Дата початку не може бути пізніше терміну'));
+            exit;
+        }
+        $curStart = !empty($task['start_date']) ? substr((string) $task['start_date'], 0, 10) : null;
+        $curDue = !empty($task['due_date']) ? substr((string) $task['due_date'], 0, 10) : null;
+        if ($start === $curStart && $due === $curDue) {
+            header('Location: ' . $back . '?success=' . urlencode('Терміни без змін'));
+            exit;
+        }
+        Task::updateDates((int) $params['id'], $start, $due, (int) Auth::id(), (string) ($_POST['reason'] ?? ''));
+        header('Location: ' . $back . '?success=' . urlencode('Терміни збережено'));
         exit;
     }
 

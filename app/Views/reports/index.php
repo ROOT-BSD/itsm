@@ -2,18 +2,31 @@
     <a href="/" class="text-decoration-none">&larr; Дашборд</a>
 </div>
 
-<h3 class="mb-4">Звіти</h3>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">Звіти</h3>
+    <a href="/reports/schedules" class="btn btn-outline-primary btn-sm">Звіти за розкладом</a>
+</div>
 
 <?php if (!empty($error)): ?>
     <div class="alert alert-danger"><?= \App\Core\View::e($error) ?></div>
 <?php endif; ?>
 
 <p class="text-muted">
-    Сформуйте PDF-звіт обліку часу за тиждень чи місяць, з фільтрами за проєктом,
-    користувачем і категорією активності. Показуються лише дані з проєктів, до яких у вас є доступ.
+    Оберіть тип звіту та сформуйте його (PDF, Excel чи CSV) за тиждень чи місяць. <strong>Облік часу</strong> — години по задачах
+    і по тікетах, з фільтрами за проєктом, користувачем і категорією активності (по задачах показуються лише проєкти, до яких у вас є доступ;
+    по тікетах — ваші записи, а в адміністраторів — усі тікети або тікети підрозділу). <strong>Звіт по тікетах</strong> — створено/вирішено,
+    час до першої відповіді й вирішення, витрачені години (для адміністраторів системи й підрозділу).
 </p>
 
-<form method="get" action="/reports/pdf" class="card p-4 shadow-sm form-card-md" target="_blank">
+<form method="get" action="/reports/pdf" class="card p-4 shadow-sm form-card-md">
+    <div class="mb-3">
+        <label class="form-label">Тип звіту</label>
+        <select name="report_type" id="report_type" class="form-select w-auto">
+            <option value="time">Облік часу</option>
+            <?php if (!empty($canTicketReport)): ?><option value="tickets">Звіт по тікетах</option><?php endif; ?>
+        </select>
+    </div>
+
     <div class="mb-3">
         <label class="form-label">Період</label>
         <div class="d-flex gap-3 mb-2">
@@ -123,6 +136,7 @@
         document.getElementById('month_number').addEventListener('change', updateMonthValue);
     </script>
 
+    <div id="time_only">
     <div class="mb-3">
         <label class="form-label">Проєкт</label>
         <select name="project_id" class="form-select">
@@ -153,5 +167,31 @@
         </datalist>
     </div>
 
-    <button type="submit" class="btn btn-primary">Сформувати PDF</button>
+    <div class="form-check mb-3">
+        <input type="hidden" name="include_tickets" value="0">
+        <input class="form-check-input" type="checkbox" name="include_tickets" id="include_tickets" value="1" checked>
+        <label class="form-check-label" for="include_tickets">Враховувати час, витрачений на тікети (з розбивкою по тікетах)</label>
+    </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Формат</label>
+        <select name="format" class="form-select w-auto">
+            <option value="pdf">PDF (з діаграмою)</option>
+            <option value="xlsx">Excel (XLSX)</option>
+            <option value="csv">CSV</option>
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Сформувати звіт</button>
 </form>
+
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
+    // Для «Звіту по тікетах» фільтри проєкту/користувача/категорії не потрібні — ховаємо їх.
+    (function () {
+        var t = document.getElementById('report_type'), box = document.getElementById('time_only');
+        function sync() { box.classList.toggle('d-none', t.value === 'tickets'); }
+        t.addEventListener('change', sync);
+        sync();
+    })();
+</script>

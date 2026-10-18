@@ -109,6 +109,7 @@ class AdminController
             'hoursByWeekProject' => Task::hoursByPeriodAndProjectAll('week'),
             'hoursByMonthProject' => Task::hoursByPeriodAndProjectAll('month'),
             'totalHours' => $totalHours,
+            'ticketHours' => \App\Models\TicketTimeLog::hoursByTicket(null),
         ]);
     }
 
@@ -415,6 +416,38 @@ class AdminController
     }
 
     // ---------- Черги тікетів ----------
+
+    /** Фільтри звіту по тікетах із запиту: період створення (за замовчуванням — останні 30 днів), черга, оператор, статус. */
+    public static function ticketsReportFilters(): array
+    {
+        $valid = static fn($d) => is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d) !== false;
+        $to = $valid($_GET['date_to'] ?? null) ? $_GET['date_to'] : date('Y-m-d');
+        $from = $valid($_GET['date_from'] ?? null) ? $_GET['date_from'] : date('Y-m-d', strtotime('-30 days'));
+        return [
+            'date_from' => $from, 'date_to' => $to,
+            'queue_id' => !empty($_GET['queue_id']) ? (int) $_GET['queue_id'] : null,
+            'operator_id' => !empty($_GET['operator_id']) ? (int) $_GET['operator_id'] : null,
+            'status' => (string) ($_GET['status'] ?? ''),
+        ];
+    }
+
+    /** «Звіт по тікетах»: облік часу роботи з тікетами за період. */
+    public function ticketsReport(): void
+    {
+        $scope = null;
+        $f = self::ticketsReportFilters();
+        $rows = \App\Models\Ticket::workReportRows($f, $scope);
+        View::render('admin/tickets_report', [
+            'unitMode' => false,
+            'f' => $f,
+            'report' => \App\Services\TicketWorkReport::build($rows),
+            'rows' => array_slice($rows, 0, 200),
+            'rowCount' => count($rows),
+            'queues' => \App\Models\Ticket::queues(),
+            'operators' => \App\Models\Ticket::workReportOperators($scope),
+            'exportBase' => '/admin/tickets-report/export',
+        ]);
+    }
 
     /** Зведений звіт по зібраних CSAT-оцінках — загальна картина, по чергах, по операторах, останні оцінки. */
     public function csat(): void

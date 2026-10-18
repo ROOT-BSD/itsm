@@ -364,6 +364,69 @@ class Ticket
         return [" AND ({$a[0]} OR {$b[0]})", $a[1] + $b[1]];
     }
 
+    /**
+     * Тікети, створені в період, з часами реакції й вирішення (у хвилинах) — основа звіту «Звіт по тікетах».
+     * Фільтри: date_from, date_to (за датою створення, включно), queue_id, operator_id, status. З $unitAdminId — лише тікети підрозділу.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function workReportRows(array $f, ?int $unitAdminId = null, int $limit = 20000): array
+    {
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        if (!empty($f['date_from'])) {
+            $w .= ' AND t.created_at >= :d_from';
+            $p['d_from'] = $f['date_from'] . ' 00:00:00';
+        }
+        if (!empty($f['date_to'])) {
+            $w .= ' AND t.created_at <= :d_to';
+            $p['d_to'] = $f['date_to'] . ' 23:59:59';
+        }
+        if (!empty($f['queue_id'])) {
+            $w .= ' AND t.queue_id = :queue';
+            $p['queue'] = (int) $f['queue_id'];
+        }
+        if (!empty($f['operator_id'])) {
+            $w .= ' AND t.assigned_operator_id = :op';
+            $p['op'] = (int) $f['operator_id'];
+        }
+        if (!empty($f['status']) && isset(self::STATUS_LABELS[$f['status']])) {
+            $w .= ' AND t.status = :st';
+            $p['st'] = $f['status'];
+        }
+        $spent = \App\Models\TicketTimeLog::ready()
+            ? '(SELECT COALESCE(SUM(l.hours), 0) FROM ticket_time_logs l WHERE l.ticket_id = t.id)'
+            : '0';
+        $stmt = Database::connection()->prepare(
+            "SELECT t.id, t.subject, t.status, t.created_at, t.first_response_at, t.resolved_at, t.requester_name, {$spent} AS spent_hours,
+                    q.id AS queue_id, q.name AS queue_name, op.id AS operator_id, op.full_name AS operator_name,
+                    TIMESTAMPDIFF(MINUTE, t.created_at, t.first_response_at) AS response_min,
+                    TIMESTAMPDIFF(MINUTE, t.created_at, t.resolved_at) AS resolution_min
+             FROM tickets t
+             JOIN ticket_queues q ON q.id = t.queue_id
+             LEFT JOIN users op ON op.id = t.assigned_operator_id
+             WHERE 1 = 1{$w}
+             ORDER BY t.created_at DESC, t.id DESC
+             LIMIT :limit"
+        );
+        foreach ($p as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /** Оператори, яким призначені тікети (для фільтра звіту); з $unitAdminId — лише в межах підрозділу. */
+    public static function workReportOperators(?int $unitAdminId = null): array
+    {
+        [$w, $p] = self::unitWhere('t', $unitAdminId);
+        $stmt = Database::connection()->prepare(
+            "SELECT DISTINCT u.id, u.full_name FROM tickets t JOIN users u ON u.id = t.assigned_operator_id WHERE 1 = 1{$w} ORDER BY u.full_name"
+        );
+        $stmt->execute($p);
+        return $stmt->fetchAll();
+    }
+
     /** Загальна картина по зібраних CSAT-оцінках — для адмін-звіту (з $unitAdminId — лише тікети підрозділу). */
     public static function csatSummary(?int $unitAdminId = null): array
     {
