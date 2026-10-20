@@ -141,10 +141,23 @@ class TicketController
             'success' => $_GET['success'] ?? null,
             'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
             'links' => $this->visibleLinks((int) $ticket['id']),
+            'ticketAssets' => $this->visibleAssets((int) $ticket['id']),
+            'canLinkAssets' => \App\Core\Access::canUseAssets(Auth::role()) && \App\Models\Asset::ready(),
             'timeLogs' => \App\Models\TicketTimeLog::forTicket((int) $ticket['id']),
             'canLogTime' => \App\Core\Access::canAssignTicketOperator(Auth::role()) && \App\Models\TicketTimeLog::ready(),
             'timeCategories' => \App\Models\Task::distinctCategoriesVisibleTo((int) Auth::id(), Auth::hasRole(['admin'])),
         ]);
+    }
+
+    /** Активи тікета, які бачить поточний користувач (реєстр доступний лише персоналу). */
+    private function visibleAssets(int $ticketId): array
+    {
+        if (!\App\Core\Access::canUseAssets(Auth::role())) {
+            return [];
+        }
+        $role = Auth::role();
+        $uid = (int) Auth::id();
+        return array_values(array_filter(\App\Models\Asset::assetsOfTicket($ticketId), fn($a) => \App\Models\Asset::isVisible($a, $role, $uid)));
     }
 
     /**

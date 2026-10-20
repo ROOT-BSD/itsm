@@ -226,6 +226,9 @@ class EmailTicketService
             } else {
                 $ticketId = self::createTicket($m);
                 $outcome = ['action' => 'ticket_created', 'ticket_id' => $ticketId, 'note' => 'Створено тікет #' . $ticketId];
+                if (\App\Services\TicketRuleService::$lastNote !== '') {
+                    $outcome['note'] .= '; ' . \App\Services\TicketRuleService::$lastNote;
+                }
             }
 
             $attachmentIds = self::storeImages($ticketId, $images, $storedFiles);

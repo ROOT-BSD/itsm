@@ -83,6 +83,8 @@ $profile = new ProfileController();
 $router->get('/profile', [$profile, 'index']);
 $router->post('/profile/password', [$profile, 'updatePassword']);
 $sessions = new \App\Controllers\SessionController();
+$router->get('/profile/menu', [$profile, 'menu']);
+$router->post('/profile/menu', [$profile, 'saveMenu']);
 $router->get('/profile/sessions', [$sessions, 'mine']);
 $router->post('/profile/sessions/revoke-others', [$sessions, 'revokeOthers']);
 $router->post('/profile/sessions/{id}/revoke', fn($p) => $sessions->revokeMine($p));
@@ -157,6 +159,24 @@ $router->post('/tickets', fn() => $tickets->store());
 $router->get('/tickets/{id}', fn($p) => $tickets->show($p));
 
 // --- Архів (закриті тікети/задачі/проєкти) ---
+$router->get('/it-assets', fn() => (new \App\Controllers\AssetController())->index());
+$router->get('/it-assets/create', fn() => (new \App\Controllers\AssetController())->form());
+$router->get('/it-assets/export', fn() => (new \App\Controllers\AssetController())->export());
+$router->get('/it-assets/template', fn() => (new \App\Controllers\AssetController())->template());
+$router->get('/it-assets/template-software', fn() => (new \App\Controllers\AssetController())->templateSoftware());
+$router->get('/it-assets/import', fn() => (new \App\Controllers\AssetController())->importForm());
+$router->post('/it-assets/import', fn() => (new \App\Controllers\AssetController())->import());
+$router->post('/it-assets', fn() => (new \App\Controllers\AssetController())->save());
+$router->get('/it-assets/{id}', fn($p) => (new \App\Controllers\AssetController())->show($p));
+$router->get('/it-assets/{id}/edit', fn($p) => (new \App\Controllers\AssetController())->form($p));
+$router->post('/it-assets/{id}', fn($p) => (new \App\Controllers\AssetController())->save($p));
+$router->post('/it-assets/{id}/delete', fn($p) => (new \App\Controllers\AssetController())->delete($p));
+$router->post('/it-assets/{id}/links', fn($p) => (new \App\Controllers\AssetController())->addLink($p));
+$router->post('/it-assets/{id}/links/{link}/delete', fn($p) => (new \App\Controllers\AssetController())->removeLink($p));
+$router->post('/it-assets/{id}/tickets', fn($p) => (new \App\Controllers\AssetController())->addTicket($p));
+$router->post('/it-assets/{id}/tickets/{ticket}/delete', fn($p) => (new \App\Controllers\AssetController())->removeTicket($p));
+$router->post('/tickets/{id}/assets', fn($p) => (new \App\Controllers\AssetController())->ticketLink($p));
+$router->post('/tickets/{id}/assets/{asset}/delete', fn($p) => (new \App\Controllers\AssetController())->ticketUnlink($p));
 $router->get('/archive', fn() => (new ArchiveController())->index());
 $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
@@ -376,6 +396,15 @@ $router->post('/unit/users/{id}/password', function ($p) {
 $router->post('/unit/users/{id}/unlock', function ($p) {
     (new \App\Controllers\UnitController())->unlock($p);
 });
+$router->get('/admin/ticket-rules', fn() => (new \App\Controllers\TicketRuleController(false))->index());
+$router->post('/admin/ticket-rules', fn() => (new \App\Controllers\TicketRuleController(false))->save());
+$router->post('/admin/ticket-rules/{id}/toggle', fn($p) => (new \App\Controllers\TicketRuleController(false))->toggle($p));
+$router->post('/admin/ticket-rules/{id}/delete', fn($p) => (new \App\Controllers\TicketRuleController(false))->delete($p));
+$router->get('/ticket-rules', fn() => (new \App\Controllers\TicketRuleController(false, true))->index());
+$router->get('/unit/ticket-rules', fn() => (new \App\Controllers\TicketRuleController(true))->index());
+$router->post('/unit/ticket-rules', fn() => (new \App\Controllers\TicketRuleController(true))->save());
+$router->post('/unit/ticket-rules/{id}/toggle', fn($p) => (new \App\Controllers\TicketRuleController(true))->toggle($p));
+$router->post('/unit/ticket-rules/{id}/delete', fn($p) => (new \App\Controllers\TicketRuleController(true))->delete($p));
 $router->get('/admin/queues', function () {
     (new AdminController())->queues();
 });
@@ -384,6 +413,15 @@ $router->get('/admin/queues/create', function () {
 });
 $router->post('/admin/queues', function () {
     (new AdminController())->storeQueue();
+});
+$router->get('/admin/queues/{id}/edit', function ($p) {
+    (new AdminController())->showEditQueueForm($p);
+});
+$router->post('/admin/queues/{id}/edit', function ($p) {
+    (new AdminController())->updateQueue($p);
+});
+$router->post('/admin/queues/{id}/delete', function ($p) {
+    (new AdminController())->deleteQueue($p);
 });
 $router->post('/admin/queues/{id}/sla', function ($p) {
     (new AdminController())->updateSlaPolicy($p);

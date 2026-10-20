@@ -140,6 +140,34 @@ $attachmentOwnerId = (int) $ticket['id'];
 require __DIR__ . '/../attachments/_panel.php';
 ?>
 
+<?php if (!empty($canLinkAssets) || !empty($ticketAssets)): ?>
+<div class="card mb-4">
+    <div class="card-header">Активи</div>
+    <ul class="list-group list-group-flush">
+        <?php if (empty($ticketAssets)): ?><li class="list-group-item text-muted small">Активи не прив'язано</li><?php endif; ?>
+        <?php foreach ($ticketAssets as $as): ?>
+        <li class="list-group-item d-flex align-items-center gap-2 small">
+            <a href="/it-assets/<?= (int) $as['id'] ?>"><?= \App\Core\View::e($as['name']) ?></a>
+            <?php if (!empty($as['inventory_number'])): ?><span class="text-muted">(<?= \App\Core\View::e($as['inventory_number']) ?>)</span><?php endif; ?>
+            <?php if (!empty($canLinkAssets)): ?>
+            <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/assets/<?= (int)$as['id'] ?>/delete" class="ms-auto" data-confirm="Прибрати актив із тікета?">
+                <?= \App\Core\Csrf::field() ?><button class="btn btn-sm btn-outline-danger py-0" type="submit">Прибрати</button></form>
+            <?php endif; ?>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+    <?php if (!empty($canLinkAssets)): ?>
+    <div class="card-body">
+        <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/assets" class="d-flex gap-2">
+            <?= \App\Core\Csrf::field() ?>
+            <input type="text" name="asset" class="form-control form-control-sm" placeholder="№ картки активу або інвентарний №" required>
+            <button class="btn btn-sm btn-outline-primary text-nowrap" type="submit">Прив'язати</button>
+        </form>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($canLogTime) || !empty($timeLogs)): ?>
 <?php $timeTotal = array_sum(array_map(fn($l) => (float) $l['hours'], $timeLogs)); ?>
 <div class="card mb-4">

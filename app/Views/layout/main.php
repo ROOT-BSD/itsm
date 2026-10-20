@@ -28,10 +28,9 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link" href="/projects">Проєкти</a></li>
                 <li class="nav-item"><a class="nav-link" href="/calendar">Календар</a></li>
                 <li class="nav-item"><a class="nav-link" href="/tickets">Тікети</a></li>
-                <li class="nav-item"><a class="nav-link" href="/archive">Архів</a></li>
-                <li class="nav-item"><a class="nav-link" href="/wiki">Вікі</a></li>
-                <li class="nav-item"><a class="nav-link" href="/library">Документи</a></li>
-                <li class="nav-item"><a class="nav-link" href="/forum">Форум</a></li>
+                <?php foreach (\App\Models\MenuPrefs::visibleItems(Auth::role(), (int) Auth::id()) as $mHref => $mLabel): ?>
+                <li class="nav-item"><a class="nav-link" href="<?= $mHref ?>"><?= $mLabel ?></a></li>
+                <?php endforeach; ?>
                 <?php if (\App\Core\Access::isUnitAdmin(Auth::role())): ?>
                 <li class="nav-item"><a class="nav-link<?= \App\Core\UnitNav::currentSection() !== null ? ' active' : '' ?>" href="/unit">Мій підрозділ</a></li>
                 <?php endif; ?>

@@ -604,6 +604,60 @@ class AdminController
         ]);
     }
 
+    public function showEditQueueForm(array $params): void
+    {
+        $q = Ticket::findQueue((int) $params['id']);
+        if (!$q) {
+            header('Location: /admin/queues?error=' . urlencode('Чергу не знайдено'));
+            exit;
+        }
+        View::render('admin/queues_create', ['queue' => $q, 'error' => $_GET['error'] ?? null]);
+    }
+
+    public function updateQueue(array $params): void
+    {
+        $id = (int) $params['id'];
+        if (!Ticket::findQueue($id)) {
+            header('Location: /admin/queues?error=' . urlencode('Чергу не знайдено'));
+            exit;
+        }
+        $name = mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 100);
+        $description = mb_substr(trim((string) ($_POST['description'] ?? '')), 0, 255);
+        if ($name === '') {
+            header('Location: /admin/queues/' . $id . '/edit?error=' . urlencode('Назва черги обов\'язкова'));
+            exit;
+        }
+        if (Ticket::queueNameExists($name, $id)) {
+            header('Location: /admin/queues/' . $id . '/edit?error=' . urlencode('Черга з такою назвою вже існує'));
+            exit;
+        }
+        Ticket::updateQueue($id, $name, $description ?: null, Auth::id());
+        header('Location: /admin/queues?success=' . urlencode('Чергу "' . $name . '" збережено'));
+        exit;
+    }
+
+    public function deleteQueue(array $params): void
+    {
+        $id = (int) $params['id'];
+        $q = Ticket::findQueue($id);
+        $fail = static function (string $m): never {
+            header('Location: /admin/queues?error=' . urlencode($m));
+            exit;
+        };
+        if (!$q) {
+            $fail('Чергу не знайдено');
+        }
+        if (Ticket::queueTicketCount($id) > 0) {
+            $fail('Черга «' . $q['name'] . '» містить тікети — спершу перенесіть або видаліть їх. Видалити можна лише порожню чергу.');
+        }
+        if (count(Ticket::queues()) <= 1) {
+            $fail('Не можна видалити останню чергу: без черг не можна створювати тікети.');
+        }
+        Ticket::deleteQueue($id, Auth::id());
+        header('Location: /admin/queues?success=' . urlencode('Чергу "' . $q['name'] . '" видалено'));
+        exit;
+    }
+
     public function storeQueue(): void
     {
         $name = trim($_POST['name'] ?? '');

@@ -16,11 +16,11 @@
 
 <table class="table table-bordered bg-white align-middle">
     <thead>
-        <tr><th>Назва</th><th>Опис</th><th>Тікетів у черзі</th><th>SLA: перша відповідь / вирішення (хв)</th><th>Автопризначення оператора</th></tr>
+        <tr><th>Назва</th><th>Опис</th><th>Тікетів у черзі</th><th>SLA: перша відповідь / вирішення (хв)</th><th>Автопризначення оператора</th><th></th></tr>
     </thead>
     <tbody>
     <?php if (empty($queues)): ?>
-        <tr><td colspan="5" class="text-center text-muted">Черг ще немає</td></tr>
+        <tr><td colspan="6" class="text-center text-muted">Черг ще немає</td></tr>
     <?php else: foreach ($queues as $q): ?>
         <tr>
             <td><?= \App\Core\View::e($q['name']) ?></td>
@@ -54,6 +54,15 @@
                 </form>
                 <?php if (!empty($q['default_operator_id'])): ?>
                     <div class="form-text">Новий тікет у цій черзі одразу отримає: <?= \App\Core\View::e($q['default_operator_name']) ?></div>
+                <?php endif; ?>
+            </td>
+            <td class="text-nowrap">
+                <a class="btn btn-sm btn-outline-primary" href="/admin/queues/<?= (int)$q['id'] ?>/edit">Змінити</a>
+                <?php if ((int)$q['tickets_count'] === 0 && count($queues) > 1): ?>
+                <form method="post" action="/admin/queues/<?= (int)$q['id'] ?>/delete" class="d-inline" data-confirm="Видалити порожню чергу «<?= \App\Core\View::e($q['name']) ?>»? Правила черги з умовою «лише в цій черзі» буде видалено разом із нею.">
+                    <?= \App\Core\Csrf::field() ?>
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Видалити</button>
+                </form>
                 <?php endif; ?>
             </td>
         </tr>

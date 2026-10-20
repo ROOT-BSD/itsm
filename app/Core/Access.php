@@ -38,6 +38,18 @@ final class Access
         return in_array($role, ['admin', 'unit_admin', 'it_manager'], true);
     }
 
+    /** Реєстр обладнання й ПЗ: бачити й редагувати картки активів (адміністратор підрозділу — лише свого підрозділу). */
+    public static function canUseAssets(?string $role): bool
+    {
+        return in_array($role, ['admin', 'unit_admin', 'it_manager', 'support_operator'], true);
+    }
+
+    /** Видаляти картки активів (решта лише переводить їх у «Списано»). */
+    public static function canDeleteAssets(?string $role): bool
+    {
+        return in_array($role, ['admin', 'it_manager'], true);
+    }
+
     /** Адміністратор підрозділу: керує користувачами й бачить дані свого AD OU (App\Core\Unit). */
     public static function isUnitAdmin(?string $role): bool
     {

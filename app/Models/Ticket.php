@@ -137,10 +137,49 @@ class Ticket
         return $queueId;
     }
 
-    public static function queueNameExists(string $name): bool
+    public static function findQueue(int $id): ?array
     {
-        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM ticket_queues WHERE name = :name');
-        $stmt->execute(['name' => $name]);
+        $stmt = Database::connection()->prepare('SELECT * FROM ticket_queues WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public static function updateQueue(int $id, string $name, ?string $description, int $actingUserId): void
+    {
+        $old = self::findQueue($id);
+        Database::connection()->prepare('UPDATE ticket_queues SET name = :n, description = :d WHERE id = :id')
+            ->execute(['n' => $name, 'd' => $description, 'id' => $id]);
+        $changes = [];
+        if ($old && $old['name'] !== $name) {
+            $changes['name'] = [$old['name'], $name];
+        }
+        if ($old && (string) ($old['description'] ?? '') !== (string) ($description ?? '')) {
+            $changes['description'] = [$old['description'], $description];
+        }
+        Audit::log('ticket_queue', $id, 'updated', $actingUserId, ['name' => $name] + ($changes ? ['changes' => $changes] : []));
+    }
+
+    public static function queueTicketCount(int $id): int
+    {
+        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM tickets WHERE queue_id = :id');
+        $stmt->execute(['id' => $id]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** Видаляє порожню чергу разом з її нормативом SLA (правила, що на неї посилаються, обробляє БД: умова «з черги» — каскадом, «у чергу» — скидається). */
+    public static function deleteQueue(int $id, int $actingUserId): void
+    {
+        $q = self::findQueue($id);
+        $db = Database::connection();
+        $db->prepare('DELETE FROM sla_policies WHERE queue_id = :id')->execute(['id' => $id]);
+        $db->prepare('DELETE FROM ticket_queues WHERE id = :id')->execute(['id' => $id]);
+        Audit::log('ticket_queue', $id, 'deleted', $actingUserId, ['name' => $q['name'] ?? '']);
+    }
+
+    public static function queueNameExists(string $name, ?int $exceptId = null): bool
+    {
+        $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM ticket_queues WHERE name = :name AND id <> :ex');
+        $stmt->execute(['name' => $name, 'ex' => $exceptId ?? 0]);
         return (int) $stmt->fetchColumn() > 0;
     }
 
@@ -307,6 +346,8 @@ class Ticket
         if ($defaultOperatorId !== null) {
             Audit::log('ticket', $ticketId, 'auto_assigned_operator', null, ['assigned_operator_id' => $defaultOperatorId]);
         }
+        // Автоматичні правила черги (за ключовими словами): можуть змінити чергу й оператора. Помилки правил створення не ламають.
+        \App\Services\TicketRuleService::apply($ticketId);
         return $ticketId;
     }
 

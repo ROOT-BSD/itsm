@@ -2,6 +2,7 @@
     <h3 class="mb-0">Тікети</h3>
     <div class="d-flex gap-2">
         <?php $exportUrl = '/tickets/export'; require __DIR__ . '/../_export_button.php'; ?>
+        <?php if (\App\Core\Auth::hasRole(['admin', 'unit_admin', 'it_manager', 'support_operator'])): ?><a href="/ticket-rules" class="btn btn-outline-secondary">Правила черги</a><?php endif; ?>
         <a href="/tickets/create" class="btn btn-primary">+ Нове звернення</a>
     </div>
 </div>

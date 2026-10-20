@@ -49,6 +49,14 @@
 </div>
 
 <div class="card mt-4 form-card-md">
+    <div class="card-header">🧭 Меню</div>
+    <div class="card-body">
+        <p class="text-muted small mb-2">Оберіть, які розділи (Активи, Архів, Вікі, Документи, Форум) показувати у верхньому меню.</p>
+        <a href="/profile/menu" class="btn btn-sm btn-outline-primary">Налаштувати меню</a>
+    </div>
+</div>
+
+<div class="card mt-4 form-card-md">
     <div class="card-header">🖥️ Сесії та входи</div>
     <div class="card-body">
         <p class="text-muted small mb-2">Де ви зараз ввійшли в систему, історія входів і можливість завершити чужі сесії.</p>

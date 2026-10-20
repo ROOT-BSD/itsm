@@ -27,6 +27,37 @@ class ProfileController
         ]);
     }
 
+    /** Особисті налаштування верхнього меню: які розділи показувати. */
+    public function menu(): void
+    {
+        Auth::requireLogin();
+        View::render('profile/menu', [
+            'items' => \App\Models\MenuPrefs::selectable(Auth::role()),
+            'hidden' => \App\Models\MenuPrefs::hidden((int) Auth::id()),
+            'ready' => \App\Models\MenuPrefs::ready(),
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    public function saveMenu(): void
+    {
+        Auth::requireLogin();
+        if (!\App\Models\MenuPrefs::ready()) {
+            header('Location: /profile/menu');
+            exit;
+        }
+        $shown = array_map('strval', (array) ($_POST['show'] ?? []));
+        $hide = [];
+        foreach (array_keys(\App\Models\MenuPrefs::selectable(Auth::role())) as $key) {
+            if (!in_array($key, $shown, true)) {
+                $hide[] = $key;
+            }
+        }
+        \App\Models\MenuPrefs::save((int) Auth::id(), $hide);
+        header('Location: /profile/menu?success=' . urlencode('Налаштування меню збережено.'));
+        exit;
+    }
+
     /** Самостійна зміна власного пароля — на відміну від адмін-панелі, тут спершу перевіряється поточний пароль. */
     public function updatePassword(): void
     {

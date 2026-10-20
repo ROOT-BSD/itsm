@@ -741,6 +741,93 @@ CREATE TABLE IF NOT EXISTS ticket_time_logs (
     FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+-- Автоматичні правила черги тікетів (міграція 046)
+CREATE TABLE IF NOT EXISTS ticket_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    scope_user_id INT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 100,
+    from_queue_id INT NULL,
+    keywords TEXT NOT NULL,
+    match_in ENUM('subject','description','both') NOT NULL DEFAULT 'both',
+    action_queue_id INT NULL,
+    action_operator_id INT NULL,
+    notify_emails VARCHAR(500) NULL,
+    notify_operator TINYINT(1) NOT NULL DEFAULT 0,
+    hits INT NOT NULL DEFAULT 0,
+    last_hit_at DATETIME NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_ticket_rules_order (is_active, sort_order, id),
+    FOREIGN KEY (scope_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_queue_id) REFERENCES ticket_queues(id) ON DELETE CASCADE,
+    FOREIGN KEY (action_queue_id) REFERENCES ticket_queues(id) ON DELETE SET NULL,
+    FOREIGN KEY (action_operator_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Особисті налаштування меню (міграція 048)
+CREATE TABLE IF NOT EXISTS user_menu_prefs (
+    user_id INT NOT NULL,
+    item VARCHAR(30) NOT NULL,
+    PRIMARY KEY (user_id, item),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Реєстр обладнання й ПЗ (міграція 047)
+CREATE TABLE IF NOT EXISTS assets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_type VARCHAR(30) NOT NULL DEFAULT 'other',
+    name VARCHAR(200) NOT NULL,
+    inventory_number VARCHAR(80) NULL,
+    serial_number VARCHAR(120) NULL,
+    manufacturer VARCHAR(120) NULL,
+    model VARCHAR(120) NULL,
+    status ENUM('in_use','in_stock','repair','written_off') NOT NULL DEFAULT 'in_use',
+    owner_user_id INT NULL,
+    location VARCHAR(200) NULL,
+    network_id VARCHAR(120) NULL,
+    purchase_date DATE NULL,
+    warranty_until DATE NULL,
+    notes TEXT NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assets_inventory (inventory_number),
+    KEY idx_assets_owner (owner_user_id),
+    KEY idx_assets_type_status (asset_type, status),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS asset_links (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_id INT NOT NULL,
+    linked_id INT NOT NULL,
+    relation ENUM('connected_to','installed_on','part_of') NOT NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_asset_links (asset_id, linked_id, relation),
+    KEY idx_asset_links_linked (linked_id),
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    FOREIGN KEY (linked_id) REFERENCES assets(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS asset_tickets (
+    asset_id INT NOT NULL,
+    ticket_id INT NOT NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (asset_id, ticket_id),
+    KEY idx_asset_tickets_ticket (ticket_id),
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- Історія змін термінів задач (міграція 043)
 CREATE TABLE IF NOT EXISTS task_date_changes (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -758,7 +845,7 @@ CREATE TABLE IF NOT EXISTS task_date_changes (
 ) ENGINE=InnoDB;
 
 -- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
--- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (046+) накочує update.sh.
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (049+) накочує update.sh.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(20) NOT NULL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -812,4 +899,7 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('042', 'add_report_schedules', 'baseline'),
 ('043', 'add_task_date_history', 'baseline'),
 ('044', 'add_ticket_time_logs', 'baseline'),
-('045', 'ticket_time_minutes_precision', 'baseline');
+('045', 'ticket_time_minutes_precision', 'baseline'),
+('046', 'add_ticket_rules', 'baseline'),
+('047', 'add_assets', 'baseline'),
+('048', 'add_user_menu_prefs', 'baseline');
