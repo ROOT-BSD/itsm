@@ -264,6 +264,10 @@
 @media (max-width: 991.98px) { [data-search-box] { width: 100% !important; } }
 
 /* Дашборд: підсвітка задач за близькістю терміну (чим ближче/прострочено — тим червоніше) */
+.table > tbody > tr > td.dash-due-1 { background-color: #fdecec; }
+.table > tbody > tr > td.dash-due-2 { background-color: #f9d0d0; }
+.table > tbody > tr > td.dash-due-3 { background-color: #f3a9a9; }
+.table > tbody > tr > td.dash-due-4 { background-color: #e57373; color: #4a0000; }
 .table > tbody > tr.task-urgency-1 > * { background-color: #fdecec; }
 .table > tbody > tr.task-urgency-2 > * { background-color: #f9d0d0; }
 .table > tbody > tr.task-urgency-3 > * { background-color: #f3a9a9; }
@@ -275,3 +279,13 @@
 .card.project-urgency-2, tr.project-urgency-2 > * { background-color: #fff6cc !important; }
 .card.project-urgency-1, tr.project-urgency-1 > * { background-color: #e1f0fa !important; }
 [class*="project-urgency-"] > .card-footer { background-color: transparent !important; border-top-color: rgba(0,0,0,.08); }
+
+/* Компактні таблиці задач (дашборд, «Відкриті задачі»): менша висота рядків */
+.table-compact-rows > :not(caption) > * > * { padding-top: .15rem; padding-bottom: .15rem; line-height: 1.3; font-size: .9rem; }
+.table-compact-rows .badge { font-size: .75em; padding: .2em .45em; }
+
+/* Пріоритет задачі в списках: critical — червоний, high — рожевий, normal — зелений, low — світло-блакитний */
+.badge.prio-critical { background-color: #dc3545; color: #fff; }
+.badge.prio-high { background-color: #f4a6c0; color: #5a1030; }
+.badge.prio-normal { background-color: #8fd19e; color: #0f3d1b; }
+.badge.prio-low { background-color: #bfe3f7; color: #0b3a55; }

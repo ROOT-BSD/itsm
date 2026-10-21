@@ -20,7 +20,7 @@ class TaskController
     {
         Auth::requireLogin();
         View::render('tasks/index', [
-            'tasks' => Task::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin'])),
+            'tasks' => Task::sortForDisplay(Task::allOpenVisibleTo(Auth::id(), Auth::hasRole(['admin']))),
         ]);
     }
 

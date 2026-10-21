@@ -209,6 +209,7 @@ $eMember = static fn($v) => \App\Core\View::e($v);
     <?php else:
         // Відкриті — зверху, за терміном (найближчі першими, без терміну — в кінці); закриті — внизу.
         $sortedTasks = $tasks;
+        $sortedTasks = array_map(static function ($t) { if (($t['status_code'] ?? '') === 'resolved') { $t['is_closed'] = 0; } return $t; }, $sortedTasks);
         usort($sortedTasks, static fn($a, $b) => [(int)$a['is_closed'], $a['due_date'] === null, (string)$a['due_date'], (int)$a['id']] <=> [(int)$b['is_closed'], $b['due_date'] === null, (string)$b['due_date'], (int)$b['id']]);
         foreach ($sortedTasks as $t): ?>
         <tr class="<?= empty($t['is_closed']) ? \App\Core\View::urgencyClass($t['due_date'] ?? null) : '' ?>">
@@ -216,7 +217,7 @@ $eMember = static fn($v) => \App\Core\View::e($v);
             <td><?php if (!empty($t['parent_task_id'])): ?><span class="text-muted" title="Підзадача задачі #<?= (int)$t['parent_task_id'] ?>">↳ </span><?php endif; ?><?= \App\Core\View::e($t['title']) ?>
                 <?= \App\Core\View::progress($t) ?></td>
             <td><?= \App\Core\View::e($t['type_name']) ?></td>
-            <td><span class="badge bg-secondary"><?= \App\Core\View::e($t['status_name']) ?></span></td>
+            <td><span class="badge <?= ($t['status_code'] ?? '') === 'resolved' ? 'bg-success' : 'bg-secondary' ?>"><?= \App\Core\View::e($t['status_name']) ?></span></td>
             <td><?= \App\Core\View::e($t['priority']) ?></td>
             <td><?= \App\Core\View::e($t['assignee_name'] ?? '—') ?></td>
             <td>

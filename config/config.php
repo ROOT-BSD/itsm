@@ -207,7 +207,7 @@ return (function (): array {
         ],
         'app' => [
             'name'    => 'ITSM System',
-            'version' => '0.3.0',
+            'version' => '0.9.00-rc1',
             'env'     => getenv('APP_ENV') ?: 'local', // local | production
             'url'     => getenv('APP_URL') ?: 'http://localhost:8000',
             // Часовий пояс застосунку: ним користуються PHP (date(), нагадування, журнали) і сесія БД. Без цього PHP бере

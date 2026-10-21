@@ -41,14 +41,4 @@ final class OfficePdf extends \tFPDF
         $this->Text($x, $y, $text);
         $this->_out('Q');
     }
-
-    public function pageWidthMm(): float
-    {
-        return (float) $this->w;
-    }
-
-    public function pageHeightMm(): float
-    {
-        return (float) $this->h;
-    }
 }

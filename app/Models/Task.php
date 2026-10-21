@@ -10,6 +10,33 @@ class Task
     /** Допустимі пріоритети задачі (єдиний перелік для веб-форми, REST API й вебхуків). */
     public const PRIORITIES = ['low', 'normal', 'high', 'critical'];
 
+    /** Вага пріоритету для сортування на екрані: critical → 0, high → 1, normal → 2, low → 3. */
+    public static function priorityRank(?string $priority): int
+    {
+        $i = array_search($priority, ['critical', 'high', 'normal', 'low'], true);
+        return $i === false ? 2 : (int) $i;
+    }
+
+    /**
+     * Порядок для списків «Мої відкриті задачі» та «Відкриті задачі»: спершу проєкти, де є задачі critical, далі high, normal, low
+     * (за найвищим пріоритетом серед задач проєкту); у проєкті — за пріоритетом, терміном (без терміну в кінці), статусом, номером.
+     * Потрібні поля project_id, project_name, priority, due_date, status_order, id.
+     */
+    public static function sortForDisplay(array $tasks): array
+    {
+        $best = [];
+        foreach ($tasks as $t) {
+            $pid = (int) $t['project_id'];
+            $best[$pid] = min($best[$pid] ?? 9, self::priorityRank($t['priority'] ?? null));
+        }
+        $key = static fn(array $t): array => [
+            $best[(int) $t['project_id']], (string) $t['project_name'], (int) $t['project_id'],
+            self::priorityRank($t['priority'] ?? null), $t['due_date'] === null ? 1 : 0, (string) $t['due_date'], (int) ($t['status_order'] ?? 0), (int) $t['id'],
+        ];
+        usort($tasks, static fn($a, $b) => $key($a) <=> $key($b));
+        return $tasks;
+    }
+
     /**
      * Задачі, чий діапазон [start_date; due_date] перетинається із заданим
      * періодом (для календаря) — на відміну від простого "due_date BETWEEN",
@@ -25,7 +52,8 @@ class Task
                 FROM tasks t
                 JOIN task_statuses ts ON ts.id = t.status_id
                 JOIN projects p ON p.id = t.project_id
-                WHERE (t.start_date IS NOT NULL OR t.due_date IS NOT NULL)
+                WHERE ts.is_closed = 0 -- закриті задачі в календарі не показуються
+                  AND (t.start_date IS NOT NULL OR t.due_date IS NOT NULL)
                   AND COALESCE(t.start_date, t.due_date) <= :range_end
                   AND COALESCE(t.due_date, t.start_date) >= :range_start";
         $params = ['range_start' => $rangeStart, 'range_end' => $rangeEnd];
@@ -74,7 +102,7 @@ class Task
     {
         return array_values(array_filter(
             self::forProject($projectId),
-            fn(array $t): bool => empty($t['is_closed'])
+            fn(array $t): bool => empty($t['is_closed']) || $t['status_code'] === 'resolved' // «Вирішена» завжди видно в таблиці проєкту
         ));
     }
 
@@ -85,7 +113,7 @@ class Task
      */
     public static function allOpenVisibleTo(int $userId, bool $isAdmin): array
     {
-        $sql = "SELECT t.*, ts.name AS status_name, tt.name AS type_name, p.name AS project_name,
+        $sql = "SELECT t.*, ts.name AS status_name, ts.sort_order AS status_order, tt.name AS type_name, p.name AS project_name,
                        asg.full_name AS assignee_name,
                        DATE_FORMAT(t.created_at, '%d.%m.%Y') AS created_at_formatted" . TaskChecklist::progressSelect() . "
                 FROM tasks t
@@ -192,11 +220,37 @@ class Task
         return $taskId;
     }
 
+    /** Причини в історії змін дат, за якими термін прибирають/відновлюють автоматично. */
+    private const REASON_CLEARED = 'Задачу вирішено/закрито — термін виконання прибрано';
+    private const REASON_RESTORED = 'Задачу відкрито знову — термін виконання відновлено';
+
     public static function updateStatus(int $id, int $statusId, int $userId): void
     {
-        $stmt = Database::connection()->prepare('UPDATE tasks SET status_id = :status_id WHERE id = :id');
+        $db = Database::connection();
+        $stmt = $db->prepare('SELECT t.status_id, t.start_date, t.due_date, ts.is_closed, ts.code FROM tasks t JOIN task_statuses ts ON ts.id = t.status_id WHERE t.id = :id');
+        $stmt->execute(['id' => $id]);
+        $old = $stmt->fetch();
+
+        $stmt = $db->prepare('UPDATE tasks SET status_id = :status_id WHERE id = :id');
         $stmt->execute(['status_id' => $statusId, 'id' => $id]);
         Audit::log('task', $id, 'status_changed', $userId, ['status_id' => $statusId]);
+
+        if (!$old) {
+            return;
+        }
+        $nowClosed = self::statusClearsDue($statusId);
+        $wasClosed = !empty($old['is_closed']) || $old['code'] === 'resolved';
+        if ($nowClosed && !empty($old['due_date'])) {
+            // «Вирішена»/«Закрита»: терміну більше немає (задача не прострочується), але лишається в списках проєкту, на Ганті й у календарі (за початком).
+            self::updateDates($id, $old['start_date'] ?: null, null, $userId, self::REASON_CLEARED);
+        } elseif (!$nowClosed && $wasClosed && empty($old['due_date']) && self::datesTracked()) {
+            // Задачу відкрили знову — повертаємо термін, який прибрали при завершенні.
+            $stmt = $db->prepare('SELECT old_due_date FROM task_date_changes WHERE task_id = :id AND reason = :r AND old_due_date IS NOT NULL ORDER BY id DESC LIMIT 1');
+            $stmt->execute(['id' => $id, 'r' => self::REASON_CLEARED]);
+            if (($due = $stmt->fetchColumn()) !== false && $due !== null) {
+                self::updateDates($id, $old['start_date'] ?: null, (string) $due, $userId, self::REASON_RESTORED);
+            }
+        }
     }
 
     public static function updateAssignee(int $id, ?int $assigneeId, int $actingUserId): void
@@ -887,6 +941,17 @@ class Task
             fn($r) => ['period_label' => $r['period_label'], 'project_id' => $r['project_id'], 'project_name' => $r['project_name'], 'total_hours' => $r['total_hours']],
             array_values($aggregated)
         );
+    }
+
+    /** Чи прибирає статус термін виконання: «Вирішена» та будь-який завершальний (is_closed). */
+    public static function statusClearsDue(int $statusId): bool
+    {
+        foreach (self::statuses() as $s) {
+            if ((int) $s['id'] === $statusId) {
+                return !empty($s['is_closed']) || $s['code'] === 'resolved';
+            }
+        }
+        return false;
     }
 
     /** Чи є статус «закритим» (is_closed). */

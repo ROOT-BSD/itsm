@@ -52,6 +52,8 @@ class SystemStatus
             '046' => ['Автоматичні правила черги тікетів', $table('ticket_rules')],
             '047' => ['Реєстр обладнання й ПЗ', $table('assets')],
             '048' => ['Особисті налаштування меню', $table('user_menu_prefs')],
+            '050' => ['Статус «Вирішена» — відкритий (видно в проєкті)', static fn() => (int) \App\Core\Database::connection()->query("SELECT COUNT(*) FROM task_statuses WHERE code = 'resolved' AND is_closed = 1")->fetchColumn() === 0],
+            '049' => ['Статус «Вирішена» лишає задачу видимою', static fn() => (int) \App\Core\Database::connection()->query("SELECT COUNT(*) FROM task_statuses WHERE code = 'resolved' AND is_closed = 1")->fetchColumn() === 0],
         ];
     }
 

@@ -731,7 +731,7 @@ CREATE TABLE IF NOT EXISTS ticket_time_logs (
     ticket_id INT NOT NULL,
     user_id INT NOT NULL,
     activity_category VARCHAR(100) NULL,
-    hours DECIMAL(8,4) NOT NULL   -- 4 знаки: 5 хв = 0,0833 год (міграція 045),
+    hours DECIMAL(8,4) NOT NULL,   -- 4 знаки: 5 хв = 0,0833 год (міграція 045)
     log_date DATE NOT NULL,
     comment VARCHAR(255) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -845,7 +845,7 @@ CREATE TABLE IF NOT EXISTS task_date_changes (
 ) ENGINE=InnoDB;
 
 -- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
--- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (049+) накочує update.sh.
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (051+) накочує update.sh.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(20) NOT NULL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -902,4 +902,6 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('045', 'ticket_time_minutes_precision', 'baseline'),
 ('046', 'add_ticket_rules', 'baseline'),
 ('047', 'add_assets', 'baseline'),
-('048', 'add_user_menu_prefs', 'baseline');
+('048', 'add_user_menu_prefs', 'baseline'),
+('049', 'resolved_task_status_keeps_visible', 'baseline'),
+('050', 'resolved_task_status_open', 'baseline');
