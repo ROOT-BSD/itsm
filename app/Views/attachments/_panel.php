@@ -13,7 +13,9 @@ $maxPerRequest = (int) \App\Core\Config::get('attachments.max_per_request', 10);
 $isAdminUser = \App\Core\Auth::hasRole(['admin']);
 // Документи Office (DOCX, XLSX, …) приймаються лише в задачах і лише після міграції 037.
 $officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::officeReady();
+$collapseEmpty = !empty($attachmentCollapseWhenEmpty) && empty($attachments); // порожню панель ховаємо за «Додати вкладення»
 ?>
+<?php if ($collapseEmpty): ?><details class="mb-3"><summary class="text-muted small">📎 Додати вкладення</summary><div class="mt-2"><?php endif; ?>
 <div class="card mb-4">
     <div class="card-header">Вкладення (<?= count($attachments) ?>)</div>
     <div class="card-body">
@@ -30,7 +32,7 @@ $officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::
                     ?>
                     <li class="list-group-item d-flex align-items-center gap-3">
                         <?php if ($isImage): ?>
-                            <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener">
+                            <a href="/attachments/<?= (int)$a['id'] ?>" target="_blank" rel="noopener" data-popup="image" data-title="<?= \App\Core\View::e($a['original_name']) ?>">
                                 <img src="/attachments/<?= (int)$a['id'] ?>?thumb=1" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
                             </a>
                         <?php elseif ($isOffice): ?>
@@ -39,7 +41,7 @@ $officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::
                             <span class="attachment-icon badge bg-danger align-self-start">PDF</span>
                         <?php endif; ?>
                         <div class="flex-grow-1">
-                            <a href="/attachments/<?= (int)$a['id'] ?><?= $isOffice ? '?download=1' : '' ?>"<?= $isOffice ? '' : ' target="_blank" rel="noopener"' ?>><?= \App\Core\View::e($a['original_name']) ?></a>
+                            <a href="/attachments/<?= (int)$a['id'] ?><?= $isOffice ? '?download=1' : '' ?>"<?= $isOffice ? '' : ' target="_blank" rel="noopener"' . (($isImage || $a['mime_type'] === 'application/pdf') ? ' data-popup="' . ($isImage ? 'image' : 'pdf') . '" data-title="' . \App\Core\View::e($a['original_name']) . '"' : '') ?>><?= \App\Core\View::e($a['original_name']) ?></a>
                             <div class="small text-muted">
                                 <?= \App\Core\View::e(\App\Core\UploadLimits::human((int)$a['size_bytes'])) ?>
                                 · <?= \App\Core\View::e($a['uploader_name'] ?? (['portal' => 'заявник (портал)', 'email' => 'з електронного листа'][$a['source'] ?? 'web'] ?? 'користувача видалено')) ?>
@@ -47,7 +49,7 @@ $officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::
                             </div>
                         </div>
                         <?php if ($canPreview): ?>
-                            <a href="/attachments/<?= (int)$a['id'] ?>?preview=1" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Переглянути (PDF)</a>
+                            <a href="/attachments/<?= (int)$a['id'] ?>?preview=1" target="_blank" rel="noopener" data-popup="pdf" data-title="<?= \App\Core\View::e(pathinfo($a['original_name'], PATHINFO_FILENAME)) ?>.pdf" class="btn btn-sm btn-outline-primary">Переглянути (PDF)</a>
                         <?php endif; ?>
                         <a href="/attachments/<?= (int)$a['id'] ?>?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a>
                         <?php if ($isAdminUser || (int)$a['uploaded_by'] === \App\Core\Auth::id()): ?>
@@ -76,3 +78,4 @@ $officeOn = $attachmentOwnerType === 'task' && \App\Services\AttachmentService::
         </form>
     </div>
 </div>
+<?php if ($collapseEmpty): ?></div></details><?php endif; ?>

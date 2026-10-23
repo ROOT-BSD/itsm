@@ -63,17 +63,17 @@ class TicketRule
     public static function save(?int $id, array $d): int
     {
         $p = [
-            'name' => $d['name'], 'scope' => $d['scope_user_id'], 'sort' => $d['sort_order'], 'fq' => $d['from_queue_id'],
+            'name' => $d['name'], 'scope' => $d['scope_user_id'], 'sort' => $d['sort_order'], 'fq' => $d['from_queue_id'], 'rm' => $d['requester_match'], 'src' => $d['source'],
             'kw' => $d['keywords'], 'mi' => $d['match_in'], 'aq' => $d['action_queue_id'], 'ao' => $d['action_operator_id'],
             'ne' => $d['notify_emails'], 'no' => $d['notify_operator'] ? 1 : 0, 'act' => $d['is_active'] ? 1 : 0,
         ];
         $db = Database::connection();
         if ($id === null) {
-            $db->prepare('INSERT INTO ticket_rules (name, scope_user_id, sort_order, from_queue_id, keywords, match_in, action_queue_id, action_operator_id, notify_emails, notify_operator, is_active, created_by)
-                          VALUES (:name, :scope, :sort, :fq, :kw, :mi, :aq, :ao, :ne, :no, :act, :cb)')->execute($p + ['cb' => $d['created_by']]);
+            $db->prepare('INSERT INTO ticket_rules (name, scope_user_id, sort_order, from_queue_id, requester_match, source, keywords, match_in, action_queue_id, action_operator_id, notify_emails, notify_operator, is_active, created_by)
+                          VALUES (:name, :scope, :sort, :fq, :rm, :src, :kw, :mi, :aq, :ao, :ne, :no, :act, :cb)')->execute($p + ['cb' => $d['created_by']]);
             return (int) $db->lastInsertId();
         }
-        $db->prepare('UPDATE ticket_rules SET name = :name, sort_order = :sort, from_queue_id = :fq, keywords = :kw, match_in = :mi,
+        $db->prepare('UPDATE ticket_rules SET name = :name, sort_order = :sort, from_queue_id = :fq, requester_match = :rm, source = :src, keywords = :kw, match_in = :mi,
                       action_queue_id = :aq, action_operator_id = :ao, notify_emails = :ne, notify_operator = :no, is_active = :act WHERE id = :id')
            ->execute(array_diff_key($p, ['scope' => 1]) + ['id' => $id]);
         return $id;

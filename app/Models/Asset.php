@@ -20,6 +20,82 @@ class Asset
         'software' => 'ПЗ / ліцензія', 'other' => 'Інше',
     ];
     public const STATUSES = ['in_use' => 'Використовується', 'in_stock' => 'На складі', 'repair' => 'У ремонті', 'written_off' => 'Списано'];
+    /**
+     * Синоніми типів для імпорту (CSV/XLSX): різні написання, російські форми, англійські назви, скорочення.
+     * Порівняння без урахування регістру, зайвих пробілів і виду апострофа. Код типу й офіційний підпис розпізнаються й без цього списку.
+     */
+    public const TYPE_SYNONYMS = [
+        'pc' => ['пк', 'пэвм', 'пеом', 'комп\'ютер', 'компьютер', 'системний блок', 'системный блок', 'десктоп', 'робоча станція', 'рабочая станция', 'моноблок', 'моноблок пк', 'workstation', 'desktop', 'computer', 'pc', 'mini pc', 'міні-пк'],
+        'laptop' => ['ноутбук', 'ноут', 'нетбук', 'ультрабук', 'portable', 'laptop', 'notebook'],
+        'server' => ['сервер', 'server', 'серверне обладнання', 'серверное оборудование', 'хост', 'rack server', 'схд', 'сховище'],
+        'network' => ['мережеве обладнання', 'сетевое оборудование', 'мережа', 'комутатор', 'коммутатор', 'свіч', 'свич', 'switch', 'маршрутизатор', 'роутер', 'router', 'точка доступу', 'точка доступа', 'access point', 'ap', 'wi-fi', 'wifi', 'міжмережевий екран', 'фаєрвол', 'файрвол', 'firewall', 'модем', 'патч-панель', 'network'],
+        'printer' => ['принтер', 'printer', 'мфп', 'мфу', 'mfp', 'принтер / мфп', 'сканер', 'scanner', 'копір', 'ксерокс', 'плотер', 'плоттер'],
+        'monitor' => ['монітор', 'монитор', 'monitor', 'дисплей', 'display', 'екран', 'телевізор', 'панель'],
+        'ups' => ['дбж', 'ибп', 'ups', 'безперебійник', 'бесперебойник', 'джерело безперебійного живлення', 'источник бесперебойного питания', 'стабілізатор'],
+        'mobile' => ['телефон', 'смартфон', 'phone', 'smartphone', 'планшет', 'tablet', 'мобільний', 'мобильный', 'мобільний телефон', 'ip-телефон', 'ip телефон', 'телефон / планшет', 'mobile'],
+        'software' => ['по', 'пз', 'пз / ліцензія', 'програмне забезпечення', 'программное обеспечение', 'ліцензія', 'лицензия', 'software', 'license', 'licence', 'програма', 'підписка', 'subscription'],
+        'other' => ['інше', 'другое', 'прочее', 'other', 'різне', 'інші'],
+    ];
+    /** Синоніми статусів для імпорту. */
+    public const STATUS_SYNONYMS = [
+        'in_use' => ['використовується', 'у використанні', 'в використанні', 'в експлуатації', 'експлуатується', 'в роботі', 'у роботі', 'працює', 'активний', 'в использовании', 'используется', 'в эксплуатации', 'active', 'in use', 'in_use'],
+        'in_stock' => ['на складі', 'склад', 'резерв', 'у резерві', 'в резерві', 'на хранении', 'на складе', 'в запасі', 'stock', 'in stock', 'spare', 'reserve'],
+        'repair' => ['у ремонті', 'в ремонті', 'ремонт', 'на ремонті', 'на обслуговуванні', 'в ремонте', 'repair', 'in repair', 'maintenance'],
+        'written_off' => ['списано', 'списаний', 'списаны', 'списан', 'утилізовано', 'вибракувано', 'не використовується', 'retired', 'written off', 'disposed', 'decommissioned'],
+    ];
+
+    /** Нормалізація підпису для порівняння: нижній регістр, єдиний апостроф, без зайвих пробілів. */
+    public static function normLabel(string $s): string
+    {
+        $s = mb_strtolower(trim($s));
+        $s = str_replace(['’', 'ʼ', '`', '´', '′'], "'", $s);
+        return (string) preg_replace('/\s+/u', ' ', $s);
+    }
+
+    /** Тип за кодом, підписом чи синонімом; null — невідомий. Спершу точний збіг, потім слово-синонім усередині («Принтер HP LaserJet»). */
+    public static function resolveType(string $raw): ?string
+    {
+        return self::resolveWithSynonyms($raw, self::TYPES, self::TYPE_SYNONYMS);
+    }
+
+    public static function resolveStatus(string $raw): ?string
+    {
+        return self::resolveWithSynonyms($raw, self::STATUSES, self::STATUS_SYNONYMS, false);
+    }
+
+    /** @param array<string,string> $labels @param array<string,string[]> $synonyms */
+    private static function resolveWithSynonyms(string $raw, array $labels, array $synonyms, bool $contains = true): ?string
+    {
+        $n = self::normLabel($raw);
+        if ($n === '') {
+            return null;
+        }
+        $exact = [];
+        foreach ($labels as $code => $label) {
+            $exact[self::normLabel($label)] = $code;
+            $exact[$code] = $code;
+        }
+        foreach ($synonyms as $code => $list) {
+            foreach ($list as $s) {
+                $exact[self::normLabel($s)] = $code;
+            }
+        }
+        if (isset($exact[$n])) {
+            return $exact[$n];
+        }
+        if (!$contains) {
+            return null;
+        }
+        // Слово-синонім як окреме слово всередині тексту; довші синоніми мають перевагу. Короткі (до 2 літер, напр. «ПО») — лише точним збігом.
+        uksort($exact, static fn(string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
+        foreach ($exact as $syn => $code) {
+            if (mb_strlen($syn) >= 3 && preg_match('/(?<![\p{L}\p{N}])' . preg_quote($syn, '/') . '(?![\p{L}\p{N}])/u', $n)) {
+                return $code;
+            }
+        }
+        return null;
+    }
+
     /** код => [прямий підпис, зворотний підпис] */
     public const RELATIONS = [
         'connected_to' => ['підключено до', 'до нього підключено'],
@@ -30,7 +106,7 @@ class Asset
         'asset_type' => 'Тип', 'name' => 'Назва', 'inventory_number' => 'Інвентарний №', 'serial_number' => 'Серійний №',
         'manufacturer' => 'Виробник', 'model' => 'Модель', 'status' => 'Статус', 'owner_user_id' => 'Власник',
         'location' => 'Місце', 'network_id' => 'ІП', 'purchase_date' => 'Дата придбання',
-        'warranty_until' => 'Гарантія до', 'notes' => 'Примітки',
+        'warranty_until' => 'Гарантія до', 'license_seats' => 'Кількість місць', 'notes' => 'Примітки',
     ];
 
     public static function ready(): bool
@@ -149,8 +225,8 @@ class Asset
     {
         $db = Database::connection();
         $db->prepare(
-            'INSERT INTO assets (asset_type, name, inventory_number, serial_number, manufacturer, model, status, owner_user_id, location, network_id, purchase_date, warranty_until, notes, created_by)
-             VALUES (:asset_type, :name, :inventory_number, :serial_number, :manufacturer, :model, :status, :owner_user_id, :location, :network_id, :purchase_date, :warranty_until, :notes, :cb)'
+            'INSERT INTO assets (asset_type, name, inventory_number, serial_number, manufacturer, model, status, owner_user_id, location, network_id, purchase_date, warranty_until, license_seats, notes, created_by)
+             VALUES (:asset_type, :name, :inventory_number, :serial_number, :manufacturer, :model, :status, :owner_user_id, :location, :network_id, :purchase_date, :warranty_until, :license_seats, :notes, :cb)'
         )->execute(self::params($d) + ['cb' => $userId]);
         $id = (int) $db->lastInsertId();
         Audit::log('asset', $id, 'created', $userId, ['name' => $d['name'], 'inventory_number' => $d['inventory_number'] ?? null]);
@@ -176,7 +252,7 @@ class Asset
         Database::connection()->prepare(
             'UPDATE assets SET asset_type = :asset_type, name = :name, inventory_number = :inventory_number, serial_number = :serial_number, manufacturer = :manufacturer,
              model = :model, status = :status, owner_user_id = :owner_user_id, location = :location, network_id = :network_id, purchase_date = :purchase_date,
-             warranty_until = :warranty_until, notes = :notes WHERE id = :id'
+             warranty_until = :warranty_until, license_seats = :license_seats, notes = :notes WHERE id = :id'
         )->execute($new + ['id' => $id]);
         Audit::log('asset', $id, 'updated', $userId, ['fields' => $diff]);
         return $diff;
@@ -238,13 +314,78 @@ class Asset
 
     public static function removeLink(int $assetId, int $linkId, int $userId): bool
     {
-        $stmt = Database::connection()->prepare('DELETE FROM asset_links WHERE id = :l AND (asset_id = :a OR linked_id = :a)');
-        $stmt->execute(['l' => $linkId, 'a' => $assetId]);
+        $stmt = Database::connection()->prepare('DELETE FROM asset_links WHERE id = :l AND (asset_id = :a1 OR linked_id = :a2)');
+        $stmt->execute(['l' => $linkId, 'a1' => $assetId, 'a2' => $assetId]);
         if ($stmt->rowCount() > 0) {
             Audit::log('asset', $assetId, 'link_removed', $userId, ['link' => $linkId]);
             return true;
         }
         return false;
+    }
+
+    // ---------- Ліцензії ПЗ ----------
+
+    /**
+     * SQL-вираз «скільки різних пристроїв мають це ПЗ». Рахуємо зв'язок «встановлено на» в обидва боки: ПЗ → пристрій (основний запис)
+     * і пристрій → ПЗ (якщо зв'язок додали з картки пристрою навпаки); другий кінець — не ПЗ.
+     */
+    private static function installedSql(string $p1, string $p2, string $p3): string
+    {
+        return "(SELECT COUNT(DISTINCT l.linked_id) FROM asset_links l WHERE l.asset_id = $p1 AND l.relation = 'installed_on')
+                + (SELECT COUNT(DISTINCT l2.asset_id) FROM asset_links l2 JOIN assets x ON x.id = l2.asset_id
+                   WHERE l2.linked_id = $p2 AND l2.relation = 'installed_on' AND x.asset_type <> 'software'
+                     AND l2.asset_id NOT IN (SELECT l3.linked_id FROM asset_links l3 WHERE l3.asset_id = $p3 AND l3.relation = 'installed_on'))";
+    }
+
+    /** Скільки пристроїв має це ПЗ встановленим (зв'язки «встановлено на», де ПЗ — перший актив). */
+    public static function installedCount(int $softwareId): int
+    {
+        $stmt = Database::connection()->prepare('SELECT ' . self::installedSql(':id1', ':id2', ':id3'));
+        $stmt->execute(['id1' => $softwareId, 'id2' => $softwareId, 'id3' => $softwareId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Облік ліцензій: усі картки ПЗ, видимі користувачу, з кількістю встановлень і станом.
+     * Стан: over — встановлено більше, ніж місць; expired — строк минув; expiring — ≤ 60 днів; free — є вільні місця; ok.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function licenses(?string $role, int $userId, string $q = ''): array
+    {
+        if (!self::ready()) {
+            return [];
+        }
+        [$w, $p] = self::where(['type' => 'software', 'q' => $q], $role, $userId);
+        $stmt = Database::connection()->prepare(
+            "SELECT a.*, o.full_name AS owner_name,
+                    (" . self::installedSql('a.id', 'a.id', 'a.id') . ") AS installed
+             FROM assets a LEFT JOIN users o ON o.id = a.owner_user_id" . $w . ' ORDER BY a.name, a.id LIMIT 2000'
+        );
+        $stmt->execute($p);
+        $today = date('Y-m-d');
+        $soon = date('Y-m-d', strtotime('+60 days'));
+        $rows = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $seats = $r['license_seats'] !== null ? (int) $r['license_seats'] : null;
+            $inst = (int) $r['installed'];
+            $active = $r['status'] !== 'written_off';
+            $r['installed'] = $inst;
+            $r['free'] = $seats !== null ? $seats - $inst : null;
+            if ($active && $seats !== null && $inst > $seats) {
+                $r['state'] = 'over';
+            } elseif ($active && $r['warranty_until'] && $r['warranty_until'] < $today) {
+                $r['state'] = 'expired';
+            } elseif ($active && $r['warranty_until'] && $r['warranty_until'] <= $soon) {
+                $r['state'] = 'expiring';
+            } elseif ($active && $seats !== null && $seats - $inst > 0) {
+                $r['state'] = 'free';
+            } else {
+                $r['state'] = 'ok';
+            }
+            $rows[] = $r;
+        }
+        return $rows;
     }
 
     // ---------- Тікети ----------

@@ -367,20 +367,21 @@ class AttachmentService
      *
      * @param array<int, array{name: string, tmp_name: string, error: int, size: int}> $files
      * @param array{mimes?: string[], max_bytes?: int} $options
-     * @return array{added: int, errors: string[]}
+     * @return array{added: int, errors: string[], ids: array<int, int>} ids: індекс файлу => id вкладення (лише успішні)
      */
     public static function attachUploads(string $ownerType, int $ownerId, array $files, ?int $uploadedBy, string $source, array $options = []): array
     {
         $added = 0;
         $errors = [];
-        foreach ($files as $file) {
+        $ids = []; // індекс файлу у вхідному списку => id створеного вкладення
+        foreach (array_values($files) as $index => $file) {
             $result = self::store($file, $options);
             if (!$result['ok']) {
                 $errors[] = '«' . self::sanitizeName($file['name']) . '»: ' . $result['error'] . '.';
                 continue;
             }
             try {
-                \App\Models\Attachment::create($ownerType, $ownerId, $result['name'], $result['stored_name'], $result['mime'], $result['size'], $uploadedBy, $source);
+                $ids[$index] = \App\Models\Attachment::create($ownerType, $ownerId, $result['name'], $result['stored_name'], $result['mime'], $result['size'], $uploadedBy, $source);
             } catch (\Throwable) {
                 // Файл уже на диску, а запису в БД немає — прибираємо, щоб не лишати «осиротілий» файл.
                 self::deleteFiles([$result['stored_name']]);
@@ -394,7 +395,7 @@ class AttachmentService
             ]);
             $added++;
         }
-        return ['added' => $added, 'errors' => $errors];
+        return ['added' => $added, 'errors' => $errors, 'ids' => $ids];
     }
 
     /**

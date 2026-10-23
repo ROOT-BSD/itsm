@@ -25,12 +25,18 @@
             </form>
         </details>
 
-        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/description" class="mb-3">
-            <?= \App\Core\Csrf::field() ?>
-            <label class="form-label">Опис</label>
-            <textarea name="description" class="form-control mb-2" rows="4"><?= \App\Core\View::e($task['description'] ?? '') ?></textarea>
-            <button class="btn btn-sm btn-outline-primary" type="submit">Зберегти опис</button>
-        </form>
+        <?php $hasDescription = trim((string) ($task['description'] ?? '')) !== ''; ?>
+        <?php if ($hasDescription): ?>
+            <div class="mb-2" style="white-space: pre-line;"><?= \App\Core\View::e($task['description']) ?></div>
+        <?php endif; ?>
+        <details class="mb-3">
+            <summary class="text-muted small"><?= $hasDescription ? '✏️ Змінити опис' : '✏️ Додати опис' ?></summary>
+            <form method="post" action="/tasks/<?= (int)$task['id'] ?>/description" class="mt-2">
+                <?= \App\Core\Csrf::field() ?>
+                <textarea name="description" class="form-control mb-2" rows="4" aria-label="Опис"><?= \App\Core\View::e($task['description'] ?? '') ?></textarea>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Зберегти опис</button>
+            </form>
+        </details>
 
         <?php if (\App\Models\Task::isOverdue($task)): ?>
             <div class="alert alert-danger py-2">⚠️ Прострочено термін виконання (мав бути готовий до <?= \App\Core\View::e($task['due_date']) ?>)</div>
@@ -155,11 +161,19 @@
             Перенесення в інший проєкт знімає прив'язку до етапу дорожньої карти й видаляє зв'язки з задачами, що лишаються в іншому проєкті — залежність можлива лише між задачами одного проєкту.
         </p>
 
+        <div class="d-flex gap-2 flex-wrap align-items-center">
         <form method="post" action="/tasks/<?= (int)$task['id'] ?>/delete"
               data-confirm="Остаточно видалити задачу «<?= \App\Core\View::e($task['title']) ?>»? Коментарі, чек-лист, записи обліку часу та зв'язки з іншими задачами буде видалено разом з нею<?= !empty($subtasks) ? '; підзадачі лишаться як самостійні задачі' : '' ?>. Дію не можна скасувати.">
             <?= \App\Core\Csrf::field() ?>
             <button class="btn btn-sm btn-outline-danger" type="submit">🗑️ Видалити задачу</button>
         </form>
+        <?php if (!empty($checklistReady) && \App\Models\Template::ready() && \App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
+            <form method="post" action="/tasks/<?= (int)$task['id'] ?>/save-template">
+                <?= \App\Core\Csrf::field() ?>
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Зберегти як шаблон задачі</button>
+            </form>
+        <?php endif; ?>
+        </div>
         <?php if (!empty($parentTask)): ?>
             <form method="post" action="/tasks/<?= (int)$task['id'] ?>/detach" class="mt-2" data-confirm="Відв'язати підзадачу від батьківської задачі? Вона стане самостійною задачею.">
                 <?= \App\Core\Csrf::field() ?>
@@ -168,13 +182,6 @@
         <?php endif; ?>
     </div>
 </div>
-
-<?php if (!empty($checklistReady) && \App\Models\Template::ready() && \App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
-    <form method="post" action="/tasks/<?= (int)$task['id'] ?>/save-template" class="mb-3">
-        <?= \App\Core\Csrf::field() ?>
-        <button class="btn btn-sm btn-outline-secondary" type="submit">Зберегти як шаблон задачі</button>
-    </form>
-<?php endif; ?>
 
 <?php if (!empty($checklistReady)): ?>
 <?php
@@ -185,6 +192,7 @@ $stTotal = count($subtasks);
 $stDone = count(array_filter($subtasks, fn($s) => (int)$s['is_closed'] === 1));
 $stPct = $stTotal > 0 ? (int) round($stDone / $stTotal * 100) : 0;
 ?>
+<?php if ($clTotal === 0): ?><details class="mb-3" id="checklist-add"><summary class="text-muted small">☑ Додати чек-лист</summary><div class="mt-2"><?php endif; ?>
 <div class="card mb-4" id="checklist">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span>Чек-лист<?= $clTotal ? ' (' . $clDone . '/' . $clTotal . ')' : '' ?></span>
@@ -230,6 +238,11 @@ $stPct = $stTotal > 0 ? (int) round($stDone / $stTotal * 100) : 0;
     </div>
 </div>
 
+<?php if ($clTotal === 0): ?></div></details><?php endif; ?>
+
+<?php $hideSubtasks = $stTotal === 0 && !empty($parentTask); // сама підзадача без власних підзадач: блок не потрібен ?>
+<?php if (!$hideSubtasks): ?>
+<?php if ($stTotal === 0): ?><details class="mb-3" id="subtasks-add"><summary class="text-muted small">⧉ Додати підзадачу</summary><div class="mt-2"><?php endif; ?>
 <div class="card mb-4" id="subtasks">
     <div class="card-header">Підзадачі<?= $stTotal ? ' (' . $stDone . '/' . $stTotal . ' закрито)' : '' ?></div>
     <div class="card-body">
@@ -280,72 +293,50 @@ $stPct = $stTotal > 0 ? (int) round($stDone / $stTotal * 100) : 0;
         <?php endif; ?>
     </div>
 </div>
+<?php if ($stTotal === 0): ?></div></details><?php endif; ?>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php
+$attachmentCollapseWhenEmpty = true;
 $attachmentOwnerType = 'task';
 $attachmentOwnerId = (int) $task['id'];
 require __DIR__ . '/../attachments/_panel.php';
 ?>
 
-<div class="card mb-4">
-    <div class="card-header">Облік часу</div>
-    <div class="card-body">
-        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/time" class="row g-2 align-items-end">
-    <?= \App\Core\Csrf::field() ?>
-            <div class="col-auto">
-                <label class="form-label">Годин</label>
-                <input type="number" step="0.25" min="0.25" name="hours" class="form-control" required>
-            </div>
-            <div class="col-auto">
-                <label class="form-label">Дата</label>
-                <input type="date" name="log_date" class="form-control" value="<?= date('Y-m-d') ?>">
-            </div>
-            <div class="col-auto">
-                <label class="form-label">Категорія</label>
-                <input type="text" name="category" class="form-control" placeholder="напр. діагностика">
-            </div>
-            <div class="col-auto">
-                <button class="btn btn-sm btn-primary" type="submit">Додати</button>
-            </div>
-        </form>
-
-        <?php if (!empty($timeLogs)): ?>
-            <table class="table table-sm mt-3 mb-0">
-                <thead><tr><th>Дата</th><th>Хто</th><th>Годин</th><th>Категорія</th></tr></thead>
-                <tbody>
-                <?php foreach ($timeLogs as $log): ?>
-                    <tr>
-                        <td><?= \App\Core\View::e($log['log_date']) ?></td>
-                        <td><?= \App\Core\View::e($log['user_name']) ?></td>
-                        <td><?= \App\Core\View::e((string)$log['hours']) ?></td>
-                        <td class="text-muted"><?= \App\Core\View::e($log['activity_category'] ?? '—') ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else: ?>
-            <p class="text-muted small mt-3 mb-0">Ще жодного запису обліку часу для цієї задачі.</p>
-        <?php endif; ?>
+<?php
+$journalImages = array_values(array_filter($attachments ?? [], fn($a) => str_starts_with((string) $a['mime_type'], 'image/')));
+$journalHours = 0.0;
+foreach ($journal as $je) { $journalHours += (float) $je['hours']; }
+?>
+<div class="card" id="journal">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Журнал робіт <span class="badge text-bg-secondary ms-1"><?= count($journal) ?></span></span>
+        <?php if ($journalHours > 0): ?><span class="small text-muted">Усього часу: <strong><?= \App\Core\View::e(\App\Models\Task::formatHours($journalHours)) ?></strong></span><?php endif; ?>
     </div>
-</div>
-
-<div class="card">
-    <div class="card-header">Коментарі</div>
+    <div class="card-body border-bottom">
+        <?php $formEntry = null; $formAction = '/tasks/' . (int) $task['id'] . '/comments'; $formId = 'jnew'; $formSubmit = 'Додати запис'; require __DIR__ . '/_journal_form.php'; ?>
+    </div>
     <ul class="list-group list-group-flush">
-        <?php foreach ($comments as $c): ?>
-        <li class="list-group-item">
-            <strong><?= \App\Core\View::e($c['author_name']) ?></strong>
-            <span class="text-muted small"><?= \App\Core\View::e($c['created_at']) ?></span>
-            <p class="mb-0"><?= nl2br(\App\Core\View::e($c['body'])) ?></p>
+        <?php if (!$journal): ?>
+            <li class="list-group-item text-muted small">Записів ще немає. Опишіть вище, що зроблено, і за потреби вкажіть витрачений час.</li>
+        <?php endif; ?>
+        <?php
+        // Показуємо записи лише за останній день (найпізніша дата запису); решта — під спойлером.
+        $lastDay = $journal ? max(array_column($journal, 'log_date')) : null;
+        $recent = array_values(array_filter($journal, fn($e) => $e['log_date'] === $lastDay));
+        $older = array_values(array_filter($journal, fn($e) => $e['log_date'] !== $lastDay));
+        foreach ($recent as $c) { require __DIR__ . '/_journal_entry.php'; }
+        ?>
+        <?php if ($older): ?>
+        <li class="list-group-item p-0">
+            <details>
+                <summary class="px-3 py-2 small text-primary" style="cursor:pointer">Попередні записи (<?= count($older) ?>)</summary>
+                <ul class="list-group list-group-flush border-top">
+                    <?php foreach ($older as $c) { require __DIR__ . '/_journal_entry.php'; } ?>
+                </ul>
+            </details>
         </li>
-        <?php endforeach; ?>
+        <?php endif; ?>
     </ul>
-    <div class="card-body">
-        <form method="post" action="/tasks/<?= (int)$task['id'] ?>/comments">
-    <?= \App\Core\Csrf::field() ?>
-            <textarea name="body" class="form-control mb-2" rows="2" placeholder="Написати коментар..." required></textarea>
-            <button class="btn btn-sm btn-primary" type="submit">Додати коментар</button>
-        </form>
-    </div>
 </div>

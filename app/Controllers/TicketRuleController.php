@@ -76,8 +76,14 @@ class TicketRuleController
 
     public function index(): void
     {
+        $this->renderIndex();
+    }
+
+    private function renderIndex(array $extra = []): void
+    {
         $edit = !$this->readOnly && !empty($_GET['edit']) ? $this->ownRule((int) $_GET['edit']) : null;
-        View::render('admin/ticket_rules', [
+        View::render('admin/ticket_rules', $extra + [
+            'sources' => TicketRuleService::SOURCES,
             'unitMode' => $this->unit,
             'readOnly' => $this->readOnly,
             'base' => $this->base(),
@@ -132,6 +138,17 @@ class TicketRuleController
         $matchIn = in_array($_POST['match_in'] ?? '', ['subject', 'description', 'both'], true) ? $_POST['match_in'] : 'both';
         $queueIds = array_map(fn($q) => (int) $q['id'], Ticket::queues());
         $fromQ = (int) ($_POST['from_queue_id'] ?? 0) ?: null;
+        $source = array_key_exists($_POST['source'] ?? '', TicketRuleService::SOURCES) ? $_POST['source'] : null;
+        $reqTokens = TicketRuleService::parseRequesterMatch((string) ($_POST['requester_match'] ?? ''));
+        foreach ($reqTokens as $t) {
+            if (!preg_match('/^(@?[a-z0-9._-]+\.[a-z0-9-]{2,}|[^@\s]+@[^@\s]+\.[^@\s]{2,})$/iu', $t)) {
+                $this->back('error', 'Некоректна умова за заявником: «' . mb_substr($t, 0, 60) . '». Вкажіть адресу (user@firma.ua) або домен (@firma.ua).', $id);
+            }
+        }
+        $reqMatch = $reqTokens ? implode(', ', $reqTokens) : null;
+        if (mb_strlen((string) $reqMatch) > 500) {
+            $this->back('error', 'Забагато адрес/доменів у умові за заявником (до 500 символів).', $id);
+        }
         $toQ = (int) ($_POST['action_queue_id'] ?? 0) ?: null;
         $op = (int) ($_POST['action_operator_id'] ?? 0) ?: null;
         $notifyOp = !empty($_POST['notify_operator']);
@@ -147,8 +164,8 @@ class TicketRuleController
         if ($name === '') {
             $this->back('error', 'Вкажіть назву правила.', $id);
         }
-        if ($keywords === '') {
-            $this->back('error', 'Вкажіть хоча б одне ключове слово.', $id);
+        if ($keywords === '' && $reqMatch === null && $source === null) {
+            $this->back('error', 'Вкажіть хоча б одну умову: ключові слова, заявника (адреса/домен) або джерело тікета.', $id);
         }
         if (($fromQ && !in_array($fromQ, $queueIds, true)) || ($toQ && !in_array($toQ, $queueIds, true))) {
             $this->back('error', 'Чергу не знайдено.', $id);
@@ -165,12 +182,43 @@ class TicketRuleController
 
         $rid = TicketRule::save($id, [
             'name' => $name, 'scope_user_id' => $existing['scope_user_id'] ?? null, 'sort_order' => max(1, min(9999, (int) ($_POST['sort_order'] ?? 100))),
-            'from_queue_id' => $fromQ, 'keywords' => $keywords, 'match_in' => $matchIn, 'action_queue_id' => $toQ,
+            'from_queue_id' => $fromQ, 'requester_match' => $reqMatch, 'source' => $source, 'keywords' => $keywords, 'match_in' => $matchIn, 'action_queue_id' => $toQ,
             'action_operator_id' => $op, 'notify_emails' => $emailStr ?: null, 'notify_operator' => $notifyOp,
             'is_active' => !empty($_POST['is_active']), 'created_by' => (int) Auth::id(),
         ]);
         Audit::log('ticket_rule', $rid, $id === null ? 'created' : 'updated', (int) Auth::id(), ['name' => $name]);
         $this->back('success', 'Правило «' . $name . '» збережено.');
+    }
+
+    /** «Перевірка на прикладі»: яке правило спрацює для умовного тікета (нічого не зберігається й не надсилається). */
+    public function test(): void
+    {
+        $this->forbidWrite();
+        $subject = trim((string) ($_POST['t_subject'] ?? ''));
+        $email = trim((string) ($_POST['t_email'] ?? ''));
+        $source = array_key_exists($_POST['t_source'] ?? '', TicketRuleService::SOURCES) ? $_POST['t_source'] : null;
+        $queueId = (int) ($_POST['t_queue_id'] ?? 0);
+        $user = $email !== '' ? \App\Models\User::findByEmail($email) : null;
+        $input = ['subject' => $subject, 'description' => trim((string) ($_POST['t_description'] ?? '')), 'email' => $email, 'source' => $source, 'queue_id' => $queueId];
+        $result = TicketRuleService::simulate([
+            'subject' => $subject, 'description' => $input['description'], 'queue_id' => $queueId, 'requester_email' => $email,
+            'source' => $source, 'requester_user_id' => $user ? (int) $user['id'] : null,
+        ]);
+        $queueName = '';
+        foreach (Ticket::queues() as $q) {
+            if ((int) $q['id'] === $queueId) { $queueName = $q['name']; }
+        }
+        $this->renderIndex(['testResult' => $result, 'testInput' => $input + ['queue_name' => $queueName]]);
+    }
+
+    /** Застосовує активні правила до наявних відкритих тікетів (без листів). */
+    public function applyExisting(): void
+    {
+        $this->forbidWrite();
+        @set_time_limit(120);
+        $r = TicketRuleService::applyToOpen(500);
+        Audit::log('ticket_rule', 0, 'applied_to_open', (int) Auth::id(), $r);
+        $this->back('success', "Перевірено відкритих тікетів: {$r['checked']}; правило спрацювало для {$r['matched']}; змінено чергу чи оператора: {$r['changed']}. Листи не надсилалися.");
     }
 
     public function toggle(array $params): void

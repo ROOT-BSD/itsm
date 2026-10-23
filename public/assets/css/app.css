@@ -289,3 +289,7 @@
 .badge.prio-high { background-color: #f4a6c0; color: #5a1030; }
 .badge.prio-normal { background-color: #8fd19e; color: #0f3d1b; }
 .badge.prio-low { background-color: #bfe3f7; color: #0b3a55; }
+
+/* Журнал робіт: Markdown-текст запису — без зайвого відступу знизу й із помірними заголовками */
+.journal-text > :last-child { margin-bottom: 0; }
+.journal-text h1, .journal-text h2, .journal-text h3, .journal-text h4 { font-size: 1.05rem; margin-top: .8rem; margin-bottom: .4rem; border-bottom: 0; padding-bottom: 0; }

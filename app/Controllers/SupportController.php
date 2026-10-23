@@ -22,6 +22,81 @@ class SupportController
         ]);
     }
 
+    /**
+     * «База знань»: JSON-підказки публічних статей вікі за темою/описом звернення (викликає скрипт форми).
+     * Тільки сторінки з видимістю «portal»; частота запитів обмежена ('kb').
+     */
+    public function kbSuggest(): void
+    {
+        $this->throttle(RateLimiter::attempt('kb'));
+        $q = trim((string) ($_GET['q'] ?? ''));
+        $items = mb_strlen($q) >= 3 ? \App\Models\WikiPage::suggest(mb_substr($q, 0, 500), null, 5) : [];
+        header('Content-Type: application/json; charset=UTF-8');
+        header('Cache-Control: no-store');
+        echo json_encode(array_map(static fn(array $i): array => ['title' => $i['title'], 'url' => '/support/kb/' . $i['slug'], 'excerpt' => $i['excerpt']], $items), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /** Перелік публічних статей «Бази знань» (без входу); ?q= — пошук за темою. */
+    public function kbIndex(): void
+    {
+        $this->throttle(RateLimiter::attempt('kb'));
+        $q = trim(mb_substr((string) ($_GET['q'] ?? ''), 0, 200));
+        $found = $q !== '' ? \App\Models\WikiPage::suggest($q, null, 20) : [];
+        View::render('support/kb_index', ['q' => $q, 'pages' => $q !== '' ? $found : \App\Models\WikiPage::publicList(), 'searched' => $q !== '']);
+    }
+
+    /** Публічна стаття «Бази знань» (лише для читання, без входу). */
+    public function kbShow(array $params): void
+    {
+        $this->throttle(RateLimiter::attempt('kb'));
+        $page = preg_match('/^[a-z0-9-]{1,80}$/', (string) ($params['slug'] ?? '')) ? \App\Models\WikiPage::findBySlug($params['slug']) : null;
+        if (!$page || !\App\Models\WikiPage::visibleTo($page, null)) {
+            http_response_code(404);
+            View::render('support/kb_not_found', []);
+            return;
+        }
+        $map = [];
+        foreach (\App\Models\WikiAttachment::forPage((int) $page['id']) as $a) {
+            $map[(int) $a['id']] = ['name' => $a['original_name'], 'mime' => $a['mime_type'], 'image' => \App\Models\WikiAttachment::isImage((string) $a['mime_type']), 'url' => '/support/kb/files/' . (int) $a['id']];
+        }
+        $renderer = (new \App\Core\Markdown([]))->setAttachments($map);
+        View::render('support/kb', ['page' => $page, 'html' => $renderer->toHtml((string) $page['content'])]);
+    }
+
+    /** Файл вкладення публічної статті: лише зображення (мініатюра чи оригінал) і лише з публічної сторінки. */
+    public function kbFile(array $params): void
+    {
+        $this->throttle(RateLimiter::attempt('kb'));
+        $att = \App\Models\WikiAttachment::find((int) ($params['id'] ?? 0));
+        $page = $att ? \App\Models\WikiPage::findById((int) $att['page_id']) : null;
+        if (!$att || !$page || !\App\Models\WikiPage::visibleTo($page, null) || !\App\Models\WikiAttachment::isImage((string) $att['mime_type'])) {
+            http_response_code(404);
+            echo 'Не знайдено';
+            return;
+        }
+        $path = \App\Services\AttachmentService::path($att['stored_name']);
+        if ($path === null || !is_file($path)) {
+            http_response_code(404);
+            echo 'Не знайдено';
+            return;
+        }
+        $send = $path;
+        if (isset($_GET['thumb'])) {
+            $send = \App\Services\AttachmentService::thumbnailFor($att['stored_name'], $att['mime_type']) ?? $path;
+        }
+        $mime = $send !== $path ? \App\Services\AttachmentService::thumbMime($att['mime_type']) : $att['mime_type'];
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($send));
+        header('Content-Disposition: inline');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: public, max-age=3600');
+        readfile($send);
+        exit;
+    }
+
     public function store(): void
     {
         // Першим, до будь-якої обробки (у т.ч. файлів): бот, що шле форму без угаву, не має навантажувати ні БД, ні диск.
@@ -55,7 +130,7 @@ class SupportController
             return;
         }
 
-        $id = Ticket::create($queueId, $name, $email, null, $subject, $description ?: null);
+        $id = Ticket::create($queueId, $name, $email, null, $subject, $description ?: null, null, 'portal');
         $ticket = Ticket::find($id);
 
         // Зображення (PNG/JPG) — лише якщо вмикнено; ліміти суворіші, ніж для співробітників, бо завантажує

@@ -41,7 +41,7 @@
             Версія <?= (int)$page['version'] ?>
             · змінено <?= $e(date('d.m.Y H:i', strtotime($page['updated_at']))) ?><?= !empty($page['updated_by_name']) ? ' · ' . $e($page['updated_by_name']) : '' ?>
             <?php if ($page['visibility'] !== 'all'): ?>
-                · <span class="badge bg-secondary"><?= $e(\App\Models\WikiPage::VISIBILITIES[$page['visibility']]) ?></span>
+                · <span class="badge bg-secondary"><?= $e((\App\Models\WikiPage::visibilities()[$page['visibility']] ?? $page['visibility'])) ?></span>
             <?php endif; ?>
         </div>
 

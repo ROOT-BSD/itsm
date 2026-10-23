@@ -147,7 +147,7 @@ final class WebhookService
     public static function emitTaskComment(int $taskId, int $commentId, ?int $authorId): void
     {
         try {
-            $stmt = Database::connection()->prepare('SELECT c.*, u.full_name AS author_name FROM comments c JOIN users u ON u.id = c.author_id WHERE c.id = :id');
+            $stmt = Database::connection()->prepare('SELECT tl.id, tl.task_id, tl.user_id AS author_id, tl.comment AS body, tl.hours, tl.created_at, u.full_name AS author_name FROM time_logs tl JOIN users u ON u.id = tl.user_id WHERE tl.id = :id');
             $stmt->execute(['id' => $commentId]);
             $row = $stmt->fetch();
             if ($row) {

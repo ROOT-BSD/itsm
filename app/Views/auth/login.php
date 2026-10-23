@@ -28,5 +28,8 @@
                 <div class="form-text">Для комп'ютерів домену: вхід за вашим обліковим записом Windows.</div>
             </div>
         <?php endif; ?>
+        <?php if (\App\Models\WikiPage::publicList()): ?>
+            <div class="text-center mt-3"><a href="/support/kb" class="btn btn-outline-secondary btn-sm">📚 База знань — без входу й реєстрації</a></div>
+        <?php endif; ?>
     </div>
 </div>

@@ -291,10 +291,12 @@ CREATE TABLE IF NOT EXISTS time_logs (
     task_id INT NOT NULL,
     user_id INT NOT NULL,
     activity_category VARCHAR(100),
-    hours DECIMAL(5,2) NOT NULL,
+    hours DECIMAL(8,4) NOT NULL DEFAULT 0,        -- 0 = запис журналу без часу (міграція 052)
     log_date DATE NOT NULL,
-    comment VARCHAR(255),
+    comment TEXT NULL,                            -- текст запису журналу робіт ([[img:ID]] — зображення)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    edited_at DATETIME NULL,
+    from_comment_id INT NULL,                     -- перенесений старий коментар (comments.id)
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id),
     KEY idx_time_logs_log_date (log_date)  -- звіти обліку часу фільтрують і групують по цій колонці на кожному запиті
@@ -353,6 +355,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     requester_user_id INT NULL,           -- може бути NULL: заявник без облікового запису основного функціоналу
     subject VARCHAR(255) NOT NULL,
     description TEXT,
+    source ENUM('web','portal','email','api') NULL,   -- звідки створено тікет (міграція 051)
     status ENUM('new','in_progress','waiting_customer','resolved','closed') NOT NULL DEFAULT 'new',
     assigned_operator_id INT NULL,
     first_response_at DATETIME NULL,
@@ -749,6 +752,8 @@ CREATE TABLE IF NOT EXISTS ticket_rules (
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 100,
     from_queue_id INT NULL,
+    requester_match VARCHAR(500) NULL,             -- адреси/домени заявника через кому (міграція 051)
+    source ENUM('web','portal','email','api') NULL, -- умова за джерелом тікета (міграція 051)
     keywords TEXT NOT NULL,
     match_in ENUM('subject','description','both') NOT NULL DEFAULT 'both',
     action_queue_id INT NULL,
@@ -791,6 +796,7 @@ CREATE TABLE IF NOT EXISTS assets (
     network_id VARCHAR(120) NULL,
     purchase_date DATE NULL,
     warranty_until DATE NULL,
+    license_seats INT UNSIGNED NULL,
     notes TEXT NULL,
     created_by INT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -845,7 +851,7 @@ CREATE TABLE IF NOT EXISTS task_date_changes (
 ) ENGINE=InnoDB;
 
 -- Облік застосованих міграцій (bin/migrate.php). Нова інсталяція вже містить усе до міграції 040 включно
--- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (051+) накочує update.sh.
+-- (database/migrations/legacy/), тож позначаємо їх застосованими; нові міграції (053+) накочує update.sh.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(20) NOT NULL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -904,4 +910,7 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('047', 'add_assets', 'baseline'),
 ('048', 'add_user_menu_prefs', 'baseline'),
 ('049', 'resolved_task_status_keeps_visible', 'baseline'),
-('050', 'resolved_task_status_open', 'baseline');
+('050', 'resolved_task_status_open', 'baseline'),
+('051', 'ticket_rules_conditions', 'baseline'),
+('052', 'task_work_journal', 'baseline'),
+('053', 'asset_license_seats', 'baseline');

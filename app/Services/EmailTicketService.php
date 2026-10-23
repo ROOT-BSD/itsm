@@ -567,7 +567,9 @@ class EmailTicketService
             $m['from_email'],
             $user ? (int) $user['id'] : null,
             $subject,
-            trim($description) !== '' ? trim($description) : null
+            trim($description) !== '' ? trim($description) : null,
+            null,
+            'email'
         );
         Audit::log('ticket', $id, 'created_from_email', null, ['from' => $m['from_email']]);
         return $id;

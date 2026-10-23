@@ -9,6 +9,7 @@ $statusClass = ['in_use' => 'success', 'in_stock' => 'info', 'repair' => 'warnin
     <?php if (!empty($ready)): ?>
     <div class="d-flex gap-2">
         <a class="btn btn-primary" href="/it-assets/create">+ Новий актив</a>
+        <a class="btn btn-outline-secondary" href="/it-assets/licenses">🔑 Ліцензії ПЗ</a>
         <a class="btn btn-outline-secondary" href="/it-assets/import">Імпорт</a>
         <a class="btn btn-outline-secondary" href="/it-assets/export?<?= $e($qs(['format' => 'xlsx'])) ?>">Експорт XLSX</a>
         <a class="btn btn-outline-secondary" href="/it-assets/export?<?= $e($qs(['format' => 'csv'])) ?>">Експорт CSV</a>

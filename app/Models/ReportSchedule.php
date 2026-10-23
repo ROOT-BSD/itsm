@@ -65,6 +65,18 @@ class ReportSchedule
         return (int) Database::connection()->lastInsertId();
     }
 
+    public static function update(int $id, array $d, bool $resetLastRun): void
+    {
+        $sql = 'UPDATE report_schedules SET name = :name, frequency = :frequency, weekday = :weekday, month_day = :month_day, send_hour = :send_hour,
+                       format = :format, project_id = :project_id, log_user_id = :log_user_id, category = :category, extra_recipients = :extra'
+             . ($resetLastRun ? ', last_run_at = NOW()' : '') . ' WHERE id = :id';
+        Database::connection()->prepare($sql)->execute([
+            'name' => $d['name'], 'frequency' => $d['frequency'], 'weekday' => $d['weekday'], 'month_day' => $d['month_day'],
+            'send_hour' => $d['send_hour'], 'format' => $d['format'], 'project_id' => $d['project_id'], 'log_user_id' => $d['log_user_id'],
+            'category' => $d['category'], 'extra' => $d['extra_recipients'], 'id' => $id,
+        ]);
+    }
+
     public static function setActive(int $id, bool $on): void
     {
         $stmt = Database::connection()->prepare('UPDATE report_schedules SET is_active = :a WHERE id = :id');

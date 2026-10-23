@@ -188,9 +188,18 @@ class TasksApiController extends ApiController
         if ($errors) {
             $this->validationFailed($errors);
         }
-        Task::addComment((int) $task['id'], $this->userId, $body);
-        $comments = Task::comments((int) $task['id']);
-        ApiResponse::ok(ApiSerializer::taskComment(end($comments)), 201);
+        $hours = 0.0;
+        $rawHours = $this->body()['hours'] ?? null;
+        if ($rawHours !== null && $rawHours !== '') {
+            $hours = is_numeric($rawHours) ? round((float) $rawHours, 4) : (Task::parseHours((string) $rawHours) ?? -1.0);
+            if ($hours < 0 || $hours > 999) {
+                $this->validationFailed(['hours' => 'Години: число від 0 до 999 (також «1:30» чи «90 хв»).']);
+            }
+        }
+        $id = Task::addComment((int) $task['id'], $this->userId, $body, $hours);
+        $entry = Task::comments((int) $task['id']);
+        $entry = array_values(array_filter($entry, fn($c) => (int) $c['id'] === $id));
+        ApiResponse::ok(ApiSerializer::taskComment($entry[0]), 201);
     }
 
     // ------------------------------------------------------------------ допоміжне

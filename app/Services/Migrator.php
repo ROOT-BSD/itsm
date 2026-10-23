@@ -134,6 +134,26 @@ class Migrator
         return $executed;
     }
 
+    /**
+     * Приймає поточний вміст файлів як еталон для вже застосованих нових міграцій, які змінили після застосування
+     * (прибирає попередження «файл змінено…»). До БД нічого не виконує. Користуйтеся, лише переконавшись, що зміна
+     * у файлі не потребує нових дій у базі (інакше створіть нову міграцію).
+     *
+     * @return array<int, array{0: string, 1: string}> [версія, назва] оновлених
+     */
+    public function acceptChecksums(): array
+    {
+        $done = [];
+        foreach ($this->applied() as $v => $row) {
+            $f = $this->files()[$v] ?? null;
+            if ($f !== null && !$f['legacy'] && $row['checksum'] !== null && $row['checksum'] !== sha1_file($f['file'])) {
+                $this->pdo->prepare('UPDATE schema_migrations SET checksum = :c WHERE version = :v')->execute(['c' => sha1_file($f['file']), 'v' => (string) $v]);
+                $done[] = [(string) $v, (string) $f['name']];
+            }
+        }
+        return $done;
+    }
+
     private function record(array $m, string $via, bool $dryRun): void
     {
         if ($dryRun) {

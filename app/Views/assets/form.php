@@ -35,10 +35,14 @@ $action = $a ? '/it-assets/' . (int) $a['id'] : '/it-assets';
             <input type="text" name="network_id" maxlength="120" class="form-control" value="<?= $e($v('network_id')) ?>"></div>
         <div class="col-md-3"><label class="form-label">Дата придбання</label>
             <input type="date" name="purchase_date" class="form-control" value="<?= $e($v('purchase_date')) ?>"></div>
-        <div class="col-md-3"><label class="form-label">Гарантія до</label>
+        <div class="col-md-3"><label class="form-label"><span data-asset-warranty-label>Гарантія до</span></label>
             <input type="date" name="warranty_until" class="form-control" value="<?= $e($v('warranty_until')) ?>"></div>
+        <div class="col-md-3" data-asset-seats hidden><label class="form-label">Кількість місць (ліцензій)</label>
+            <input type="number" name="license_seats" min="0" max="1000000" step="1" class="form-control" value="<?= $e($v('license_seats')) ?>">
+            <div class="form-text">Скільки пристроїв можна встановити. Порожньо — не облікувати.</div></div>
         <div class="col-12"><label class="form-label">Примітки</label>
             <textarea name="notes" rows="3" class="form-control"><?= $e($v('notes')) ?></textarea></div>
     </div>
     <div class="mt-3"><button class="btn btn-primary" type="submit">Зберегти</button></div>
 </form>
+<script src="<?= $e(\App\Core\View::asset('/assets/js/asset-form.js')) ?>" defer></script>

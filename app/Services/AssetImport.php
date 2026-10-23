@@ -15,16 +15,16 @@ class AssetImport
 
     public const HEADERS = [
         'Тип', 'Назва', 'Інвентарний №', 'Серійний №', 'Виробник', 'Модель', 'Статус', 'Власник (email)', 'Місце',
-        'ІП', 'Дата придбання', 'Гарантія до', 'Примітки',
+        'ІП', 'Дата придбання', 'Гарантія до', 'Кількість місць', 'Примітки',
     ];
-    private const KEYS = ['asset_type', 'name', 'inventory_number', 'serial_number', 'manufacturer', 'model', 'status', 'owner', 'location', 'network_id', 'purchase_date', 'warranty_until', 'notes'];
+    private const KEYS = ['asset_type', 'name', 'inventory_number', 'serial_number', 'manufacturer', 'model', 'status', 'owner', 'location', 'network_id', 'purchase_date', 'warranty_until', 'license_seats', 'notes'];
 
     /** Колонки окремого імпорту ПЗ (тип завжди «ПЗ»). */
     public const HEADERS_SW = [
         'Назва', 'Версія', 'Виробник', 'Інвентарний №', 'Ліцензійний ключ / серійний №', 'Статус', 'Власник (email)',
-        'Встановлено на (інв. № пристрою)', 'Дата придбання', 'Ліцензія до', 'Примітки',
+        'Встановлено на (інв. № пристрою)', 'Дата придбання', 'Ліцензія до', 'Кількість місць', 'Примітки',
     ];
-    private const KEYS_SW = ['name', 'model', 'manufacturer', 'inventory_number', 'serial_number', 'status', 'owner', 'host', 'purchase_date', 'warranty_until', 'notes'];
+    private const KEYS_SW = ['name', 'model', 'manufacturer', 'inventory_number', 'serial_number', 'status', 'owner', 'host', 'purchase_date', 'warranty_until', 'license_seats', 'notes'];
 
     /** Рядки для експорту (без заголовків). */
     public static function exportRows(array $assets): array
@@ -34,7 +34,7 @@ class AssetImport
             $rows[] = [
                 Asset::TYPES[$a['asset_type']] ?? $a['asset_type'], $a['name'], $a['inventory_number'] ?? '', $a['serial_number'] ?? '',
                 $a['manufacturer'] ?? '', $a['model'] ?? '', Asset::STATUSES[$a['status']] ?? $a['status'], $a['owner_email'] ?? '',
-                $a['location'] ?? '', $a['network_id'] ?? '', $a['purchase_date'] ?? '', $a['warranty_until'] ?? '', $a['notes'] ?? '',
+                $a['location'] ?? '', $a['network_id'] ?? '', $a['purchase_date'] ?? '', $a['warranty_until'] ?? '', $a['license_seats'] ?? '', $a['notes'] ?? '',
             ];
         }
         return $rows;
@@ -98,16 +98,6 @@ class AssetImport
         if (!isset($map['name'])) {
             throw new \RuntimeException('Не знайдено колонку «Назва». Використайте шаблон або експорт як зразок.');
         }
-        $typeByLabel = [];
-        foreach (Asset::TYPES as $code => $label) {
-            $typeByLabel[mb_strtolower($label)] = $code;
-            $typeByLabel[$code] = $code;
-        }
-        $statusByLabel = [];
-        foreach (Asset::STATUSES as $code => $label) {
-            $statusByLabel[mb_strtolower($label)] = $code;
-            $statusByLabel[$code] = $code;
-        }
         $owners = [];
         foreach (Asset::owners($role, $userId) as $u) {
             $owners[mb_strtolower((string) $u['email'])] = (int) $u['id'];
@@ -131,6 +121,16 @@ class AssetImport
             if (($v = $get('notes')) !== null) {
                 $d['notes'] = $v;
             }
+            if (($v = $get('license_seats')) !== null) {
+                if ($v === '') {
+                    $d['license_seats'] = null;
+                } elseif (ctype_digit($v) && (int) $v <= 1000000) {
+                    $d['license_seats'] = (int) $v;
+                } else {
+                    $res['errors'][] = [$line, "кількість місць «{$v}» має бути цілим числом від 0 до 1 000 000"];
+                    continue;
+                }
+            }
             if ($software) {
                 $d['asset_type'] = 'software';
             }
@@ -144,19 +144,21 @@ class AssetImport
             }
             $type = $get('asset_type');
             if ($type !== null && $type !== '') {
-                if (!isset($typeByLabel[mb_strtolower($type)])) {
-                    $res['errors'][] = [$line, "невідомий тип «{$type}»"];
+                $code = Asset::resolveType($type);
+                if ($code === null) {
+                    $res['errors'][] = [$line, "невідомий тип «{$type}» (допустимі: " . implode(', ', Asset::TYPES) . '; також розпізнаються синоніми, напр. «Ноут», «Switch», «МФУ»)'];
                     continue;
                 }
-                $d['asset_type'] = $typeByLabel[mb_strtolower($type)];
+                $d['asset_type'] = $code;
             }
             $status = $get('status');
             if ($status !== null && $status !== '') {
-                if (!isset($statusByLabel[mb_strtolower($status)])) {
-                    $res['errors'][] = [$line, "невідомий статус «{$status}»"];
+                $code = Asset::resolveStatus($status);
+                if ($code === null) {
+                    $res['errors'][] = [$line, "невідомий статус «{$status}» (допустимі: " . implode(', ', Asset::STATUSES) . ')'];
                     continue;
                 }
-                $d['status'] = $statusByLabel[mb_strtolower($status)];
+                $d['status'] = $code;
             }
             $bad = false;
             foreach (['purchase_date', 'warranty_until'] as $k) {
@@ -221,7 +223,7 @@ class AssetImport
     /** Рядки-приклад для шаблону ПЗ. */
     public static function softwareExample(): array
     {
-        return [['Microsoft Office', '2021 LTSC', 'Microsoft', 'SW-0001', 'XXXXX-XXXXX-XXXXX', 'Використовується', 'user@example.com', 'INV-0001', '2025-03-01', '2028-03-01', '']];
+        return [['Microsoft Office', '2021 LTSC', 'Microsoft', 'SW-0001', 'XXXXX-XXXXX-XXXXX', 'Використовується', 'user@example.com', 'INV-0001', '2025-03-01', '2028-03-01', '25', '']];
     }
 
     /** @return string|null|false ISO-дата, null для порожнього, false для некоректного */

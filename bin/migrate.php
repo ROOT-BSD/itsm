@@ -4,6 +4,7 @@
 //   php bin/migrate.php              # застосувати все, чого бракує
 //   php bin/migrate.php --status     # показати застосовані й незастосовані, нічого не змінюючи
 //   php bin/migrate.php --dry-run    # показати, що буде застосовано
+//   php bin/migrate.php --accept-checksums  # прийняти змінені (після застосування) файли як еталон — прибирає попередження [WARN] «файл змінено»; до БД нічого не виконує
 //   php bin/migrate.php --baseline   # позначити ВСІ наявні файли як застосовані, нічого не виконуючи (для ручного узгодження)
 //
 // Безпечний для повторного запуску. update.sh викликає цей скрипт сам.
@@ -28,6 +29,14 @@ try {
             $row = $applied[$f['version']] ?? null;
             printf("  %s  %-45s %s\n", $f['version'], $f['name'], $row ? 'застосована (' . $row['applied_via'] . ', ' . $row['applied_at'] . ')' : 'НЕ ЗАСТОСОВАНА');
         }
+        exit(0);
+    }
+    if (in_array('--accept-checksums', $argv, true)) {
+        $done = $m->acceptChecksums();
+        foreach ($done as [$v, $n]) {
+            echo "  [ OK ] {$v} {$n}: контрольну суму оновлено\n";
+        }
+        echo $done ? "  [ OK ] Прийнято змінених файлів: " . count($done) . "\n" : "  [ OK ] Змінених після застосування міграцій немає\n";
         exit(0);
     }
     $dry = in_array('--dry-run', $argv, true);

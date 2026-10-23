@@ -71,7 +71,7 @@ class TicketsApiController extends ApiController
             $this->validationFailed($errors);
         }
 
-        $id = Ticket::create($queueId, $this->user['full_name'], $this->user['email'], $this->userId, $subject, $description, $projectId);
+        $id = Ticket::create($queueId, $this->user['full_name'], $this->user['email'], $this->userId, $subject, $description, $projectId, 'api');
         ApiResponse::ok(ApiSerializer::ticket(Ticket::find($id)), 201);
     }
 

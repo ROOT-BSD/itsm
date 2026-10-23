@@ -9,7 +9,7 @@ $val = static fn(string $k, $d = '') => $f[$k] ?? $d;
 
 <h3 class="mb-1">Автоматичні правила черги тікетів</h3>
 <p class="text-muted">
-    Правило спрацьовує при <strong>створенні</strong> тікета (форма, портал, пошта, API), якщо в темі чи описі є одне з ключових слів.
+    Правило спрацьовує при <strong>створенні</strong> тікета (форма, портал, пошта, API), якщо виконуються всі задані умови: ключове слово в темі чи описі, заявник (адреса чи домен), джерело тікета, поточна черга.
     Дії: перенести в іншу чергу, призначити оператора, надіслати сповіщення. Правила перевіряються за порядком (менше число — раніше);
     <strong>перше, що збіглося, виконується</strong>, і перевірка зупиняється.
     <?php if (!empty($readOnly)): ?><br><strong>Лише перегляд:</strong> правила створює й змінює тільки адміністратор системи. Нижче — правила, налаштовані на вас<?= !empty($unitMode) ? ' та працівників вашого підрозділу' : '' ?>.<?php endif; ?>
@@ -37,7 +37,9 @@ $val = static fn(string $k, $d = '') => $f[$k] ?? $d;
                 <?php if (empty($unitMode)): ?><div class="small text-muted"><?= $r['scope_user_id'] === null ? 'Глобальне' : 'Підрозділ: ' . $e($r['scope_name']) ?></div><?php endif; ?>
             </td>
             <td class="small">
-                <?= $where ?>: <?php foreach ($kw as $k): ?><span class="badge text-bg-light border"><?= $e($k) ?></span> <?php endforeach; ?>
+                <?php if ($kw): ?><?= $where ?>: <?php foreach ($kw as $k): ?><span class="badge text-bg-light border"><?= $e($k) ?></span> <?php endforeach; ?><?php endif; ?>
+                <?php if (!empty($r['requester_match'])): ?><div>заявник: <?= $e($r['requester_match']) ?></div><?php endif; ?>
+                <?php if (!empty($r['source'])): ?><div>джерело: <?= $e($sources[$r['source']] ?? $r['source']) ?></div><?php endif; ?>
                 <?php if ($r['from_queue_name']): ?><div>лише в черзі «<?= $e($r['from_queue_name']) ?>»</div><?php endif; ?>
             </td>
             <td class="small">
@@ -82,8 +84,8 @@ $val = static fn(string $k, $d = '') => $f[$k] ?? $d;
                 </div>
                 <div class="col-12">
                     <label class="form-label">Ключові слова</label>
-                    <textarea name="keywords" rows="3" class="form-control" placeholder="принтер, друк, картридж" required><?= $e(implode("\n", \App\Services\TicketRuleService::parseKeywords((string) $val('keywords')))) ?></textarea>
-                    <div class="form-text">Через кому чи з нового рядка; регістр не враховується; достатньо збігу з будь-яким словом (частина слова теж збігається).</div>
+                    <textarea name="keywords" rows="3" class="form-control" placeholder="принтер, друк, картридж"><?= $e(implode("\n", \App\Services\TicketRuleService::parseKeywords((string) $val('keywords')))) ?></textarea>
+                    <div class="form-text">Через кому чи з нового рядка; регістр не враховується; достатньо збігу з будь-яким словом (частина слова теж збігається). Можна залишити порожнім, якщо задано іншу умову нижче.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Де шукати</label>
@@ -99,6 +101,19 @@ $val = static fn(string $k, $d = '') => $f[$k] ?? $d;
                         <option value="">— будь-яка —</option>
                         <?php foreach ($queues as $q): ?><option value="<?= (int) $q['id'] ?>" <?= (int) $val('from_queue_id', 0) === (int) $q['id'] ? 'selected' : '' ?>><?= $e($q['name']) ?></option><?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Заявник: адреси чи домени <span class="text-muted">(необов'язково)</span></label>
+                    <input type="text" name="requester_match" maxlength="500" class="form-control" placeholder="@firma.ua, boss@example.com" value="<?= $e($val('requester_match')) ?>">
+                    <div class="form-text">Через кому. «@firma.ua» — будь-яка адреса домену (і його піддоменів), «boss@example.com» — точна адреса.</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Джерело тікета <span class="text-muted">(необов'язково)</span></label>
+                    <select name="source" class="form-select">
+                        <option value="">— будь-яке —</option>
+                        <?php foreach ($sources as $k => $l): ?><option value="<?= $e($k) ?>" <?= $val('source', '') === $k ? 'selected' : '' ?>><?= $e($l) ?></option><?php endforeach; ?>
+                    </select>
+                    <div class="form-text">Для тікетів, створених до версії 0.9.00, джерело невідоме.</div>
                 </div>
                 <div class="col-12"><hr class="my-1"><strong>Дії</strong> <span class="text-muted small">(потрібна хоча б одна)</span></div>
                 <div class="col-md-6">
@@ -137,6 +152,54 @@ $val = static fn(string $k, $d = '') => $f[$k] ?? $d;
                 <button class="btn btn-primary" type="submit">Зберегти</button>
                 <?php if ($edit): ?><a class="btn btn-outline-secondary" href="<?= $e($base) ?>">Скасувати</a><?php endif; ?>
             </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4 form-card-md">
+    <div class="card-header">Перевірка на прикладі</div>
+    <div class="card-body">
+        <p class="small text-muted">Вкажіть умовний тікет — система покаже, яке правило спрацює і що воно зробить. Нічого не створюється й не надсилається.</p>
+        <form method="post" action="<?= $e($base) ?>/test">
+            <?= \App\Core\Csrf::field() ?>
+            <div class="row g-3">
+                <div class="col-md-8"><label class="form-label">Тема</label>
+                    <input type="text" name="t_subject" class="form-control" value="<?= $e($testInput['subject'] ?? '') ?>"></div>
+                <div class="col-md-4"><label class="form-label">Email заявника</label>
+                    <input type="text" name="t_email" class="form-control" placeholder="user@firma.ua" value="<?= $e($testInput['email'] ?? '') ?>"></div>
+                <div class="col-12"><label class="form-label">Опис</label>
+                    <textarea name="t_description" rows="2" class="form-control"><?= $e($testInput['description'] ?? '') ?></textarea></div>
+                <div class="col-md-6"><label class="form-label">Джерело</label>
+                    <select name="t_source" class="form-select"><option value="">— невідоме —</option>
+                        <?php foreach ($sources as $k => $l): ?><option value="<?= $e($k) ?>" <?= ($testInput['source'] ?? '') === $k ? 'selected' : '' ?>><?= $e($l) ?></option><?php endforeach; ?>
+                    </select></div>
+                <div class="col-md-6"><label class="form-label">Черга, у яку потрапляє тікет</label>
+                    <select name="t_queue_id" class="form-select">
+                        <?php foreach ($queues as $q): ?><option value="<?= (int) $q['id'] ?>" <?= (int) ($testInput['queue_id'] ?? 0) === (int) $q['id'] ? 'selected' : '' ?>><?= $e($q['name']) ?></option><?php endforeach; ?>
+                    </select></div>
+            </div>
+            <button class="btn btn-outline-primary mt-3" type="submit">Перевірити</button>
+        </form>
+        <?php if (isset($testResult)): ?>
+            <div class="alert <?= $testResult['rule'] ? 'alert-success' : 'alert-secondary' ?> mt-3 mb-0" id="rule-test-result">
+                <?php if ($testResult['rule']): ?>
+                    Спрацює правило <strong>«<?= $e($testResult['rule']['name']) ?>»</strong> (№ <?= (int) $testResult['rule']['sort_order'] ?>)<?= $testResult['actions'] ? ': ' . $e(implode('; ', $testResult['actions'])) : ' — без змін у черзі й операторі' ?>.
+                <?php else: ?>
+                    Правила не спрацюють: <?= $e($testResult['note']) ?>.
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4 form-card-md">
+    <div class="card-header">Застосувати до наявних тікетів</div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">Перевіряє активні правила для відкритих тікетів (до 500 найновіших, крім вирішених і закритих) і виконує дії першого правила, що збіглося: черга, оператор.
+            Листи-сповіщення <strong>не надсилаються</strong>. Тікети, створені до версії 0.9.00, не мають джерела — правила з умовою за джерелом на них не спрацюють. Спершу перевірте правила «на прикладі».</p>
+        <form method="post" action="<?= $e($base) ?>/apply-existing" data-confirm="Застосувати активні правила до відкритих тікетів? Черги й оператори можуть змінитися.">
+            <?= \App\Core\Csrf::field() ?>
+            <button class="btn btn-outline-danger" type="submit">Застосувати до відкритих тікетів</button>
         </form>
     </div>
 </div>

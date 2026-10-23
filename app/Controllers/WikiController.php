@@ -464,7 +464,7 @@ class WikiController
         if (mb_strlen($form['title']) > 200) {
             return 'Назва задовга (максимум 200 символів).';
         }
-        if (!array_key_exists($form['visibility'], WikiPage::VISIBILITIES)) {
+        if (!array_key_exists($form['visibility'], WikiPage::visibilities())) {
             return 'Оберіть коректну видимість сторінки.';
         }
         if (mb_strlen($form['content']) > WikiPage::MAX_CONTENT_CHARS) {

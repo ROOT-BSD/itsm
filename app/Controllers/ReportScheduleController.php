@@ -42,7 +42,8 @@ class ReportScheduleController
         ]);
     }
 
-    public function create(): void
+    /** Перевіряє поля форми (спільно для створення й редагування); при помилці — редірект. $back — куди повертати з повідомленням. */
+    private function parseForm(string $back, ?array $existing = null): array
     {
         $uid = (int) Auth::id();
         $name = trim((string) ($_POST['name'] ?? ''));
@@ -52,41 +53,82 @@ class ReportScheduleController
         $hour = (int) ($_POST['send_hour'] ?? 8);
         $format = array_key_exists($_POST['format'] ?? '', ReportSchedule::FORMATS) ? $_POST['format'] : 'pdf';
         if ($name === '' || mb_strlen($name) > 150) {
-            $this->redirect('error', 'Вкажіть назву розкладу (до 150 символів).');
+            $this->redirect('error', 'Вкажіть назву розкладу (до 150 символів).', $back);
         }
         if ($weekday < 1 || $weekday > 7 || $monthDay < 1 || $monthDay > 28 || $hour < 0 || $hour > 23) {
-            $this->redirect('error', 'Некоректний день або година.');
+            $this->redirect('error', 'Некоректний день або година.', $back);
         }
         $projectId = !empty($_POST['project_id']) ? (int) $_POST['project_id'] : null;
-        if ($projectId !== null) {
+        // Проєкт, уже заданий у розкладі, лишається дозволеним (адмін міг редагувати чужий розклад).
+        if ($projectId !== null && !($existing && (int) $existing['project_id'] === $projectId)) {
             $p = Project::find($projectId);
             if (!$p || !Project::isVisibleTo($p, $uid, $this->isAdmin())) {
-                $this->redirect('error', 'Проєкт не знайдено або немає доступу.');
+                $this->redirect('error', 'Проєкт не знайдено або немає доступу.', $back);
             }
         }
         $logUserId = !empty($_POST['user_id']) ? (int) $_POST['user_id'] : null;
         if ($logUserId !== null && !User::findById($logUserId)) {
-            $this->redirect('error', 'Користувача не знайдено.');
+            $this->redirect('error', 'Користувача не знайдено.', $back);
         }
-        // Додаткові одержувачі: звичайний користувач може вказати лише адреси користувачів системи (щоб не виводити дані назовні).
+        // Додаткові одержувачі: звичайний користувач може вказати лише адреси користувачів системи (щоб не виводити дані назовні);
+        // адреси, які вже були в розкладі, залишаються (їх міг додати адміністратор).
+        $old = [];
+        if ($existing) {
+            foreach (preg_split('/[\s,;]+/', (string) ($existing['extra_recipients'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) as $o) {
+                $old[strtolower($o)] = true;
+            }
+        }
         $extra = [];
         foreach (preg_split('/[\s,;]+/', (string) ($_POST['extra_recipients'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) as $e) {
             if (!filter_var($e, FILTER_VALIDATE_EMAIL)) {
-                $this->redirect('error', 'Некоректна адреса: ' . mb_substr($e, 0, 80));
+                $this->redirect('error', 'Некоректна адреса: ' . mb_substr($e, 0, 80), $back);
             }
-            if (!$this->isAdmin() && !$this->isActiveUserEmail($e)) {
-                $this->redirect('error', 'Адреса ' . $e . ' не належить жодному активному користувачу системи. Зовнішні адреси може додавати лише адміністратор системи.');
+            if (!$this->isAdmin() && !isset($old[strtolower($e)]) && !$this->isActiveUserEmail($e)) {
+                $this->redirect('error', 'Адреса ' . $e . ' не належить жодному активному користувачу системи. Зовнішні адреси може додавати лише адміністратор системи.', $back);
             }
             $extra[strtolower($e)] = true;
         }
         $category = trim((string) ($_POST['category'] ?? ''));
-        $id = ReportSchedule::create([
-            'user_id' => $uid, 'name' => $name, 'frequency' => $freq, 'weekday' => $weekday, 'month_day' => $monthDay, 'send_hour' => $hour,
+        return [
+            'name' => $name, 'frequency' => $freq, 'weekday' => $weekday, 'month_day' => $monthDay, 'send_hour' => $hour,
             'format' => $format, 'project_id' => $projectId, 'log_user_id' => $logUserId,
             'category' => $category !== '' ? mb_substr($category, 0, 100) : null, 'extra_recipients' => $extra ? implode(', ', array_keys($extra)) : null,
+        ];
+    }
+
+    public function create(): void
+    {
+        $uid = (int) Auth::id();
+        $d = $this->parseForm('/reports/schedules');
+        $id = ReportSchedule::create($d + ['user_id' => $uid]);
+        Audit::log('report_schedule', $id, 'created', $uid, ['name' => $d['name'], 'frequency' => $d['frequency'], 'format' => $d['format']]);
+        $this->redirect('success', 'Розклад «' . $d['name'] . '» створено.');
+    }
+
+    public function edit(array $params): void
+    {
+        $uid = (int) Auth::id();
+        $s = $this->mine((int) ($params['id'] ?? 0));
+        View::render('reports/schedule_edit', [
+            'sch' => $s,
+            'isAdmin' => $this->isAdmin(),
+            'projects' => Project::allVisibleTo($uid, $this->isAdmin()),
+            'users' => User::allActive(),
+            'categories' => Task::distinctCategoriesVisibleTo($uid, $this->isAdmin()),
+            'error' => $_GET['error'] ?? null,
         ]);
-        Audit::log('report_schedule', $id, 'created', $uid, ['name' => $name, 'frequency' => $freq, 'format' => $format]);
-        $this->redirect('success', 'Розклад «' . $name . '» створено.');
+    }
+
+    public function update(array $params): void
+    {
+        $s = $this->mine((int) ($params['id'] ?? 0));
+        $d = $this->parseForm('/reports/schedules/' . (int) $s['id'] . '/edit', $s);
+        // Змінено розклад відправки — не наздоганяємо «пропущений» період заднім числом, відлік іде від зараз (як при створенні).
+        $timingChanged = $d['frequency'] !== $s['frequency'] || $d['send_hour'] !== (int) $s['send_hour']
+            || ($d['frequency'] === 'weekly' ? $d['weekday'] !== (int) $s['weekday'] : $d['month_day'] !== (int) $s['month_day']);
+        ReportSchedule::update((int) $s['id'], $d, $timingChanged);
+        Audit::log('report_schedule', (int) $s['id'], 'updated', (int) Auth::id(), ['name' => $d['name'], 'frequency' => $d['frequency'], 'format' => $d['format']]);
+        $this->redirect('success', 'Розклад «' . $d['name'] . '» оновлено.');
     }
 
     public function toggle(array $params): void
@@ -134,9 +176,9 @@ class ReportScheduleController
         return (int) $stmt->fetchColumn() > 0;
     }
 
-    private function redirect(string $key, string $message): never
+    private function redirect(string $key, string $message, string $to = '/reports/schedules'): never
     {
-        header('Location: /reports/schedules?' . $key . '=' . urlencode($message));
+        header('Location: ' . $to . '?' . $key . '=' . urlencode($message));
         exit;
     }
 }

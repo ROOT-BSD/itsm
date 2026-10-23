@@ -37,7 +37,7 @@ class Markdown
     /** @var array<string, true> існуючі slug-и сторінок вікі (для [[посилань]]) */
     private array $existingSlugs;
 
-    /** @var array<int, array{name: string, mime: string, image: bool, url?: string}> вкладення поточної сторінки вікі (чи повідомлення форуму): ключ => опис; url — адреса файлу, якщо не /wiki/files/ключ */
+    /** @var array<int, array{name: string, mime: string, image: bool, url?: string, popup?: bool}> вкладення (popup — відкривати картинку у вікні, що спливає) поточної сторінки вікі (чи повідомлення форуму): ключ => опис; url — адреса файлу, якщо не /wiki/files/ключ */
     private array $attachments = [];
 
     /**
@@ -500,7 +500,8 @@ class Markdown
                 }
                 $url = $file['url'] ?? '/wiki/files/' . (int) $f[1];
                 if ($file['image']) {
-                    return $this->token('<a href="' . $url . '" target="_blank" rel="noopener noreferrer" class="wiki-image-link">'
+                    $popup = !empty($file['popup']) ? ' data-popup="image" data-title="' . $this->esc($file['name']) . '"' : '';
+                    return $this->token('<a href="' . $url . '" target="_blank" rel="noopener noreferrer" class="wiki-image-link"' . $popup . '>'
                         . '<img src="' . $url . (str_contains($url, '?') ? '&amp;' : '?') . 'thumb=1" alt="' . ($alt !== '' ? $alt : $this->esc($file['name'])) . '" class="wiki-image" loading="lazy"></a>');
                 }
                 return $this->token($this->linkHtml($url, $alt !== '' ? $alt : $this->esc($file['name'])));

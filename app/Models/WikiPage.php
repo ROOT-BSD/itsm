@@ -12,6 +12,8 @@ use App\Services\WikiStore;
 class WikiPage
 {
     public const VISIBILITIES = ['all' => 'Усі, хто увійшов', 'staff' => 'Персонал (без заявників)', 'admin' => 'Лише адміністратор'];
+    /** Лише для вікі: «публічна» сторінка («База знань») видима всім, у т.ч. анонімно через портал /support/kb. */
+    public const PORTAL = 'portal';
     public const MAX_CONTENT_CHARS = 300000;
     /** Максимальна глибина вкладеності (кореневі сторінки — рівень 1). */
     public const MAX_DEPTH = 6;
@@ -36,9 +38,33 @@ class WikiPage
         return $allowed;
     }
 
+    /** Публічні сторінки («База знань») для порталу: slug і назва. @return array<int, array{slug: string, title: string}> */
+    public static function publicList(): array
+    {
+        try {
+            $stmt = Database::connection()->prepare('SELECT slug, title FROM wiki_pages WHERE visibility = ? ORDER BY sort_order ASC, title ASC LIMIT 500');
+            $stmt->execute([self::PORTAL]);
+            return $stmt->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /** Значення visibility вікі: загальні (як у форумі/бібліотеці) + публічна сторінка порталу. */
+    public static function visibilities(): array
+    {
+        return self::VISIBILITIES + [self::PORTAL => 'Публічна — «База знань» (видима на порталі без входу)'];
+    }
+
+    /** Які значення visibility вікі бачить роль; null (анонім) — лише публічні сторінки. @return string[] */
+    public static function wikiVisibilities(?string $role): array
+    {
+        return $role === null ? [self::PORTAL] : array_merge(self::allowedVisibilities($role), [self::PORTAL]);
+    }
+
     public static function visibleTo(array $page, ?string $role): bool
     {
-        return in_array($page['visibility'], self::allowedVisibilities($role), true);
+        return in_array($page['visibility'], self::wikiVisibilities($role), true);
     }
 
     public static function canEdit(?string $role): bool
@@ -89,7 +115,7 @@ class WikiPage
     /** Список сторінок, видимих ролі (без вмісту — він може бути великим). @return array<int, array<string, mixed>> */
     public static function listVisible(?string $role): array
     {
-        $allowed = self::allowedVisibilities($role);
+        $allowed = self::wikiVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
         $parent = self::hierarchyReady() ? 'p.parent_id' : 'NULL AS parent_id';
         $stmt = Database::connection()->prepare(
@@ -110,7 +136,7 @@ class WikiPage
      */
     public static function search(string $query, ?string $role, int $limit = 30): array
     {
-        $allowed = self::allowedVisibilities($role);
+        $allowed = self::wikiVisibilities($role);
         $in = implode(',', array_fill(0, count($allowed), '?'));
         // Текст лежить на диску, тож LIKE по БД неможливий: беремо видимі сторінки й шукаємо в PHP (без урахування регістру).
         $stmt = Database::connection()->prepare(
@@ -137,6 +163,53 @@ class WikiPage
             }
         }
         return array_slice(array_merge($inTitle, $inText), 0, $limit);
+    }
+
+    /**
+     * Статті, схожі на текст звернення (тема + опис): «База знань». $role = null — лише публічні сторінки (портал).
+     * Слова ≥ 3 літер (крім службових) зводяться до основи (відкидається закінчення), збіг у назві важить більше, ніж у тексті.
+     *
+     * @return array<int, array{slug: string, title: string, excerpt: string, score: int}>
+     */
+    public static function suggest(string $text, ?string $role, int $limit = 5): array
+    {
+        $words = [];
+        foreach (preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY) ?: [] as $w) {
+            $len = mb_strlen($w);
+            // Слова з 3 літер (VPN, USB, RDP) теж важливі, але службові («для», «що», «при»…) пропускаємо.
+            if ($len >= 4 || ($len === 3 && !in_array($w, ['для', 'що', 'як', 'або', 'але', 'чим', 'при', 'над', 'під', 'про', 'між', 'без', 'бо', 'чи', 'нам', 'вам', 'мене', 'цей', 'ця', 'це', 'той', 'вже', 'ще', 'так', 'ні', 'мій', 'моя'], true))) {
+                $words[mb_substr($w, 0, $len >= 7 ? $len - 2 : ($len >= 5 ? $len - 1 : $len))] = true;
+            }
+        }
+        $words = array_slice(array_keys($words), 0, 12);
+        if (!$words) {
+            return [];
+        }
+        $allowed = self::wikiVisibilities($role);
+        $in = implode(',', array_fill(0, count($allowed), '?'));
+        $stmt = Database::connection()->prepare("SELECT p.id, p.slug, p.title FROM wiki_pages p WHERE p.visibility IN ($in) ORDER BY p.sort_order ASC, p.title ASC LIMIT 400");
+        $stmt->execute($allowed);
+        $found = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $title = mb_strtolower((string) $row['title']);
+            $content = (string) (WikiStore::readCurrent((int) $row['id']) ?? '');
+            $body = mb_strtolower(mb_substr($content, 0, 20000));
+            $score = 0;
+            foreach ($words as $w) {
+                if (mb_strpos($title, $w) !== false) {
+                    $score += 5;
+                }
+                if (mb_strpos($body, $w) !== false) {
+                    $score += 1;
+                }
+            }
+            if ($score > 0) {
+                $plain = trim((string) preg_replace('/\s+/u', ' ', \App\Core\Markdown::plainText($content)));
+                $found[] = ['slug' => $row['slug'], 'title' => $row['title'], 'excerpt' => mb_strlen($plain) > 140 ? mb_substr($plain, 0, 140) . '…' : $plain, 'score' => $score];
+            }
+        }
+        usort($found, static fn(array $a, array $b): int => $b['score'] <=> $a['score']);
+        return array_slice($found, 0, $limit);
     }
 
     /** @return string[] */

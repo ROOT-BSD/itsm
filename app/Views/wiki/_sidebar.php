@@ -25,7 +25,7 @@
                    <?php if (!empty($p['depth'])): ?>style="padding-left: <?= 1 + min((int) $p['depth'], 5) * 1.1 ?>rem"<?php endif; ?>>
                     <span><?php if (!empty($p['depth'])): ?><span class="text-muted" aria-hidden="true">↳ </span><?php endif; ?><?= \App\Core\View::e($p['title']) ?></span>
                     <?php if ($p['visibility'] !== 'all'): ?>
-                        <span class="badge bg-secondary" title="<?= \App\Core\View::e(\App\Models\WikiPage::VISIBILITIES[$p['visibility']] ?? '') ?>"><?= $p['visibility'] === 'admin' ? 'адмін' : 'персонал' ?></span>
+                        <span class="badge <?= $p['visibility'] === 'portal' ? 'bg-success' : 'bg-secondary' ?>" title="<?= \App\Core\View::e(\App\Models\WikiPage::visibilities()[$p['visibility']] ?? '') ?>"><?= $p['visibility'] === 'admin' ? 'адмін' : ($p['visibility'] === 'portal' ? 'портал' : 'персонал') ?></span>
                     <?php endif; ?>
                 </a>
             <?php endforeach; ?>

@@ -22,6 +22,15 @@
             <tr><th>Створено</th><td><?= \App\Core\View::e($ticket['created_at']) ?></td></tr>
         </table>
 
+        <?php if (!empty($kbSuggestions) && \App\Core\Auth::hasRole(['admin', 'unit_admin', 'it_manager', 'sysadmin', 'support_operator', 'observer'])): ?>
+            <div class="alert alert-light border py-2 mb-2 small">
+                <strong>📚 База знань — схожі статті:</strong>
+                <?php foreach ($kbSuggestions as $kb): ?>
+                    <a href="/wiki/<?= \App\Core\View::e($kb['slug']) ?>" target="_blank" rel="noopener" class="ms-2"><?= \App\Core\View::e($kb['title']) ?></a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
         <?php if ($sla['has_policy']): ?>
             <?php if ($sla['response_overdue']): ?>
                 <div class="alert alert-danger py-2 mb-2">⚠️ Прострочено норматив першої відповіді (мала бути до <?= \App\Core\View::e($sla['response_due_at']) ?>)</div>

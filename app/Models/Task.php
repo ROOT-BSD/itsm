@@ -552,21 +552,146 @@ class Task
         );
     }
 
-    public static function addComment(int $taskId, int $authorId, string $body): void
+    // ------------------------------------------------------------------ Журнал робіт (міграція 052)
+    // Запис журналу = рядок time_logs: текст (comment), години (0 — без часу), дата, категорія. «Витрачено годин» = сума годин.
+
+    /** Розбирає введені години: «1,5», «1.5», «1:30», «90 хв», «2 год», «1 год 30 хв». null — не розпізнано. */
+    public static function parseHours(string $input): ?float
     {
-        $stmt = Database::connection()->prepare(
-            'INSERT INTO comments (task_id, author_id, body) VALUES (:task_id, :author_id, :body)'
-        );
-        $stmt->execute(['task_id' => $taskId, 'author_id' => $authorId, 'body' => $body]);
-        \App\Services\WebhookService::emitTaskComment($taskId, (int) Database::connection()->lastInsertId(), $authorId);
+        $s = mb_strtolower(trim($input));
+        if ($s === '') {
+            return 0.0;
+        }
+        $s = str_replace(',', '.', $s);
+        if (preg_match('/^(\d{1,3}):([0-5]?\d)$/', $s, $m)) {
+            return round((int) $m[1] + (int) $m[2] / 60, 4);
+        }
+        if (preg_match('/^\d+(\.\d+)?$/', $s)) {
+            return round((float) $s, 4);
+        }
+        if (preg_match('/^(?:(\d+(?:\.\d+)?)\s*(?:год|г|h)\.?)?\s*(?:(\d+(?:\.\d+)?)\s*(?:хв|х|м|m|min)\.?)?$/u', $s, $m) && (($m[1] ?? '') !== '' || ($m[2] ?? '') !== '')) {
+            return round((float) ($m[1] ?? 0) + (float) ($m[2] ?? 0) / 60, 4);
+        }
+        return null;
     }
 
+    /** Години для показу: «1 год 30 хв», «45 хв», «2 год». */
+    public static function formatHours(float $hours): string
+    {
+        $min = (int) round($hours * 60);
+        if ($min <= 0) {
+            return '';
+        }
+        $h = intdiv($min, 60);
+        $m = $min % 60;
+        return trim(($h > 0 ? $h . ' год' : '') . ($m > 0 ? ' ' . $m . ' хв' : ''));
+    }
+
+    /** Перераховує tasks.actual_hours як суму годин журналу. */
+    public static function recalcHours(int $taskId): void
+    {
+        Database::connection()->prepare(
+            'UPDATE tasks SET actual_hours = (SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE task_id = :t1) WHERE id = :t2'
+        )->execute(['t1' => $taskId, 't2' => $taskId]);
+    }
+
+    /** Додає запис у журнал робіт. @return int id запису */
+    public static function addEntry(int $taskId, int $userId, string $text, float $hours, string $date, ?string $category): int
+    {
+        $db = Database::connection();
+        $db->beginTransaction();
+        try {
+            $db->prepare(
+                'INSERT INTO time_logs (task_id, user_id, activity_category, hours, log_date, comment)
+                 VALUES (:task_id, :user_id, :category, :hours, :log_date, :comment)'
+            )->execute([
+                'task_id' => $taskId, 'user_id' => $userId, 'category' => $category !== '' ? $category : null,
+                'hours' => $hours, 'log_date' => $date, 'comment' => $text !== '' ? $text : null,
+            ]);
+            $id = (int) $db->lastInsertId();
+            self::recalcHours($taskId);
+            $db->commit();
+            return $id;
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    }
+
+    public static function findEntry(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare(
+            'SELECT tl.*, u.full_name AS user_name FROM time_logs tl JOIN users u ON u.id = tl.user_id WHERE tl.id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
+    public static function updateEntry(int $id, string $text, float $hours, string $date, ?string $category): void
+    {
+        $e = self::findEntry($id);
+        if (!$e) {
+            return;
+        }
+        $db = Database::connection();
+        $db->beginTransaction();
+        try {
+            $db->prepare(
+                'UPDATE time_logs SET comment = :c, hours = :h, log_date = :d, activity_category = :cat, edited_at = NOW() WHERE id = :id'
+            )->execute(['c' => $text !== '' ? $text : null, 'h' => $hours, 'd' => $date, 'cat' => $category !== '' ? $category : null, 'id' => $id]);
+            self::recalcHours((int) $e['task_id']);
+            $db->commit();
+        } catch (\Throwable $ex) {
+            $db->rollBack();
+            throw $ex;
+        }
+    }
+
+    public static function deleteEntry(int $id): void
+    {
+        $e = self::findEntry($id);
+        if (!$e) {
+            return;
+        }
+        $db = Database::connection();
+        $db->beginTransaction();
+        try {
+            $db->prepare('DELETE FROM time_logs WHERE id = :id')->execute(['id' => $id]);
+            self::recalcHours((int) $e['task_id']);
+            $db->commit();
+        } catch (\Throwable $ex) {
+            $db->rollBack();
+            throw $ex;
+        }
+    }
+
+    /** Журнал робіт задачі: від новіших до давніших (за датою запису, потім за порядком додавання). */
+    public static function journal(int $taskId): array
+    {
+        $stmt = Database::connection()->prepare(
+            'SELECT tl.*, u.full_name AS user_name
+             FROM time_logs tl JOIN users u ON u.id = tl.user_id
+             WHERE tl.task_id = :task_id ORDER BY tl.log_date DESC, tl.id DESC'
+        );
+        $stmt->execute(['task_id' => $taskId]);
+        return $stmt->fetchAll();
+    }
+
+    /** Сумісність (REST API, вебхуки): «коментар» = запис журналу без годин. */
+    public static function addComment(int $taskId, int $authorId, string $body, float $hours = 0.0): int
+    {
+        $id = self::addEntry($taskId, $authorId, $body, $hours, date('Y-m-d'), null);
+        \App\Services\WebhookService::emitTaskComment($taskId, $id, $authorId);
+        return $id;
+    }
+
+    /** Сумісність (REST API): записи журналу з текстом у вигляді «коментарів». */
     public static function comments(int $taskId): array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT c.*, u.full_name AS author_name
-             FROM comments c JOIN users u ON u.id = c.author_id
-             WHERE c.task_id = :task_id ORDER BY c.created_at ASC'
+            "SELECT tl.id, tl.task_id, tl.user_id AS author_id, tl.comment AS body, tl.hours, tl.created_at, u.full_name AS author_name
+             FROM time_logs tl JOIN users u ON u.id = tl.user_id
+             WHERE tl.task_id = :task_id AND tl.comment IS NOT NULL AND tl.comment <> '' ORDER BY tl.created_at ASC, tl.id ASC"
         );
         $stmt->execute(['task_id' => $taskId]);
         return $stmt->fetchAll();
@@ -574,38 +699,7 @@ class Task
 
     public static function logTime(int $taskId, int $userId, float $hours, string $date, ?string $category, ?string $comment): void
     {
-        $db = Database::connection();
-        $db->beginTransaction();
-        try {
-            $stmt = $db->prepare(
-                'INSERT INTO time_logs (task_id, user_id, activity_category, hours, log_date, comment)
-                 VALUES (:task_id, :user_id, :category, :hours, :log_date, :comment)'
-            );
-            $stmt->execute([
-                'task_id' => $taskId, 'user_id' => $userId, 'category' => $category,
-                'hours' => $hours, 'log_date' => $date, 'comment' => $comment,
-            ]);
-            $db->prepare('UPDATE tasks SET actual_hours = actual_hours + :hours WHERE id = :id')
-                ->execute(['hours' => $hours, 'id' => $taskId]);
-            $db->commit();
-        } catch (\Throwable $e) {
-            $db->rollBack();
-            throw $e;
-        }
-    }
-
-    /** Усі записи обліку часу для однієї задачі (для відображення історії на сторінці задачі). */
-    public static function timeLogsForTask(int $taskId): array
-    {
-        $stmt = Database::connection()->prepare(
-            "SELECT tl.*, u.full_name AS user_name
-             FROM time_logs tl
-             JOIN users u ON u.id = tl.user_id
-             WHERE tl.task_id = :task_id
-             ORDER BY tl.log_date DESC, tl.id DESC"
-        );
-        $stmt->execute(['task_id' => $taskId]);
-        return $stmt->fetchAll();
+        self::addEntry($taskId, $userId, (string) $comment, $hours, $date, $category);
     }
 
     /**
@@ -619,7 +713,7 @@ class Task
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
              JOIN tasks t ON t.id = tl.task_id
-             WHERE t.project_id = :project_id
+             WHERE tl.hours > 0 AND t.project_id = :project_id
              ORDER BY tl.log_date DESC, tl.id DESC"
         );
         $stmt->execute(['project_id' => $projectId]);
@@ -637,7 +731,7 @@ class Task
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
              JOIN tasks t ON t.id = tl.task_id
-             WHERE t.project_id = :project_id
+             WHERE tl.hours > 0 AND t.project_id = :project_id
              GROUP BY tl.user_id, u.full_name
              ORDER BY total_hours DESC"
         );
@@ -661,7 +755,7 @@ class Task
              JOIN users u ON u.id = tl.user_id
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              ORDER BY tl.log_date DESC, tl.id DESC",
             $wp
         );
@@ -675,7 +769,7 @@ class Task
             "SELECT u.full_name AS user_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              GROUP BY tl.user_id, u.full_name
              ORDER BY total_hours DESC",
             $wp
@@ -692,7 +786,7 @@ class Task
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              GROUP BY p.id, p.name",
             $wp
         );
@@ -739,7 +833,7 @@ class Task
             "SELECT {$selectExpr} AS period_label, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
-             WHERE t.project_id = :project_id
+             WHERE tl.hours > 0 AND t.project_id = :project_id
              GROUP BY {$groupExpr}
              ORDER BY MIN(tl.log_date) DESC"
         );
@@ -756,7 +850,7 @@ class Task
         return self::runScoped(
             "SELECT {$selectExpr} AS period_label, SUM(tl.hours) AS total_hours
              FROM time_logs tl
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              GROUP BY {$groupExpr}
              ORDER BY MIN(tl.log_date) DESC",
             $wp
@@ -779,7 +873,7 @@ class Task
                 JOIN users u ON u.id = tl.user_id
                 JOIN tasks t ON t.id = tl.task_id
                 JOIN projects p ON p.id = t.project_id
-                WHERE tl.log_date BETWEEN :date_from AND :date_to";
+                WHERE tl.hours > 0 AND tl.log_date BETWEEN :date_from AND :date_to";
         $params = ['date_from' => $dateFrom, 'date_to' => $dateTo];
 
         if (!empty($filters['project_id'])) {
@@ -822,7 +916,7 @@ class Task
                 FROM time_logs tl
                 JOIN tasks t ON t.id = tl.task_id
                 JOIN projects p ON p.id = t.project_id
-                WHERE tl.activity_category IS NOT NULL AND tl.activity_category <> ''";
+                WHERE tl.hours > 0 AND tl.activity_category IS NOT NULL AND tl.activity_category <> ''";
         $params = [];
 
         if (!$isAdmin) {
@@ -867,7 +961,7 @@ class Task
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
              JOIN tasks t ON t.id = tl.task_id
-             WHERE t.project_id = :project_id
+             WHERE tl.hours > 0 AND t.project_id = :project_id
              GROUP BY {$groupExpr}, tl.user_id, u.full_name
              ORDER BY MIN(tl.log_date) DESC, total_hours DESC"
         );
@@ -885,7 +979,7 @@ class Task
             "SELECT {$selectExpr} AS period_label, u.full_name AS user_name, SUM(tl.hours) AS total_hours
              FROM time_logs tl
              JOIN users u ON u.id = tl.user_id
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              GROUP BY {$groupExpr}, tl.user_id, u.full_name
              ORDER BY MIN(tl.log_date) DESC, total_hours DESC",
             $wp
@@ -905,7 +999,7 @@ class Task
              FROM time_logs tl
              JOIN tasks t ON t.id = tl.task_id
              JOIN projects p ON p.id = t.project_id
-             WHERE 1 = 1{$w}
+             WHERE tl.hours > 0 AND 1 = 1{$w}
              GROUP BY {$groupExpr}, p.id, p.name",
             $wp
         );

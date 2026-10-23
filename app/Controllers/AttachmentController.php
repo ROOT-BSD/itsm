@@ -132,12 +132,57 @@ class AttachmentController
             ob_end_clean();
         }
 
+        // Вбудований переглядач PDF (Safari, Chrome) працює як вбудований об'єкт: глобальні CSP
+        // (object-src 'none') та X-Frame-Options: DENY дають порожню сторінку. Для самого файлу PDF
+        // замінюємо їх суворою політикою, що дозволяє лише переглядач; активного вмісту тут немає.
+        if ($mime === 'application/pdf' && $disposition === 'inline') {
+            header("Content-Security-Policy: default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'");
+            header('X-Frame-Options: SAMEORIGIN');
+        }
+
+        // Safari запитує PDF і медіа частинами (Range) — без відповіді 206 файл може не відобразитися.
+        $size = filesize($servePath);
+        $start = 0;
+        $end = $size - 1;
+        header('Accept-Ranges: bytes');
+        if ($size > 0 && isset($_SERVER['HTTP_RANGE']) && preg_match('/^bytes=(\d*)-(\d*)$/', trim($_SERVER['HTTP_RANGE']), $rm) && ($rm[1] !== '' || $rm[2] !== '')) {
+            if ($rm[1] === '') {
+                $start = max(0, $size - (int) $rm[2]);
+            } else {
+                $start = (int) $rm[1];
+                if ($rm[2] !== '') {
+                    $end = min($end, (int) $rm[2]);
+                }
+            }
+            if ($start > $end) {
+                http_response_code(416);
+                header('Content-Range: bytes */' . $size);
+                exit;
+            }
+            http_response_code(206);
+            header('Content-Range: bytes ' . $start . '-' . $end . '/' . $size);
+        }
         header('Content-Type: ' . $mime);
-        header('Content-Length: ' . filesize($servePath));
+        header('Content-Length: ' . ($end - $start + 1));
         header('Content-Disposition: ' . $disposition . '; filename="' . $asciiName . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: private, max-age=3600');
-        readfile($servePath);
+        if ($start === 0 && $end === $size - 1) {
+            readfile($servePath);
+        } else {
+            $fh = fopen($servePath, 'rb');
+            fseek($fh, $start);
+            $left = $end - $start + 1;
+            while ($left > 0 && !feof($fh)) {
+                $chunk = fread($fh, min(8192, $left));
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                echo $chunk;
+                $left -= strlen($chunk);
+            }
+            fclose($fh);
+        }
         exit;
     }
 

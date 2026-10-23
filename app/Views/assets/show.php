@@ -43,7 +43,23 @@ $actions = ['created' => 'Створено', 'updated' => 'Змінено', 'lin
     <dt class="col-sm-3">Місце</dt><dd class="col-sm-9"><?= $e($a['location'] ?? '—') ?></dd>
     <dt class="col-sm-3">ІП</dt><dd class="col-sm-9"><?= $e($a['network_id'] ?? '—') ?></dd>
     <dt class="col-sm-3">Придбано</dt><dd class="col-sm-9"><?= $fmtDate($a['purchase_date']) ?></dd>
-    <dt class="col-sm-3">Гарантія до</dt><dd class="col-sm-9 <?= $wCls ?>"><?= $fmtDate($w) ?></dd>
+    <dt class="col-sm-3"><?= $a['asset_type'] === 'software' ? 'Ліцензія до' : 'Гарантія до' ?></dt><dd class="col-sm-9 <?= $wCls ?>"><?= $fmtDate($w) ?></dd>
+    <?php if ($a['asset_type'] === 'software'): ?>
+        <?php
+        $seats = $a['license_seats'] !== null ? (int) $a['license_seats'] : null;
+        $inst = \App\Models\Asset::installedCount($id);
+        ?>
+        <dt class="col-sm-3">Ліцензії</dt><dd class="col-sm-9">
+            <?php if ($seats === null): ?>
+                встановлено на <strong><?= $inst ?></strong> пристр. <span class="text-muted">· кількість місць не задана (<a href="/it-assets/<?= $id ?>/edit">вказати</a>)</span>
+            <?php else: ?>
+                місць <strong><?= $seats ?></strong> · встановлено <strong><?= $inst ?></strong> ·
+                <?php if ($inst > $seats): ?><span class="badge text-bg-danger">перевищено на <?= $inst - $seats ?></span>
+                <?php else: ?>вільно <strong><?= $seats - $inst ?></strong><?php endif; ?>
+            <?php endif; ?>
+            <div class="small text-muted">Встановлення — зв'язки «встановлено на» з пристроями нижче.</div>
+        </dd>
+    <?php endif; ?>
     <?php if (!empty($a['notes'])): ?><dt class="col-sm-3">Примітки</dt><dd class="col-sm-9"><?= nl2br($e($a['notes'])) ?></dd><?php endif; ?>
 </dl></div></div>
 

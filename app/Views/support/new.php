@@ -38,11 +38,15 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Тема звернення</label>
-                <input type="text" name="subject" class="form-control" required>
+                <input type="text" name="subject" class="form-control" required autocomplete="off" data-kb-subject>
+                <div class="alert alert-info small mt-2 mb-0 py-2" data-kb-box hidden>
+                    <strong>Можливо, вам допоможе:</strong>
+                    <ul class="mb-0 ps-3" data-kb-list></ul>
+                </div>
             </div>
             <div class="mb-3">
                 <label class="form-label">Опис проблеми / запиту</label>
-                <textarea name="description" class="form-control" rows="4"></textarea>
+                <textarea name="description" class="form-control" rows="4" data-kb-description></textarea>
             </div>
             <?php if (\App\Core\Config::get('attachments.portal_enabled', true)): ?>
                 <?php
@@ -59,3 +63,4 @@
         </p>
     </div>
 </div>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/kb-suggest.js')) ?>" defer></script>

@@ -89,5 +89,7 @@ document.addEventListener('change', function (e) {
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/paste-images.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/wiki-editor.js')) ?>" defer></script>
 <script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/forum-editor.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/journal-editor.js')) ?>" defer></script>
+<script src="<?= \App\Core\View::e(\App\Core\View::asset('/assets/js/attachment-popup.js')) ?>" defer></script>
 </body>
 </html>

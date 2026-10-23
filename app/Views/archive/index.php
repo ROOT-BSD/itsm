@@ -8,7 +8,15 @@
     Тут зібрано все закрите, до чого у вас є доступ.
 </p>
 
-<h5 class="mt-4">Закриті проєкти</h5>
+<div class="d-flex gap-2 mb-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="arch-open-all">Показати все</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="arch-close-all">Згорнути все</button>
+    <span class="small text-muted align-self-center">Розділи згорнуті — натисніть на назву, щоб відкрити.</span>
+</div>
+
+<details id="arch-projects" class="archive-sec card shadow-sm mb-3">
+<summary class="card-header fw-semibold" style="cursor:pointer">Закриті проєкти <span class="badge text-bg-secondary ms-1"><?= count($projects ?? []) ?></span></summary>
+<div class="card-body p-2">
 <table class="table table-bordered bg-white align-middle">
     <thead>
         <tr><th>Назва</th><th>Відповідальний</th></tr>
@@ -29,9 +37,13 @@
     <?php endforeach; endif; ?>
     </tbody>
 </table>
+</div>
+</details>
 
-<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
-    <h5 class="mb-0">Закриті тікети</h5>
+<details id="arch-tickets" class="archive-sec card shadow-sm mb-3">
+<summary class="card-header fw-semibold" style="cursor:pointer">Закриті тікети <span class="badge text-bg-secondary ms-1"><?= count($tickets ?? []) ?></span></summary>
+<div class="card-body p-2">
+<div class="d-flex justify-content-end mb-2">
     <?php $exportUrl = '/tickets/export'; $exportExtra = ['status' => 'closed']; require __DIR__ . '/../_export_button.php'; ?>
 </div>
 <table class="table table-bordered bg-white align-middle">
@@ -59,9 +71,13 @@
     <?php endforeach; endif; ?>
     </tbody>
 </table>
+</div>
+</details>
 
-<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
-    <h5 class="mb-0">Закриті задачі</h5>
+<details id="arch-tasks" class="archive-sec card shadow-sm mb-3">
+<summary class="card-header fw-semibold" style="cursor:pointer">Закриті задачі <span class="badge text-bg-secondary ms-1"><?= count($tasks ?? []) ?></span></summary>
+<div class="card-body p-2">
+<div class="d-flex justify-content-end mb-2">
     <?php $exportUrl = '/tasks/export'; $exportExtra = ['status' => 'closed']; require __DIR__ . '/../_export_button.php'; ?>
 </div>
 <table class="table table-bordered bg-white align-middle">
@@ -82,3 +98,16 @@
     <?php endforeach; endif; ?>
     </tbody>
 </table>
+</div>
+</details>
+
+<script nonce="<?= \App\Core\Csp::nonce() ?>">
+(function () {
+    var secs = document.querySelectorAll('details.archive-sec');
+    function setAll(open) { secs.forEach(function (d) { d.open = open; }); }
+    document.getElementById('arch-open-all').addEventListener('click', function () { setAll(true); });
+    document.getElementById('arch-close-all').addEventListener('click', function () { setAll(false); });
+    // Якщо за адресою є #якір розділу — відкриваємо його.
+    secs.forEach(function (d) { if (d.id && location.hash === '#' + d.id) { d.open = true; } });
+})();
+</script>

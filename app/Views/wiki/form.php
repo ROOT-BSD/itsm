@@ -62,10 +62,11 @@ $cancelUrl = $isNew ? '/wiki' : '/wiki/' . $page['slug'];
                 <div class="col-md-8">
                     <label class="form-label" for="wiki-visibility">Хто бачить</label>
                     <select id="wiki-visibility" name="visibility" class="form-select">
-                        <?php foreach (\App\Models\WikiPage::VISIBILITIES as $value => $label): ?>
+                        <?php foreach (\App\Models\WikiPage::visibilities() as $value => $label): ?>
                             <option value="<?= $e($value) ?>" <?= $form['visibility'] === $value ? 'selected' : '' ?>><?= $e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <div class="form-text">«Публічна» сторінка — стаття «Бази знань»: її бачать усі, навіть без входу, і її пропонує портал /support, коли заявник пише тему звернення. Не розміщуйте в ній внутрішніх даних.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label" for="wiki-sort">Порядок у списку</label>

@@ -121,7 +121,8 @@ final class ApiSerializer
         return [
             'id' => (int) $c['id'],
             'author' => self::ref(!empty($c['author_id']) ? (int) $c['author_id'] : null, $c['author_name'] ?? null, 'full_name'),
-            'body' => $c['body'],
+            'body' => \App\Core\View::withoutImageTokens($c['body'] ?? ''),
+            'hours' => isset($c['hours']) ? round((float) $c['hours'], 4) : 0.0,
             'created_at' => self::iso($c['created_at'] ?? null),
         ];
     }

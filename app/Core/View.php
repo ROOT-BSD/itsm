@@ -118,10 +118,44 @@ class View
                 return '';
             }
             $url = self::e($urlFor((int) $a['id']));
-            return '<a href="' . $url . '" target="_blank" rel="noopener" class="d-inline-block me-2 mb-2"><img src="' . $url . '?thumb=1" alt="'
+            return '<a href="' . $url . '" target="_blank" rel="noopener" data-popup="image" data-title="' . self::e($a['original_name']) . '" class="d-inline-block me-2 mb-2"><img src="' . $url . '?thumb=1" alt="'
                 . self::e($a['original_name']) . '" class="attachment-thumb" loading="lazy"></a>';
         }, $html) ?? $html;
         return nl2br($html);
+    }
+
+    /**
+     * Текст запису журналу робіт: Markdown (підмножина GFM, див. App\Core\Markdown) + мітки зображень [[img:N]] → мініатюри.
+     * Одинарні переноси рядків зберігаються (як у чаті та в давніх записах без розмітки); код у блоках ``` не чіпаємо.
+     * Результат безпечний: увесь текст екранується, HTML утворює лише сам рендерер.
+     *
+     * @param array<int, array<string, mixed>> $attachments
+     * @param callable(int): string $urlFor
+     */
+    public static function journalText(?string $text, array $attachments, callable $urlFor): string
+    {
+        $map = [];
+        foreach ($attachments as $a) {
+            if (str_starts_with((string) $a['mime_type'], 'image/')) {
+                $map[(int) $a['id']] = ['name' => (string) $a['original_name'], 'mime' => (string) $a['mime_type'], 'image' => true, 'url' => $urlFor((int) $a['id']), 'popup' => true];
+            }
+        }
+        $src = str_replace(["\r\n", "\r"], "\n", (string) $text);
+        $src = preg_replace_callback(self::IMAGE_TOKEN, static function (array $m) use ($map): string {
+            return isset($map[(int) $m[1]]) ? '![' . str_replace([']', '['], '', $map[(int) $m[1]]['name']) . '](file:' . (int) $m[1] . ')' : '';
+        }, $src) ?? $src;
+        // Рядок за рядком: поза блоками коду кінець рядка робимо жорстким переносом (два пробіли), крім порожніх рядків.
+        $out = [];
+        $fence = false;
+        $lines = explode("\n", $src);
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^\s{0,3}(```|~~~)/', $line)) {
+                $fence = !$fence;
+            }
+            $next = $lines[$i + 1] ?? null;
+            $out[] = (!$fence && $next !== null && trim($line) !== '' && trim($next) !== '' && !preg_match('/^\s{0,3}(```|~~~)/', $line)) ? rtrim($line) . '  ' : $line;
+        }
+        return (new \App\Core\Markdown([]))->setAttachments($map)->toHtml(implode("\n", $out));
     }
 
     /** Текст без міток зображень — для API, листів та експорту. */

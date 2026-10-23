@@ -53,7 +53,7 @@ $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true);
                         <?php $url = '/support/track/' . \App\Core\View::e($ticket['access_token']) . '/attachments/' . (int) $a['id']; ?>
                         <li class="list-group-item d-flex align-items-center gap-3">
                             <?php if (str_starts_with($a['mime_type'], 'image/')): ?>
-                                <a href="<?= $url ?>" target="_blank" rel="noopener">
+                                <a href="<?= $url ?>" target="_blank" rel="noopener" data-popup="image" data-title="<?= \App\Core\View::e($a['original_name']) ?>">
                                     <img src="<?= $url ?>?thumb=1" alt="<?= \App\Core\View::e($a['original_name']) ?>" class="attachment-thumb" loading="lazy">
                                 </a>
                             <?php elseif (\App\Services\AttachmentService::isOfficeMime($a['mime_type'])): ?>
@@ -62,7 +62,7 @@ $isFinished = in_array($ticket['status'], ['resolved', 'closed'], true);
                                 <span class="attachment-icon badge bg-danger align-self-start">PDF</span>
                             <?php endif; ?>
                             <div class="flex-grow-1">
-                                <a href="<?= $url ?><?= \App\Services\AttachmentService::isOfficeMime($a['mime_type']) ? '?download=1' : '' ?>" target="_blank" rel="noopener"><?= \App\Core\View::e($a['original_name']) ?></a>
+                                <a href="<?= $url ?><?= \App\Services\AttachmentService::isOfficeMime($a['mime_type']) ? '?download=1" target="_blank" rel="noopener' : '" target="_blank" rel="noopener' . (str_starts_with($a['mime_type'], 'image/') || $a['mime_type'] === 'application/pdf' ? '" data-popup="' . (str_starts_with($a['mime_type'], 'image/') ? 'image' : 'pdf') . '" data-title="' . \App\Core\View::e($a['original_name']) : '') ?>"><?= \App\Core\View::e($a['original_name']) ?></a>
                                 <div class="small text-muted"><?= \App\Core\View::e(\App\Core\UploadLimits::human((int) $a['size_bytes'])) ?> · <?= \App\Core\View::e(date('d.m.Y H:i', strtotime($a['created_at']))) ?></div>
                             </div>
                             <a href="<?= $url ?>?download=1" class="btn btn-sm btn-outline-secondary">Завантажити</a>

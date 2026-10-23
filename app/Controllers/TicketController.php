@@ -97,7 +97,7 @@ class TicketController
         // облікового запису основного функціоналу — майбутній крок, п. 2.13 ТЗ)
         $me = User::findById(Auth::id());
 
-        $id = Ticket::create($queueId, $me['full_name'], $me['email'], Auth::id(), $subject, $description ?: null, $projectId);
+        $id = Ticket::create($queueId, $me['full_name'], $me['email'], Auth::id(), $subject, $description ?: null, $projectId, 'web');
 
         // Зображення з форми (вибрані файли або вставлений скриншот). Тікет уже створено: частина файлів
         // може бути відхилена, і це не скасовує тікет — користувач побачить, що саме не прикріпилось.
@@ -140,6 +140,7 @@ class TicketController
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
             'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
+            'kbSuggestions' => \App\Models\WikiPage::suggest((string) $ticket['subject'] . ' ' . mb_substr((string) $ticket['description'], 0, 500), Auth::role(), 4),
             'links' => $this->visibleLinks((int) $ticket['id']),
             'ticketAssets' => $this->visibleAssets((int) $ticket['id']),
             'canLinkAssets' => \App\Core\Access::canUseAssets(Auth::role()) && \App\Models\Asset::ready(),

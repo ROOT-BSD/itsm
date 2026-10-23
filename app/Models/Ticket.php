@@ -318,7 +318,7 @@ class Ticket
         return $stmt->fetchAll();
     }
 
-    public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description, ?int $projectId = null): int
+    public static function create(int $queueId, string $requesterName, string $requesterEmail, ?int $requesterUserId, string $subject, ?string $description, ?int $projectId = null, ?string $source = null): int
     {
         // Автопризначення: якщо в черги налаштований оператор за замовчуванням — новий тікет одразу його отримує.
         // Той самий Ticket::create() використовують усі три шляхи створення тікета (звичайна форма, портал
@@ -326,8 +326,8 @@ class Ticket
         $defaultOperatorId = self::defaultOperatorForQueue($queueId);
 
         $stmt = Database::connection()->prepare(
-            'INSERT INTO tickets (queue_id, project_id, access_token, requester_name, requester_email, requester_user_id, subject, description, status, assigned_operator_id)
-             VALUES (:queue_id, :project_id, :access_token, :requester_name, :requester_email, :requester_user_id, :subject, :description, "new", :assigned_operator_id)'
+            'INSERT INTO tickets (queue_id, project_id, access_token, requester_name, requester_email, requester_user_id, subject, description, source, status, assigned_operator_id)
+             VALUES (:queue_id, :project_id, :access_token, :requester_name, :requester_email, :requester_user_id, :subject, :description, :source, "new", :assigned_operator_id)'
         );
         $stmt->execute([
             'queue_id' => $queueId,
@@ -338,6 +338,7 @@ class Ticket
             'requester_user_id' => $requesterUserId,
             'subject' => $subject,
             'description' => $description,
+            'source' => in_array($source, ['web', 'portal', 'email', 'api'], true) ? $source : null,
             'assigned_operator_id' => $defaultOperatorId,
         ]);
 

@@ -66,6 +66,28 @@ class AssetController
         ]);
     }
 
+    private const LICENSE_STATES = ['over' => 'Перевищено', 'expired' => 'Прострочено', 'expiring' => 'Спливає ≤ 60 дн.', 'free' => 'Є вільні місця', 'ok' => 'Гаразд'];
+
+    /** Облік ліцензій ПЗ: місця / встановлено / вільно / строк; фільтр за станом; експорт ?format=xlsx|csv. */
+    public function licenses(): void
+    {
+        $this->notReady();
+        $q = trim((string) ($_GET['q'] ?? ''));
+        $state = (string) ($_GET['state'] ?? '');
+        $all = Asset::licenses(Auth::role(), $this->uid(), $q);
+        $counts = array_fill_keys(array_keys(self::LICENSE_STATES), 0);
+        foreach ($all as $r) {
+            $counts[$r['state']]++;
+        }
+        $rows = isset(self::LICENSE_STATES[$state]) ? array_values(array_filter($all, static fn($r) => $r['state'] === $state)) : $all;
+        if (!empty($_GET['format'])) {
+            $out = array_map(fn($r) => [$r['name'], $r['model'] ?? '', $r['manufacturer'] ?? '', $r['inventory_number'] ?? '', $r['license_seats'] ?? '', $r['installed'], $r['free'] ?? '', $r['warranty_until'] ?? '', self::LICENSE_STATES[$r['state']], Asset::STATUSES[$r['status']] ?? $r['status']], $rows);
+            TableExport::send('licenses', (string) $_GET['format'], ['Назва', 'Версія', 'Виробник', 'Інвентарний №', 'Місць', 'Встановлено', 'Вільно', 'Діє до', 'Стан', 'Статус'], $out, 'Ліцензії');
+            return;
+        }
+        View::render('assets/licenses', ['rows' => $rows, 'q' => $q, 'state' => $state, 'counts' => $counts, 'states' => self::LICENSE_STATES, 'total' => count($all)]);
+    }
+
     private function visibleOrFail(int $id): array
     {
         $this->notReady();
@@ -140,6 +162,7 @@ class AssetController
             'status' => (string) ($_POST['status'] ?? 'in_use'), 'owner_user_id' => (int) ($_POST['owner_user_id'] ?? 0) ?: null,
             'location' => trim((string) ($_POST['location'] ?? '')), 'network_id' => trim((string) ($_POST['network_id'] ?? '')),
             'purchase_date' => trim((string) ($_POST['purchase_date'] ?? '')), 'warranty_until' => trim((string) ($_POST['warranty_until'] ?? '')),
+            'license_seats' => trim((string) ($_POST['license_seats'] ?? '')),
             'notes' => trim((string) ($_POST['notes'] ?? '')),
         ];
         $fail = function (string $msg) use ($id, $d): never {
@@ -164,6 +187,14 @@ class AssetController
                 $fail('Некоректна дата у полі «' . Asset::FIELD_LABELS[$k] . '».');
             }
             $d[$k] = $iso;
+        }
+        // Кількість місць має сенс лише для ПЗ; порожнє = не задано.
+        if ($d['asset_type'] !== 'software' || $d['license_seats'] === '') {
+            $d['license_seats'] = null;
+        } elseif (!ctype_digit($d['license_seats']) || (int) $d['license_seats'] > 1000000) {
+            $fail('Кількість місць — ціле число від 0 до 1 000 000.');
+        } else {
+            $d['license_seats'] = (int) $d['license_seats'];
         }
         if ($d['purchase_date'] && $d['warranty_until'] && $d['warranty_until'] < $d['purchase_date']) {
             $fail('Гарантія не може закінчуватись раніше дати придбання.');
@@ -306,7 +337,7 @@ class AssetController
     /** Шаблон для імпорту: заголовки й один приклад. */
     public function template(): void
     {
-        $example = [['Ноутбук', 'Ноутбук бухгалтера', 'INV-0001', 'SN123456', 'Dell', 'Latitude 5440', 'Використовується', 'user@example.com', 'каб. 12', 'PC-BUH-01', '2025-03-01', '2028-03-01', '']];
+        $example = [['Ноутбук', 'Ноутбук бухгалтера', 'INV-0001', 'SN123456', 'Dell', 'Latitude 5440', 'Використовується', 'user@example.com', 'каб. 12', 'PC-BUH-01', '2025-03-01', '2028-03-01', '', '']];
         TableExport::send('assets-template', $_GET['format'] ?? 'xlsx', AssetImport::HEADERS, $example, 'Активи');
     }
 
