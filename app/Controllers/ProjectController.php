@@ -96,7 +96,7 @@ class ProjectController
         $id = Project::create($name, $description, Auth::id(), $responsibleUserId, $parentId);
         if ($template !== null) {
             try {
-                $r = \App\Services\TemplateService::apply((int) $template['id'], $id, $baseDate, Auth::id());
+                $r = \App\Services\TemplateService::apply((int) $template['id'], $id, $baseDate, Auth::id(), null, \App\Controllers\TemplateController::readRoleUsers());
                 header('Location: /projects/' . $id . '?success=' . urlencode('За шаблоном «' . $template['name'] . '» створено задач: ' . $r['tasks'] . ($r['subtasks'] ? ' (і підзадач: ' . $r['subtasks'] . ')' : '')));
             } catch (\Throwable $e) {
                 header('Location: /projects/' . $id . '?error=' . urlencode('Проєкт створено, але шаблон не застосовано: ' . $e->getMessage()));

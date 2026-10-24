@@ -29,6 +29,24 @@ class TicketController
             $queueId = (int) $_GET['queue'];
             $tickets = array_values(array_filter($tickets, fn(array $t): bool => (int) $t['queue_id'] === $queueId));
         }
+        // Фільтри за пріоритетом, міткою, статусом (не розширюють видимість).
+        $fPrio = isset(Ticket::PRIORITIES[$_GET['priority'] ?? '']) ? $_GET['priority'] : '';
+        $fStatus = in_array($_GET['status'] ?? '', Ticket::STATUSES, true) ? $_GET['status'] : '';
+        $fLabel = (int) ($_GET['label'] ?? 0);
+        // Мітки — внутрішні, заявники їх не бачать.
+        $labelMap = Auth::hasRole(['admin', 'unit_admin', 'it_manager', 'sysadmin', 'support_operator', 'observer']) ? Ticket::labelsForTickets(array_map(fn($t) => (int) $t['id'], $tickets)) : [];
+        $tickets = array_values(array_filter($tickets, function (array $t) use ($fPrio, $fStatus, $fLabel, $labelMap): bool {
+            if ($fPrio !== '' && ($t['priority'] ?? 'normal') !== $fPrio) {
+                return false;
+            }
+            if ($fStatus !== '' && $t['status'] !== $fStatus) {
+                return false;
+            }
+            if ($fLabel > 0 && !in_array($fLabel, array_map('intval', array_column($labelMap[(int) $t['id']] ?? [], 'id')), true)) {
+                return false;
+            }
+            return true;
+        }));
         $policies = Ticket::slaPoliciesByQueue();
 
         foreach ($tickets as &$ticket) {
@@ -37,13 +55,20 @@ class TicketController
         unset($ticket);
 
         // Прострочені тікети — вгору списку, щоб їх одразу було видно (сенс ескалації).
-        usort($tickets, function ($a, $b) {
-            $aOverdue = $a['sla']['response_overdue'] || $a['sla']['resolution_overdue'];
-            $bOverdue = $b['sla']['response_overdue'] || $b['sla']['resolution_overdue'];
-            return $bOverdue <=> $aOverdue;
+        $rank = ['critical' => 3, 'high' => 2, 'normal' => 1, 'low' => 0];
+        $byPriority = ($_GET['sort'] ?? '') === 'priority';
+        usort($tickets, function ($a, $b) use ($rank, $byPriority) {
+            $aOverdue = (int) ($a['sla']['response_overdue'] || $a['sla']['resolution_overdue']);
+            $bOverdue = (int) ($b['sla']['response_overdue'] || $b['sla']['resolution_overdue']);
+            $pa = $rank[$a['priority'] ?? 'normal'] ?? 1;
+            $pb = $rank[$b['priority'] ?? 'normal'] ?? 1;
+            // Звичайно: прострочені вгору; «за пріоритетом»: спершу пріоритет, потім прострочення. Далі — порядок за датою (usort стабільний).
+            return $byPriority ? ($pb <=> $pa ?: $bOverdue <=> $aOverdue) : ($bOverdue <=> $aOverdue);
         });
 
         View::render('tickets/index', [
+            'fPrio' => $fPrio, 'fStatus' => $fStatus, 'fLabel' => $fLabel, 'byPriority' => $byPriority,
+            'allLabels' => $labelMap || Auth::hasRole(['admin', 'unit_admin', 'it_manager', 'sysadmin', 'support_operator', 'observer']) ? Ticket::labels() : [], 'labelMap' => $labelMap,
             'tickets' => $tickets,
         ]);
     }
@@ -105,6 +130,7 @@ class TicketController
             'ticket', $id, $_FILES['files'] ?? [], Auth::id(), 'web',
             (int) \App\Core\Config::get('attachments.max_per_request', 10)
         );
+        Ticket::applyCreationRules($id); // правила черги — вже з урахуванням вкладень
         $query = [];
         if ($images['added'] > 0) {
             $query['success'] = 'Звернення створено. Прикріплено зображень: ' . $images['added'] . '.';
@@ -141,6 +167,8 @@ class TicketController
             'success' => $_GET['success'] ?? null,
             'attachments' => \App\Models\Attachment::forOwner('ticket', (int) $ticket['id']),
             'kbSuggestions' => \App\Models\WikiPage::suggest((string) $ticket['subject'] . ' ' . mb_substr((string) $ticket['description'], 0, 500), Auth::role(), 4),
+            'allLabels' => Ticket::labels(),
+            'ticketLabels' => Ticket::labelsForTickets([(int) $ticket['id']])[(int) $ticket['id']] ?? [],
             'links' => $this->visibleLinks((int) $ticket['id']),
             'ticketAssets' => $this->visibleAssets((int) $ticket['id']),
             'canLinkAssets' => \App\Core\Access::canUseAssets(Auth::role()) && \App\Models\Asset::ready(),
@@ -204,6 +232,51 @@ class TicketController
         $operatorId = !empty($_POST['operator_id']) ? (int) $_POST['operator_id'] : null;
         Ticket::assignOperator((int) $params['id'], $operatorId, Auth::id());
         header('Location: /tickets/' . $params['id']);
+        exit;
+    }
+
+    public function setLabels(array $params): void
+    {
+        Auth::requireLogin();
+        if (!\App\Core\Access::canAssignTicketOperator(Auth::role())) {
+            http_response_code(403);
+            echo 'Призначати мітки можуть лише керівник ІТ-підрозділу, адміністратор системи або оператор служби підтримки.';
+            return;
+        }
+        $ticket = Ticket::find((int) $params['id']);
+        if (!$ticket || !Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            return;
+        }
+        Ticket::setLabels((int) $params['id'], array_map('intval', (array) ($_POST['labels'] ?? [])), (int) Auth::id());
+        header('Location: /tickets/' . $params['id'] . '?success=' . urlencode('Мітки збережено'));
+        exit;
+    }
+
+    public function setPriority(array $params): void
+    {
+        Auth::requireLogin();
+        if (!\App\Core\Access::canAssignTicketOperator(Auth::role())) {
+            http_response_code(403);
+            echo 'Змінювати пріоритет тікета можуть лише керівник ІТ-підрозділу, адміністратор системи або оператор служби підтримки.';
+            return;
+        }
+        $ticket = Ticket::find((int) $params['id']);
+        if (!$ticket || !Ticket::isVisibleTo($ticket, Auth::id(), Auth::hasRole(['admin']), $this->canSeeUnassigned())) {
+            http_response_code(404);
+            echo 'Тікет не знайдено.';
+            return;
+        }
+        $priority = (string) ($_POST['priority'] ?? '');
+        if (!isset(Ticket::PRIORITIES[$priority])) {
+            header('Location: /tickets/' . $params['id'] . '?error=' . urlencode('Некоректний пріоритет'));
+            exit;
+        }
+        if (($ticket['priority'] ?? 'normal') !== $priority) {
+            Ticket::setPriority((int) $params['id'], $priority, Auth::id());
+        }
+        header('Location: /tickets/' . $params['id'] . '?success=' . urlencode('Пріоритет змінено'));
         exit;
     }
 

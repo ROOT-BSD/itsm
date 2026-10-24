@@ -191,6 +191,7 @@ $eMember = static fn($v) => \App\Core\View::e($v);
             <label class="form-label small mb-1">Дата старту</label>
             <input type="date" name="start_date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>">
         </div>
+        <?php $roleTemplates = \App\Models\Template::rolesByTemplate(); $roleUsers = \App\Models\User::allActive(); require __DIR__ . '/../templates/_role_map.php'; ?>
         <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Додати задачі</button></div>
         <?php if (\App\Core\Access::canManageProjects(\App\Core\Auth::role())): ?>
         <div class="col-md-2 text-md-end"><button class="btn btn-sm btn-link" type="submit" formaction="/projects/<?= (int)$project['id'] ?>/save-template" formnovalidate>Зберегти проєкт як шаблон</button></div>

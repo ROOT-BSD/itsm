@@ -217,6 +217,7 @@ class Task
         $taskId = (int) Database::connection()->lastInsertId();
         Audit::log('task', $taskId, 'created', $data['author_id'], $parentId !== null ? ['parent_task_id' => $parentId] : null);
         NotificationService::taskCreated($taskId, $data['assignee_id'] ?: null, (int) $data['author_id']);
+        \App\Services\TaskRuleService::apply($taskId, 'created');
         return $taskId;
     }
 
@@ -251,6 +252,7 @@ class Task
                 self::updateDates($id, $old['start_date'] ?: null, (string) $due, $userId, self::REASON_RESTORED);
             }
         }
+        \App\Services\TaskRuleService::apply($id, 'status', $statusId);
     }
 
     public static function updateAssignee(int $id, ?int $assigneeId, int $actingUserId): void

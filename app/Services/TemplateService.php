@@ -31,11 +31,12 @@ class TemplateService
 
     /**
      * Створює в проєкті задачі шаблону. Дати початку/терміну = $baseDate + зміщення в днях (якщо зміщення задано).
-     * Виконавців шаблон не задає — їх призначають потім.
+     * Виконавець пункту: якщо в пункті задано роль, береться людина з $roleUsers[роль]; без ролі чи відповідності задачу лишено непризначеною (підзадачі успадковують виконавця).
+     * @param array<string,int> $roleUsers роль → id користувача
      *
      * @return array{tasks: int, subtasks: int, first_task_id: ?int}
      */
-    public static function apply(int $templateId, int $projectId, ?string $baseDate, int $userId, ?string $titleOverride = null): array
+    public static function apply(int $templateId, int $projectId, ?string $baseDate, int $userId, ?string $titleOverride = null, array $roleUsers = []): array
     {
         $items = Template::items($templateId);
         $statusId = self::newStatusId();
@@ -52,10 +53,11 @@ class TemplateService
                     throw new \RuntimeException('Шаблон створює забагато задач (понад ' . self::MAX_CREATED . ')');
                 }
                 $type = (int) ($it['type_id'] ?: $defaultType);
+                $assignee = !empty($it['assignee_role']) ? ($roleUsers[$it['assignee_role']] ?? null) : null;
                 $taskId = Task::create([
                     'project_id' => $projectId, 'type_id' => $type, 'status_id' => $statusId,
                     'title' => ($titleOverride !== null && $titleOverride !== '' && $tasks === 0) ? $titleOverride : $it['title'], 'description' => $it['body'], 'priority' => $it['priority'],
-                    'author_id' => $userId, 'assignee_id' => null,
+                    'author_id' => $userId, 'assignee_id' => $assignee,
                     'start_date' => self::shift($baseDate, $it['start_offset']),
                     'due_date' => self::shift($baseDate, $it['due_offset']),
                 ]);
@@ -67,7 +69,7 @@ class TemplateService
                 foreach ($subLines as $line) {
                     Task::create([
                         'project_id' => $projectId, 'parent_task_id' => $taskId, 'type_id' => $type, 'status_id' => $statusId,
-                        'title' => $line, 'priority' => $it['priority'], 'author_id' => $userId, 'assignee_id' => null,
+                        'title' => $line, 'priority' => $it['priority'], 'author_id' => $userId, 'assignee_id' => $assignee,
                         'due_date' => self::shift($baseDate, $it['due_offset']),
                     ]);
                     $subs++;
@@ -112,7 +114,7 @@ class TemplateService
         $offset = fn(?string $d) => ($baseDate && $d) ? (int) round((strtotime($d) - strtotime($baseDate)) / 86400) : null;
         return [
             'title' => $task['title'], 'body' => $task['description'] ?: null, 'type_id' => (int) $task['type_id'],
-            'priority' => $task['priority'],
+            'priority' => $task['priority'], 'assignee_role' => null,
             'start_offset' => $offset($task['start_date'] ?? null), 'due_offset' => $offset($task['due_date'] ?? null),
             'checklist' => $checklist ? implode("\n", $checklist) : null,
             'subtasks' => $subtasks ? implode("\n", $subtasks) : null,

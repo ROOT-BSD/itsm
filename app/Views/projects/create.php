@@ -49,6 +49,7 @@
             <label class="form-label">Дата старту</label>
             <input type="date" name="start_date" class="form-control" value="<?= date('Y-m-d') ?>">
         </div>
+        <?php $roleTemplates = \App\Models\Template::rolesByTemplate(); $roleUsers = $users; require __DIR__ . '/../templates/_role_map.php'; ?>
         <div class="form-text">Шаблон створить у проєкті набір задач (з чек-листами й підзадачами); дати початку й терміну рахуються від дати старту.</div>
     </div>
     <?php endif; ?>

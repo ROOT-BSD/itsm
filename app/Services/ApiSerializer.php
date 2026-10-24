@@ -88,6 +88,7 @@ final class ApiSerializer
             'subject' => $t['subject'],
             'description' => isset($t['description']) ? \App\Core\View::withoutImageTokens($t['description']) : null,
             'status' => $t['status'],
+            'priority' => $t['priority'] ?? 'normal',
             'queue' => ['id' => (int) $t['queue_id'], 'name' => $t['queue_name'] ?? null],
             'requester' => [
                 'user_id' => !empty($t['requester_user_id']) ? (int) $t['requester_user_id'] : null,

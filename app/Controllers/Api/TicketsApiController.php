@@ -15,7 +15,7 @@ use App\Services\ApiSerializer;
  */
 class TicketsApiController extends ApiController
 {
-    private const PATCHABLE = ['status', 'operator_id'];
+    private const PATCHABLE = ['status', 'operator_id', 'priority'];
 
     public function index(): void
     {
@@ -72,6 +72,7 @@ class TicketsApiController extends ApiController
         }
 
         $id = Ticket::create($queueId, $this->user['full_name'], $this->user['email'], $this->userId, $subject, $description, $projectId, 'api');
+        Ticket::applyCreationRules($id);
         ApiResponse::ok(ApiSerializer::ticket(Ticket::find($id)), 201);
     }
 
@@ -96,6 +97,15 @@ class TicketsApiController extends ApiController
                 $errors['status'] = 'Допустимі значення: ' . implode(', ', Ticket::STATUSES) . '.';
             }
         }
+        $priority = null;
+        if (array_key_exists('priority', $data)) {
+            $priority = $data['priority'];
+            if (!is_string($priority) || !isset(Ticket::PRIORITIES[$priority])) {
+                $errors['priority'] = 'Допустимі значення: ' . implode(', ', array_keys(Ticket::PRIORITIES)) . '.';
+            } elseif (!Access::canAssignTicketOperator($this->role)) {
+                $errors['priority'] = 'Змінювати пріоритет можуть лише адміністратор, керівник ІТ-підрозділу й оператор служби підтримки.';
+            }
+        }
         $operatorGiven = array_key_exists('operator_id', $data);
         $operatorId = null;
         if ($operatorGiven) {
@@ -118,6 +128,9 @@ class TicketsApiController extends ApiController
         $id = (int) $ticket['id'];
         if ($status !== null && $status !== $ticket['status']) {
             Ticket::updateStatus($id, $status, $this->userId);
+        }
+        if ($priority !== null) {
+            Ticket::setPriority($id, $priority, $this->userId);
         }
         if ($operatorGiven && $operatorId !== (!empty($ticket['assigned_operator_id']) ? (int) $ticket['assigned_operator_id'] : null)) {
             Ticket::assignOperator($id, $operatorId, $this->userId);

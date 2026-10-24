@@ -4,7 +4,7 @@ $isNew = empty($tpl['id']);
 $isProject = $tpl['kind'] === 'project';
 $readOnly = !empty($readOnly);
 // Для нового шаблону — порожні рядки (3 для проєкту, 1 для задачі); для наявного — наявні плюс 3 порожні для доповнення.
-$blank = ['title' => '', 'body' => '', 'type_id' => null, 'priority' => 'normal', 'start_offset' => '', 'due_offset' => '', 'checklist' => '', 'subtasks' => ''];
+$blank = ['title' => '', 'body' => '', 'type_id' => null, 'priority' => 'normal', 'assignee_role' => '', 'start_offset' => '', 'due_offset' => '', 'checklist' => '', 'subtasks' => ''];
 $rows = $items;
 if (!$readOnly) {
     $extra = $isProject ? 3 : (empty($rows) ? 1 : 0);
@@ -65,6 +65,10 @@ $dis = $readOnly ? ' disabled' : '';
                             <option value="<?= $k ?>"<?= ($it['priority'] ?? 'normal') === $k ? ' selected' : '' ?>><?= $l ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Роль виконавця</label>
+                    <input type="text" name="items[<?= $n ?>][assignee_role]" maxlength="60" class="form-control form-control-sm" placeholder="напр., Керівник проєкту" value="<?= View::e($it['assignee_role'] ?? '') ?>"<?= $dis ?>>
                 </div>
                 <div class="col-md-1">
                     <label class="form-label small mb-1">Початок</label>

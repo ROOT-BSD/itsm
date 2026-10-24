@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\AdminNav;
 use App\Core\Auth;
+use App\Core\Database;
 use App\Core\LdapDn;
 use App\Core\View;
 use App\Models\Project;
@@ -521,6 +522,69 @@ class AdminController
             'error' => $_GET['error'] ?? null,
             'success' => $_GET['success'] ?? null,
         ]);
+    }
+
+    /** Множники SLA за пріоритетом (відсотки від базового нормативу черги). */
+    public function updateSlaPriority(): void
+    {
+        $out = [];
+        foreach (['low', 'high', 'critical'] as $k) {
+            $v = (int) ($_POST['pct_' . $k] ?? 100);
+            if ($v < 10 || $v > 1000) {
+                header('Location: /admin/queues?error=' . urlencode('Відсоток має бути від 10 до 1000.'));
+                exit;
+            }
+            $out[$k] = $v;
+        }
+        \App\Models\Setting::set('sla_priority_pct', json_encode($out));
+        Audit::log('settings', 0, 'sla_priority_updated', Auth::id(), $out);
+        header('Location: /admin/queues?success=' . urlencode('Множники SLA за пріоритетом збережено'));
+        exit;
+    }
+
+    public function labels(): void
+    {
+        View::render('admin/ticket_labels', [
+            'labels' => Database::connection()->query('SELECT b.*, (SELECT COUNT(*) FROM ticket_label_links l WHERE l.label_id = b.id) AS used FROM ticket_labels b ORDER BY b.name')->fetchAll(),
+            'error' => $_GET['error'] ?? null,
+            'success' => $_GET['success'] ?? null,
+        ]);
+    }
+
+    public function saveLabel(): void
+    {
+        $name = mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 50);
+        $color = in_array($_POST['color'] ?? '', ['secondary', 'primary', 'success', 'danger', 'warning', 'info', 'dark'], true) ? $_POST['color'] : 'secondary';
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($name === '') {
+            header('Location: /admin/ticket-labels?error=' . urlencode('Вкажіть назву мітки.'));
+            exit;
+        }
+        $db = Database::connection();
+        try {
+            if ($id > 0) {
+                $db->prepare('UPDATE ticket_labels SET name = :n, color = :c WHERE id = :id')->execute(['n' => $name, 'c' => $color, 'id' => $id]);
+            } else {
+                $db->prepare('INSERT INTO ticket_labels (name, color) VALUES (:n, :c)')->execute(['n' => $name, 'c' => $color]);
+                $id = (int) $db->lastInsertId();
+            }
+        } catch (\PDOException $e) {
+            header('Location: /admin/ticket-labels?error=' . urlencode('Мітка з такою назвою вже є.'));
+            exit;
+        }
+        Audit::log('ticket_label', $id, 'saved', Auth::id(), ['name' => $name]);
+        header('Location: /admin/ticket-labels?success=' . urlencode('Мітку «' . $name . '» збережено.'));
+        exit;
+    }
+
+    public function deleteLabel(array $params): void
+    {
+        $id = (int) $params['id'];
+        Database::connection()->prepare('DELETE FROM ticket_labels WHERE id = :id')->execute(['id' => $id]);
+        Database::connection()->prepare('UPDATE ticket_rules SET action_label_id = NULL WHERE action_label_id = :id')->execute(['id' => $id]);
+        Audit::log('ticket_label', $id, 'deleted', Auth::id());
+        header('Location: /admin/ticket-labels?success=' . urlencode('Мітку видалено (знято з усіх тікетів).'));
+        exit;
     }
 
     /** Створення/оновлення нормативу SLA для конкретної черги — раніше можливе лише напряму в БД. */

@@ -24,12 +24,14 @@ class TicketRule
     }
 
     private const SELECT = "SELECT r.*, fq.name AS from_queue_name, aq.name AS action_queue_name, ao.full_name AS action_operator_name,
-                                   so.full_name AS scope_name
+                                   so.full_name AS scope_name, lb.name AS action_label_name, co.full_name AS cond_operator_name
                             FROM ticket_rules r
                             LEFT JOIN ticket_queues fq ON fq.id = r.from_queue_id
                             LEFT JOIN ticket_queues aq ON aq.id = r.action_queue_id
                             LEFT JOIN users ao ON ao.id = r.action_operator_id
-                            LEFT JOIN users so ON so.id = r.scope_user_id";
+                            LEFT JOIN users so ON so.id = r.scope_user_id
+                            LEFT JOIN ticket_labels lb ON lb.id = r.action_label_id
+                            LEFT JOIN users co ON co.id = r.cond_operator_id";
 
     /** @param int|null $scopeUserId null — усі правила (адміністратор системи); число — лише правила цього адміністратора підрозділу */
     public static function all(?int $scopeUserId = null): array
@@ -66,15 +68,21 @@ class TicketRule
             'name' => $d['name'], 'scope' => $d['scope_user_id'], 'sort' => $d['sort_order'], 'fq' => $d['from_queue_id'], 'rm' => $d['requester_match'], 'src' => $d['source'],
             'kw' => $d['keywords'], 'mi' => $d['match_in'], 'aq' => $d['action_queue_id'], 'ao' => $d['action_operator_id'],
             'ne' => $d['notify_emails'], 'no' => $d['notify_operator'] ? 1 : 0, 'act' => $d['is_active'] ? 1 : 0,
+            'ev' => $d['trigger_event'], 'ws' => $d['when_status'], 'cb2' => $d['comment_by'], 'am' => $d['att_mode'], 'amc' => $d['att_min_count'],
+            'amin' => $d['att_min_mb'], 'amax' => $d['att_max_mb'], 'ap' => $d['action_priority'], 'nso' => $d['notify_system_operator'] ? 1 : 0, 'nsu' => $d['notify_system_users'],
+            'cop' => $d['cond_operator'], 'copi' => $d['cond_operator_id'], 'alb' => $d['action_label_id'], 'acm' => $d['action_comment'],
         ];
         $db = Database::connection();
         if ($id === null) {
-            $db->prepare('INSERT INTO ticket_rules (name, scope_user_id, sort_order, from_queue_id, requester_match, source, keywords, match_in, action_queue_id, action_operator_id, notify_emails, notify_operator, is_active, created_by)
-                          VALUES (:name, :scope, :sort, :fq, :rm, :src, :kw, :mi, :aq, :ao, :ne, :no, :act, :cb)')->execute($p + ['cb' => $d['created_by']]);
+            $db->prepare('INSERT INTO ticket_rules (name, scope_user_id, sort_order, from_queue_id, requester_match, source, keywords, match_in, action_queue_id, action_operator_id, notify_emails, notify_operator, is_active,
+                          trigger_event, when_status, comment_by, att_mode, att_min_count, att_min_mb, att_max_mb, action_priority, notify_system_operator, notify_system_users, cond_operator, cond_operator_id, action_label_id, action_comment, created_by)
+                          VALUES (:name, :scope, :sort, :fq, :rm, :src, :kw, :mi, :aq, :ao, :ne, :no, :act, :ev, :ws, :cb2, :am, :amc, :amin, :amax, :ap, :nso, :nsu, :cop, :copi, :alb, :acm, :cb)')->execute($p + ['cb' => $d['created_by']]);
             return (int) $db->lastInsertId();
         }
         $db->prepare('UPDATE ticket_rules SET name = :name, sort_order = :sort, from_queue_id = :fq, requester_match = :rm, source = :src, keywords = :kw, match_in = :mi,
-                      action_queue_id = :aq, action_operator_id = :ao, notify_emails = :ne, notify_operator = :no, is_active = :act WHERE id = :id')
+                      action_queue_id = :aq, action_operator_id = :ao, notify_emails = :ne, notify_operator = :no, is_active = :act,
+                      trigger_event = :ev, when_status = :ws, comment_by = :cb2, att_mode = :am, att_min_count = :amc, att_min_mb = :amin, att_max_mb = :amax,
+                      action_priority = :ap, notify_system_operator = :nso, notify_system_users = :nsu, cond_operator = :cop, cond_operator_id = :copi, action_label_id = :alb, action_comment = :acm WHERE id = :id')
            ->execute(array_diff_key($p, ['scope' => 1]) + ['id' => $id]);
         return $id;
     }

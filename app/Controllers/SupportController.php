@@ -144,6 +144,8 @@ class SupportController
             );
         }
 
+        Ticket::applyCreationRules($id); // правила черги — вже з урахуванням вкладень
+
         $success = 'Звернення успішно надіслано! Збережіть це посилання, щоб відстежувати статус.'
             . ($images['added'] > 0 ? ' Прикріплено зображень: ' . $images['added'] . '.' : '');
         $query = ['success' => $success];

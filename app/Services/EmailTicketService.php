@@ -226,9 +226,6 @@ class EmailTicketService
             } else {
                 $ticketId = self::createTicket($m);
                 $outcome = ['action' => 'ticket_created', 'ticket_id' => $ticketId, 'note' => 'Створено тікет #' . $ticketId];
-                if (\App\Services\TicketRuleService::$lastNote !== '') {
-                    $outcome['note'] .= '; ' . \App\Services\TicketRuleService::$lastNote;
-                }
             }
 
             $attachmentIds = self::storeImages($ticketId, $images, $storedFiles);
@@ -241,6 +238,13 @@ class EmailTicketService
             $savedDocs = count(self::storeImages($ticketId, $documents, $storedFiles, false));
             if ($savedDocs > 0) {
                 $outcome['note'] .= '; збережено документів: ' . $savedDocs;
+            }
+            if ($outcome['action'] === 'ticket_created') {
+                // Правила черги — після збереження вкладень (умови за вкладеннями).
+                Ticket::applyCreationRules($ticketId);
+                if (\App\Services\TicketRuleService::$lastNote !== '') {
+                    $outcome['note'] .= '; ' . \App\Services\TicketRuleService::$lastNote;
+                }
             }
             if ($skippedTiny > 0) {
                 $outcome['note'] .= '; пропущено дрібних вбудованих зображень (логотипи в підписах): ' . $skippedTiny;

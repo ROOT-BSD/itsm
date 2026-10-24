@@ -107,18 +107,35 @@ class Template
         Database::connection()->prepare('DELETE FROM templates WHERE id = :id')->execute(['id' => $id]);
     }
 
+    /** Ролі виконавців у шаблонах: [template_id => [роль, ...]] (унікальні, за порядком пунктів). */
+    public static function rolesByTemplate(): array
+    {
+        try {
+            $rows = Database::connection()->query('SELECT template_id, assignee_role FROM template_items WHERE assignee_role IS NOT NULL ORDER BY template_id, position, id')->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            if (!in_array($r['assignee_role'], $out[(int) $r['template_id']] ?? [], true)) {
+                $out[(int) $r['template_id']][] = $r['assignee_role'];
+            }
+        }
+        return $out;
+    }
+
     /** @param array<int, array<string, mixed>> $items */
     private static function insertItems(int $templateId, array $items): void
     {
         $stmt = Database::connection()->prepare(
-            'INSERT INTO template_items (template_id, position, title, body, type_id, priority, start_offset, due_offset, checklist, subtasks)
-             VALUES (:t, :p, :title, :body, :type, :prio, :so, :do, :cl, :st)'
+            'INSERT INTO template_items (template_id, position, title, body, type_id, priority, assignee_role, start_offset, due_offset, checklist, subtasks)
+             VALUES (:t, :p, :title, :body, :type, :prio, :role, :so, :do, :cl, :st)'
         );
         $pos = 0;
         foreach ($items as $it) {
             $stmt->execute([
                 't' => $templateId, 'p' => $pos++, 'title' => $it['title'], 'body' => $it['body'] ?? null,
-                'type' => $it['type_id'] ?? null, 'prio' => $it['priority'] ?? 'normal',
+                'type' => $it['type_id'] ?? null, 'prio' => $it['priority'] ?? 'normal', 'role' => $it['assignee_role'] ?? null,
                 'so' => $it['start_offset'] ?? null, 'do' => $it['due_offset'] ?? null,
                 'cl' => $it['checklist'] ?? null, 'st' => $it['subtasks'] ?? null,
             ]);

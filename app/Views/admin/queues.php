@@ -14,6 +14,22 @@
     <div class="alert alert-success"><?= \App\Core\View::e($success) ?></div>
 <?php endif; ?>
 
+<div class="card shadow-sm mb-3 form-card-md">
+    <div class="card-header">SLA за пріоритетом тікета</div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">Норматив черги задає час для «звичайного» пріоритету. Для інших пріоритетів він множиться на відсоток: 50 % — вдвічі швидше, 150 % — повільніше.</p>
+        <?php $pc = \App\Models\Ticket::slaPriorityPercents(); ?>
+        <form method="post" action="/admin/queues/sla-priority" class="row g-2 align-items-end">
+            <?= \App\Core\Csrf::field() ?>
+            <?php foreach (['low' => 'Низький', 'high' => 'Високий', 'critical' => 'Критичний'] as $k => $l): ?>
+                <div class="col-auto"><label class="form-label small mb-0"><?= $l ?>, %</label>
+                    <input type="number" name="pct_<?= $k ?>" min="10" max="1000" class="form-control form-control-sm" style="width:6rem" value="<?= (int) $pc[$k] ?>" required></div>
+            <?php endforeach; ?>
+            <div class="col-auto"><button class="btn btn-sm btn-outline-primary" type="submit">Зберегти</button></div>
+        </form>
+    </div>
+</div>
+
 <table class="table table-bordered bg-white align-middle">
     <thead>
         <tr><th>Назва</th><th>Опис</th><th>Тікетів у черзі</th><th>SLA: перша відповідь / вирішення (хв)</th><th>Автопризначення оператора</th><th></th></tr>

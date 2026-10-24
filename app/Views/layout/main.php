@@ -38,6 +38,8 @@ use App\Core\Auth;
                 <li class="nav-item"><a class="nav-link<?= \App\Core\AdminNav::currentSection() !== null ? ' active' : '' ?>" href="/admin"<?= \App\Core\AdminNav::currentSection() !== null ? ' aria-current="page"' : '' ?>>Адмін-панель</a></li>
                 <?php endif; ?>
             </ul>
+            <?php $__unread = \App\Models\UserNotification::unreadCount((int) Auth::id()); ?>
+            <a href="/notifications" class="text-light text-decoration-none me-3" title="Сповіщення" aria-label="Сповіщення<?= $__unread > 0 ? ': непрочитаних ' . $__unread : '' ?>">🔔<?php if ($__unread > 0): ?><span class="badge text-bg-danger ms-1"><?= $__unread > 99 ? '99+' : $__unread ?></span><?php endif; ?></a>
             <span class="navbar-text text-light me-3">
                 <a href="/profile" class="text-light text-decoration-none">
                     <?= \App\Core\View::e(Auth::name()) ?> (<?= \App\Core\View::e(Auth::role()) ?>)

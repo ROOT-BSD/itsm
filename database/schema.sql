@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS template_items (
     body TEXT NULL,
     type_id INT NULL,
     priority ENUM('low','normal','high','critical') NOT NULL DEFAULT 'normal',
+    assignee_role VARCHAR(60) NULL,        -- роль виконавця (міграція 056)
     start_offset INT NULL,
     due_offset INT NULL,
     checklist TEXT NULL,
@@ -357,6 +358,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     description TEXT,
     source ENUM('web','portal','email','api') NULL,   -- звідки створено тікет (міграція 051)
     status ENUM('new','in_progress','waiting_customer','resolved','closed') NOT NULL DEFAULT 'new',
+    priority ENUM('low','normal','high','critical') NOT NULL DEFAULT 'normal',   -- пріоритет тікета (міграція 054)
     assigned_operator_id INT NULL,
     first_response_at DATETIME NULL,
     resolved_at DATETIME NULL,
@@ -751,15 +753,25 @@ CREATE TABLE IF NOT EXISTS ticket_rules (
     scope_user_id INT NULL,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 100,
+    trigger_event ENUM('created','status','comment') NOT NULL DEFAULT 'created',  -- коли спрацьовує (міграція 054)
+    when_status VARCHAR(20) NULL,                  -- для події status: цільовий статус (NULL — будь-який)
+    comment_by ENUM('any','requester','staff') NOT NULL DEFAULT 'any',  -- для події comment: хто написав
     from_queue_id INT NULL,
     requester_match VARCHAR(500) NULL,             -- адреси/домени заявника через кому (міграція 051)
     source ENUM('web','portal','email','api') NULL, -- умова за джерелом тікета (міграція 051)
     keywords TEXT NOT NULL,
-    match_in ENUM('subject','description','both') NOT NULL DEFAULT 'both',
+    match_in ENUM('subject','description','both','comment') NOT NULL DEFAULT 'both',
+    att_mode ENUM('any','with','without') NOT NULL DEFAULT 'any',   -- умови за вкладеннями (міграція 054)
+    att_min_count INT UNSIGNED NULL,
+    att_min_mb DECIMAL(7,2) NULL,
+    att_max_mb DECIMAL(7,2) NULL,
     action_queue_id INT NULL,
     action_operator_id INT NULL,
+    action_priority ENUM('low','normal','high','critical') NULL,
     notify_emails VARCHAR(500) NULL,
     notify_operator TINYINT(1) NOT NULL DEFAULT 0,
+    notify_system_operator TINYINT(1) NOT NULL DEFAULT 0,   -- сповіщення в системі (центр сповіщень)
+    notify_system_users VARCHAR(500) NULL,
     hits INT NOT NULL DEFAULT 0,
     last_hit_at DATETIME NULL,
     created_by INT NULL,
@@ -767,10 +779,27 @@ CREATE TABLE IF NOT EXISTS ticket_rules (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_ticket_rules_order (is_active, sort_order, id),
     FOREIGN KEY (scope_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    cond_operator ENUM('any','assigned','unassigned') NOT NULL DEFAULT 'any',
+    cond_operator_id INT NULL,
+    action_label_id INT NULL,
+    action_comment VARCHAR(1000) NULL,
     FOREIGN KEY (from_queue_id) REFERENCES ticket_queues(id) ON DELETE CASCADE,
     FOREIGN KEY (action_queue_id) REFERENCES ticket_queues(id) ON DELETE SET NULL,
     FOREIGN KEY (action_operator_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Центр сповіщень (міграція 054): сповіщення в системі (дзвіночок у меню). url — внутрішня адреса, куди веде сповіщення.
+CREATE TABLE IF NOT EXISTS user_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    body VARCHAR(500) NULL,
+    url VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    read_at DATETIME NULL,
+    KEY idx_user_notifications_user (user_id, read_at, id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Особисті налаштування меню (міграція 048)
@@ -860,6 +889,45 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS ticket_labels (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    color VARCHAR(20) NOT NULL DEFAULT 'secondary',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS ticket_label_links (
+    ticket_id INT NOT NULL,
+    label_id INT NOT NULL,
+    PRIMARY KEY (ticket_id, label_id),
+    KEY idx_tll_label (label_id),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    FOREIGN KEY (label_id) REFERENCES ticket_labels(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS task_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 100,
+    trigger_event ENUM('created','status') NOT NULL DEFAULT 'created',
+    when_status_id INT NULL,
+    keywords TEXT NULL,
+    match_in ENUM('title','description','both') NOT NULL DEFAULT 'both',
+    project_id INT NULL,
+    cond_priority ENUM('low','normal','high','critical') NULL,
+    cond_assignee ENUM('any','assigned','unassigned') NOT NULL DEFAULT 'any',
+    action_assignee_id INT NULL,
+    action_priority ENUM('low','normal','high','critical') NULL,
+    notify_system_assignee TINYINT(1) NOT NULL DEFAULT 0,
+    notify_system_users VARCHAR(500) NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    hits INT UNSIGNED NOT NULL DEFAULT 0,
+    last_hit_at DATETIME NULL,
+    created_by INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_task_rules_active (is_active, trigger_event, sort_order)
+) ENGINE=InnoDB;
+
 INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('001', 'add_project_responsible', 'baseline'),
 ('002', 'fix_utf8_double_encoding', 'baseline'),
@@ -913,4 +981,7 @@ INSERT IGNORE INTO schema_migrations (version, name, applied_via) VALUES
 ('050', 'resolved_task_status_open', 'baseline'),
 ('051', 'ticket_rules_conditions', 'baseline'),
 ('052', 'task_work_journal', 'baseline'),
-('053', 'asset_license_seats', 'baseline');
+('053', 'asset_license_seats', 'baseline'),
+('054', 'ticket_rules_events_priority_notifications', 'baseline'),
+('055', 'labels_task_rules_sla_priority', 'baseline'),
+('056', 'template_item_roles', 'baseline');

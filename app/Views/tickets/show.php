@@ -64,6 +64,37 @@
         </p>
         <?php endif; ?>
 
+        <?php if (!empty($allLabels) || !empty($ticketLabels)): ?>
+        <?php if (\App\Core\Access::canAssignTicketOperator(\App\Core\Auth::role()) && !empty($allLabels)): $__have = array_map('intval', array_column($ticketLabels, 'id')); ?>
+        <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/labels" class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <?= \App\Core\Csrf::field() ?>
+            <span class="form-label mb-0">Мітки:</span>
+            <?php foreach ($allLabels as $lb): ?>
+                <label class="form-check-label"><input class="form-check-input" type="checkbox" name="labels[]" value="<?= (int) $lb['id'] ?>" <?= in_array((int) $lb['id'], $__have, true) ? 'checked' : '' ?>>
+                    <span class="badge text-bg-<?= \App\Core\View::e($lb['color']) ?>"><?= \App\Core\View::e($lb['name']) ?></span></label>
+            <?php endforeach; ?>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Зберегти</button>
+        </form>
+        <?php elseif (!empty($ticketLabels) && \App\Core\Auth::hasRole(['admin', 'unit_admin', 'it_manager', 'sysadmin', 'support_operator', 'observer'])): ?>
+        <p class="small mb-2">Мітки: <?php foreach ($ticketLabels as $lb): ?><span class="badge text-bg-<?= \App\Core\View::e($lb['color']) ?>"><?= \App\Core\View::e($lb['name']) ?></span> <?php endforeach; ?></p>
+        <?php endif; endif; ?>
+
+        <?php $prio = (string) ($ticket['priority'] ?? 'normal'); ?>
+        <?php if (\App\Core\Access::canAssignTicketOperator(\App\Core\Auth::role())): ?>
+        <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/priority" class="d-flex gap-2 align-items-center mb-2">
+            <?= \App\Core\Csrf::field() ?>
+            <label class="form-label mb-0">Пріоритет:</label>
+            <select name="priority" class="form-select w-auto">
+                <?php foreach (\App\Models\Ticket::PRIORITIES as $code => $label): ?>
+                    <option value="<?= $code ?>" <?= $prio === $code ? 'selected' : '' ?>><?= $label ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Змінити</button>
+        </form>
+        <?php else: ?>
+        <p class="text-muted small mb-2">Пріоритет: <?= \App\Core\View::e(\App\Models\Ticket::priorityLabel($prio)) ?></p>
+        <?php endif; ?>
+
         <form method="post" action="/tickets/<?= (int)$ticket['id'] ?>/status" class="d-flex gap-2 align-items-center">
     <?= \App\Core\Csrf::field() ?>
             <label class="form-label mb-0">Статус:</label>

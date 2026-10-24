@@ -168,6 +168,10 @@ $router->post('/tickets', fn() => $tickets->store());
 $router->get('/tickets/{id}', fn($p) => $tickets->show($p));
 
 // --- Архів (закриті тікети/задачі/проєкти) ---
+$router->get('/notifications', fn() => (new \App\Controllers\NotificationController())->index());
+$router->post('/notifications/read-all', fn() => (new \App\Controllers\NotificationController())->readAll());
+$router->post('/notifications/clear', fn() => (new \App\Controllers\NotificationController())->clearRead());
+$router->get('/notifications/{id}/open', fn($p) => (new \App\Controllers\NotificationController())->open($p));
 $router->get('/it-assets', fn() => (new \App\Controllers\AssetController())->index());
 $router->get('/it-assets/create', fn() => (new \App\Controllers\AssetController())->form());
 $router->get('/it-assets/licenses', fn() => (new \App\Controllers\AssetController())->licenses());
@@ -189,6 +193,7 @@ $router->post('/tickets/{id}/assets', fn($p) => (new \App\Controllers\AssetContr
 $router->post('/tickets/{id}/assets/{asset}/delete', fn($p) => (new \App\Controllers\AssetController())->ticketUnlink($p));
 $router->get('/archive', fn() => (new ArchiveController())->index());
 $router->post('/tickets/{id}/operator', fn($p) => $tickets->assignOperator($p));
+$router->post('/tickets/{id}/priority', fn($p) => $tickets->setPriority($p));
 $router->post('/tickets/{id}/status', fn($p) => $tickets->updateStatus($p));
 $router->post('/tickets/{id}/links', fn($p) => $tickets->addLink($p));
 $router->post('/tickets/{id}/links/{link}/delete', fn($p) => $tickets->removeLink($p));
@@ -435,6 +440,15 @@ $router->post('/admin/queues/{id}/edit', function ($p) {
 $router->post('/admin/queues/{id}/delete', function ($p) {
     (new AdminController())->deleteQueue($p);
 });
+$router->post('/admin/queues/sla-priority', fn() => (new AdminController())->updateSlaPriority());
+$router->get('/admin/ticket-labels', fn() => (new AdminController())->labels());
+$router->post('/admin/ticket-labels', fn() => (new AdminController())->saveLabel());
+$router->post('/admin/ticket-labels/{id}/delete', fn($p) => (new AdminController())->deleteLabel($p));
+$router->post('/tickets/{id}/labels', fn($p) => $tickets->setLabels($p));
+$router->get('/admin/task-rules', fn() => (new \App\Controllers\TaskRuleController())->index());
+$router->post('/admin/task-rules', fn() => (new \App\Controllers\TaskRuleController())->save());
+$router->post('/admin/task-rules/{id}/toggle', fn($p) => (new \App\Controllers\TaskRuleController())->toggle($p));
+$router->post('/admin/task-rules/{id}/delete', fn($p) => (new \App\Controllers\TaskRuleController())->delete($p));
 $router->post('/admin/queues/{id}/sla', function ($p) {
     (new AdminController())->updateSlaPolicy($p);
 });

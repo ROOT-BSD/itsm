@@ -23,6 +23,29 @@ class Ticket
         'resolved' => 'Вирішено', 'closed' => 'Закрито',
     ];
 
+    /** Пріоритет тікета (міграція 054): код => підпис. */
+    public const PRIORITIES = ['low' => 'Низький', 'normal' => 'Звичайний', 'high' => 'Високий', 'critical' => 'Критичний'];
+
+    public static function priorityLabel(?string $priority): string
+    {
+        return self::PRIORITIES[$priority ?? 'normal'] ?? (string) $priority;
+    }
+
+    /** Змінює пріоритет (із записом у журнал). Повертає true, якщо значення змінилося. */
+    public static function setPriority(int $id, string $priority, ?int $actingUserId): bool
+    {
+        if (!isset(self::PRIORITIES[$priority])) {
+            return false;
+        }
+        $old = self::find($id)['priority'] ?? null;
+        if ($old === $priority) {
+            return false;
+        }
+        Database::connection()->prepare('UPDATE tickets SET priority = :p WHERE id = :id')->execute(['p' => $priority, 'id' => $id]);
+        Audit::log('ticket', $id, 'priority_changed', $actingUserId, ['from' => $old, 'to' => $priority]);
+        return true;
+    }
+
     public static function statusLabel(string $status): string
     {
         return self::STATUS_LABELS[$status] ?? $status;
@@ -31,6 +54,25 @@ class Ticket
     public static function queues(): array
     {
         return Database::connection()->query('SELECT * FROM ticket_queues ORDER BY id')->fetchAll();
+    }
+
+    /** Відсотки базового SLA-нормативу за пріоритетом (налаштування `sla_priority_pct`, JSON); «звичайний» завжди 100. @return array<string,int> */
+    public static function slaPriorityPercents(): array
+    {
+        static $cache = null;
+        if ($cache === null) {
+            $cache = ['low' => 100, 'normal' => 100, 'high' => 100, 'critical' => 100];
+            try {
+                $raw = json_decode((string) Setting::get('sla_priority_pct', ''), true);
+                foreach (['low', 'high', 'critical'] as $k) {
+                    if (is_array($raw) && isset($raw[$k]) && (int) $raw[$k] >= 10 && (int) $raw[$k] <= 1000) {
+                        $cache[$k] = (int) $raw[$k];
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
+        return $cache;
     }
 
     /** Нормативи SLA по кожній черзі — [queue_id => ['first_response_minutes' => .., 'resolution_minutes' => ..]]. Один запит замість одного на кожен тікет. */
@@ -62,8 +104,10 @@ class Ticket
 
         $createdAt = strtotime($ticket['created_at']);
         $now = time();
-        $responseDueAt = $createdAt + ((int) $policy['first_response_minutes']) * 60;
-        $resolutionDueAt = $createdAt + ((int) $policy['resolution_minutes']) * 60;
+        // Норматив залежить від пріоритету: відсоток від базового (звичайний = 100 %).
+        $pct = self::slaPriorityPercents()[$ticket['priority'] ?? 'normal'] ?? 100;
+        $responseDueAt = $createdAt + max(60, (int) round((int) $policy['first_response_minutes'] * $pct / 100 * 60));
+        $resolutionDueAt = $createdAt + max(60, (int) round((int) $policy['resolution_minutes'] * $pct / 100 * 60));
 
         return [
             'has_policy' => true,
@@ -347,9 +391,15 @@ class Ticket
         if ($defaultOperatorId !== null) {
             Audit::log('ticket', $ticketId, 'auto_assigned_operator', null, ['assigned_operator_id' => $defaultOperatorId]);
         }
-        // Автоматичні правила черги (за ключовими словами): можуть змінити чергу й оператора. Помилки правил створення не ламають.
-        \App\Services\TicketRuleService::apply($ticketId);
+        // Автоматичні правила черги для події «створено» НЕ виконуються тут: умови за вкладеннями потребують уже збережених файлів,
+        // тож кожен шлях створення (форма, портал, API, пошта) викликає applyCreationRules() після прикріплення файлів.
         return $ticketId;
+    }
+
+    /** Правила черги для щойно створеного тікета (викликати після збереження вкладень). Помилки правил створення не ламають. */
+    public static function applyCreationRules(int $ticketId): void
+    {
+        \App\Services\TicketRuleService::apply($ticketId, true, 'created');
     }
 
     /** Тікет за токеном доступу — для порталу самообслуговування (відстеження без входу в систему). */
@@ -569,6 +619,13 @@ class Ticket
         );
         $stmt->execute(['operator_id' => $operatorId ?: null, 'id' => $id]);
         Audit::log('ticket', $id, 'operator_assigned', $actingUserId, ['operator_id' => $operatorId]);
+        // Сповіщення в системі новому виконавцю (якщо призначив не він сам).
+        if ($operatorId && $operatorId !== $actingUserId) {
+            $t = self::find($id);
+            if ($t) {
+                self::notifyUsers([$operatorId], 'Вам призначено тікет №' . $id, (string) $t['subject'], $id);
+            }
+        }
     }
 
     public static function updateStatus(int $id, string $status, int $actingUserId): void
@@ -586,6 +643,8 @@ class Ticket
         Database::connection()->prepare($sql)->execute($fields);
         Audit::log('ticket', $id, 'status_changed_to_' . $status, $actingUserId);
         NotificationService::ticketStatusChanged($id, $status, $actingUserId);
+        // Правила черги для події «змінено статус» (помилки правил роботу не ламають).
+        \App\Services\TicketRuleService::apply($id, true, 'status', ['status' => $status]);
     }
 
     public static function addComment(int $ticketId, string $authorType, ?int $authorId, string $body): int
@@ -610,8 +669,81 @@ class Ticket
         }
 
         NotificationService::ticketCommentAdded($ticketId, $authorType, $authorId);
+        // Сповіщення в системі: заявнику (коментар працівника) або виконавцю (коментар заявника); автору — ні.
+        if ($t = self::find($ticketId)) {
+            $targets = $authorType === 'requester'
+                ? [$t['assigned_operator_id'] ?? null]
+                : [$t['requester_user_id'] ?? null, $t['assigned_operator_id'] ?? null];
+            self::notifyUsers(array_map('intval', array_filter($targets)), 'Новий коментар у тікеті №' . $ticketId, (string) $t['subject'], $ticketId, $authorId);
+        }
         \App\Services\WebhookService::emitTicketComment($ticketId, $commentId, $authorId);
+        // Правила черги для події «новий коментар».
+        \App\Services\TicketRuleService::apply($ticketId, true, 'comment', ['comment_by' => $authorType === 'requester' ? 'requester' : 'staff', 'comment' => $body]);
         return $commentId;
+    }
+
+    /** Сповіщення «в системі» (центр сповіщень) про тікет; $exceptUserId — автор дії, йому не надсилаємо. Помилки не критичні. */
+    public static function notifyUsers(array $userIds, string $title, string $body, int $ticketId, ?int $exceptUserId = null): void
+    {
+        foreach (array_unique($userIds) as $uid) {
+            if ($uid > 0 && $uid !== $exceptUserId) {
+                try {
+                    UserNotification::notify($uid, $title, mb_substr($body, 0, 500), '/tickets/' . $ticketId);
+                } catch (\Throwable $e) {
+                    error_log('Сповіщення в системі: ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ мітки
+
+    /** @return array<int, array{id:int,name:string,color:string}> */
+    public static function labels(): array
+    {
+        try {
+            return Database::connection()->query('SELECT * FROM ticket_labels ORDER BY name')->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /** Мітки тікетів пачкою: [ticket_id => [label, ...]] */
+    public static function labelsForTickets(array $ticketIds): array
+    {
+        $ticketIds = array_values(array_filter(array_map('intval', $ticketIds)));
+        if (!$ticketIds) {
+            return [];
+        }
+        try {
+            $in = implode(',', $ticketIds);
+            $rows = Database::connection()->query("SELECT l.ticket_id, b.id, b.name, b.color FROM ticket_label_links l JOIN ticket_labels b ON b.id = l.label_id WHERE l.ticket_id IN ({$in}) ORDER BY b.name")->fetchAll();
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $out[(int) $r['ticket_id']][] = $r;
+        }
+        return $out;
+    }
+
+    public static function addLabel(int $ticketId, int $labelId): bool
+    {
+        $stmt = Database::connection()->prepare('INSERT IGNORE INTO ticket_label_links (ticket_id, label_id) SELECT :t, id FROM ticket_labels WHERE id = :l');
+        $stmt->execute(['t' => $ticketId, 'l' => $labelId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    /** Замінює набір міток тікета. */
+    public static function setLabels(int $ticketId, array $labelIds, int $actingUserId): void
+    {
+        $db = Database::connection();
+        $db->prepare('DELETE FROM ticket_label_links WHERE ticket_id = :t')->execute(['t' => $ticketId]);
+        foreach (array_unique(array_map('intval', $labelIds)) as $lid) {
+            self::addLabel($ticketId, $lid);
+        }
+        Audit::log('ticket', $ticketId, 'labels_changed', $actingUserId, ['labels' => array_values(array_unique(array_map('intval', $labelIds)))]);
     }
 
     public static function comments(int $ticketId): array

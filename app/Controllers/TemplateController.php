@@ -118,7 +118,7 @@ class TemplateController
             }
         }
         try {
-            $r = TemplateService::apply((int) $tpl['id'], (int) $project['id'], $base, Auth::id(), $title);
+            $r = TemplateService::apply((int) $tpl['id'], (int) $project['id'], $base, Auth::id(), $title, self::readRoleUsers());
         } catch (\Throwable $e) {
             $this->flash($back, 'error', 'Не вдалося застосувати шаблон: ' . $e->getMessage());
         }
@@ -208,6 +208,7 @@ class TemplateController
                 'body' => ($b = trim((string) ($row['body'] ?? ''))) !== '' ? $b : null,
                 'type_id' => in_array($type, $typeIds, true) ? $type : null,
                 'priority' => $prio,
+                'assignee_role' => ($r = mb_substr(trim(str_replace(['[', ']'], '', (string) ($row['assignee_role'] ?? ''))), 0, 60)) !== '' ? $r : null,
                 'start_offset' => $off($row['start_offset'] ?? ''),
                 'due_offset' => $off($row['due_offset'] ?? ''),
                 'checklist' => ($c = TemplateService::lines($row['checklist'] ?? '')) ? implode("\n", $c) : null,
@@ -224,6 +225,19 @@ class TemplateController
             return [$name, null, null, [], 'У шаблоні може бути не більше ' . Template::MAX_ITEMS . ' задач'];
         }
         return [$name, $desc !== '' ? mb_substr($desc, 0, 500) : null, $kind === 'project' && $projDesc !== '' ? $projDesc : null, $items, null];
+    }
+
+    /** Відповідність «роль → користувач» з форми застосування шаблону (лише активні користувачі). @return array<string,int> */
+    public static function readRoleUsers(): array
+    {
+        $active = array_map(fn($u) => (int) $u['id'], \App\Models\User::allActive());
+        $out = [];
+        foreach ((array) ($_POST['role_user'] ?? []) as $role => $uid) {
+            if ((int) $uid > 0 && in_array((int) $uid, $active, true)) {
+                $out[(string) $role] = (int) $uid;
+            }
+        }
+        return $out;
     }
 
     /** Дата старту з форми: '' → null (терміни не рахуються), некоректна → false. */
